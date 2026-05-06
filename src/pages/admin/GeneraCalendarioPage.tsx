@@ -43,33 +43,40 @@ export function GeneraCalendarioPage() {
   async function genera() {
     if (!config || medici.length === 0 || schemi.length === 0) return
     setStato('loading')
-    setMessaggio('Calcolo turni in corso...')
     setConferma(false)
 
     try {
-      // 1. Calcola tutti i turni teorici
+      // 1. Calcola turni teorici
+      setMessaggio('Calcolo turni in corso...')
       const turniGenerati = calcolaCalendarioCompleto(config, schemi, medici)
-      setMessaggio(`Calcolati ${turniGenerati.length} turni. Salvataggio in corso...`)
 
-      // 2. Cancella turni esistenti per il periodo
+      // 2. Cancella turni esistenti nel periodo tramite medico_id
+      //    (filtro esplicito per superare eventuali restrizioni RLS)
+      setMessaggio('Cancellazione turni precedenti...')
+      const medicoIds = medici.map(m => m.id)
       const dataInizio = `${config.anno_inizio}-${String(config.mese_inizio).padStart(2,'0')}-01`
-      const dataFineDate = new Date(config.anno_fine, config.mese_fine, 0)
-      const dataFine = dataFineDate.toISOString().split('T')[0]
+      const dataFine = new Date(config.anno_fine, config.mese_fine, 0).toISOString().split('T')[0]
 
       const { error: delErr } = await supabase
         .from('turni')
         .delete()
+        .in('medico_id', medicoIds)
         .gte('data', dataInizio)
         .lte('data', dataFine)
-      if (delErr) throw delErr
 
-      // 3. Inserisce i nuovi turni a batch da 500
-      const BATCH = 500
+      if (delErr) throw new Error(`Cancellazione fallita: ${delErr.message}`)
+
+      // 3. Inserisce i nuovi turni con upsert (più robusto di insert)
+      const BATCH = 400
       for (let i = 0; i < turniGenerati.length; i += BATCH) {
         const chunk = turniGenerati.slice(i, i + BATCH)
-        const { error: insErr } = await supabase.from('turni').insert(chunk)
-        if (insErr) throw insErr
-        setMessaggio(`Salvati ${Math.min(i + BATCH, turniGenerati.length)} / ${turniGenerati.length} turni...`)
+        setMessaggio(`Salvataggio ${Math.min(i + BATCH, turniGenerati.length)} / ${turniGenerati.length} turni...`)
+
+        const { error: insErr } = await supabase
+          .from('turni')
+          .upsert(chunk, { onConflict: 'medico_id,data' })
+
+        if (insErr) throw new Error(`Inserimento fallito al batch ${i/BATCH + 1}: ${insErr.message}`)
       }
 
       setStato('ok')
@@ -78,8 +85,7 @@ export function GeneraCalendarioPage() {
 
     } catch (e: unknown) {
       setStato('error')
-      const err = e as Error
-      setMessaggio(`Errore: ${err.message}`)
+      setMessaggio((e as Error).message)
     }
   }
 
@@ -103,7 +109,6 @@ export function GeneraCalendarioPage() {
         </p>
       </div>
 
-      {/* Riepilogo parametri */}
       <div className="card p-4 space-y-2 text-sm">
         <h3 className="font-semibold text-gray-700">Parametri attuali</h3>
         <div className="grid grid-cols-2 gap-2 text-gray-600">
@@ -120,21 +125,19 @@ export function GeneraCalendarioPage() {
         </div>
       </div>
 
-      {/* Avviso */}
       <div className="flex gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
         <AlertTriangle size={18} className="shrink-0 mt-0.5" />
         <div>
           <p className="font-semibold mb-1">Attenzione</p>
           <p>
-            La generazione <strong>sovrascrive tutti i turni esistenti</strong> per il periodo
-            selezionato, incluse le eventuali modifiche manuali.
+            Cancella tutti i turni esistenti del periodo e li ricalcola da zero.
+            Le modifiche manuali andranno perse.
           </p>
         </div>
       </div>
 
-      {/* Checkbox conferma */}
       {stato === 'idle' && (
-        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
           <input
             type="checkbox"
             checked={conferma}
@@ -145,19 +148,13 @@ export function GeneraCalendarioPage() {
         </label>
       )}
 
-      {/* Bottone */}
       {stato === 'idle' && (
-        <button
-          onClick={genera}
-          disabled={!conferma}
-          className="btn-primary"
-        >
+        <button onClick={genera} disabled={!conferma} className="btn-primary">
           <Zap size={16} />
           Genera Calendario
         </button>
       )}
 
-      {/* Stato loading */}
       {stato === 'loading' && (
         <div className="flex items-center gap-3 text-blue-700">
           <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-700" />
@@ -165,22 +162,19 @@ export function GeneraCalendarioPage() {
         </div>
       )}
 
-      {/* Esito */}
       {(stato === 'ok' || stato === 'error') && (
         <div className={`flex items-start gap-3 p-4 rounded-xl text-sm
           ${stato === 'ok'
             ? 'bg-green-50 border border-green-200 text-green-800'
-            : 'bg-red-50 border border-red-200 text-red-800'
-          }`}
+            : 'bg-red-50 border border-red-200 text-red-800'}`}
         >
           {stato === 'ok'
             ? <CheckCircle size={18} className="shrink-0 mt-0.5" />
-            : <AlertTriangle size={18} className="shrink-0 mt-0.5" />
-          }
+            : <AlertTriangle size={18} className="shrink-0 mt-0.5" />}
           <div>
             <p>{messaggio}</p>
             <button
-              onClick={() => { setStato('idle'); setMessaggio(''); setConferma(false) }}
+              onClick={() => { setStato('idle'); setMessaggio('') }}
               className="mt-2 text-xs underline opacity-70 hover:opacity-100"
             >
               Torna indietro

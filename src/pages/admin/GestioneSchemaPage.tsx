@@ -1,24 +1,74 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Save, Plus, Trash2, Info } from 'lucide-react'
+import { Save, Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import type { SchemaModello, Medico } from '../../types'
 
-const GIORNI = ['', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica']
+const GIORNI_LABEL = ['', 'LUNEDÌ', 'MARTEDÌ', 'MERCOLEDÌ', 'GIOVEDÌ', 'VENERDÌ', 'SABATO', 'DOMENICA']
+const GIORNI_SHORT = ['', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom']
 
-// ── Cella numerica editabile ──────────────────────────────────────
-function NumCell({
-  value, onChange, placeholder = '—',
-}: { value: number | null; onChange: (v: number | null) => void; placeholder?: string }) {
+// ─── Cella editabile ──────────────────────────────────────────────
+function CellaNumero({
+  value,
+  nome,
+  isRep,
+  onChange,
+}: {
+  value:    number | null
+  nome:     string | undefined
+  isRep:    boolean
+  onChange: (v: number | null) => void
+}) {
+  const [editing, setEditing] = useState(false)
+
+  if (editing) {
+    return (
+      <input
+        type="number" min={1} max={99}
+        defaultValue={value ?? ''}
+        autoFocus
+        className="w-14 rounded border-2 border-blue-400 px-1 py-0.5 text-center text-sm
+                   focus:outline-none"
+        onBlur={e => {
+          const v = e.target.value === '' ? null : +e.target.value
+          onChange(v)
+          setEditing(false)
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === 'Escape') {
+            const v = (e.target as HTMLInputElement).value === ''
+              ? null : +(e.target as HTMLInputElement).value
+            onChange(v)
+            setEditing(false)
+          }
+        }}
+      />
+    )
+  }
+
   return (
-    <input
-      type="number" min={1} max={99}
-      value={value ?? ''}
-      onChange={e => onChange(e.target.value === '' ? null : +e.target.value)}
-      placeholder={placeholder}
-      className="w-14 rounded border border-gray-200 px-1 py-0.5 text-center text-sm
-                 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
-    />
+    <div
+      onClick={() => setEditing(true)}
+      className={`cursor-pointer rounded px-2 py-0.5 text-center leading-tight
+        hover:ring-2 hover:ring-blue-300 transition-all select-none
+        ${value ? 'min-w-[40px]' : 'min-w-[40px] text-gray-300'}`}
+      title="Clicca per modificare"
+    >
+      {value ? (
+        <>
+          <div className={`text-sm font-bold ${isRep ? 'text-red-700' : 'text-gray-800'}`}>
+            {value}
+          </div>
+          {nome && (
+            <div className="text-[9px] text-gray-400 uppercase tracking-tight leading-none mt-0.5">
+              {nome.slice(0, 8)}
+            </div>
+          )}
+        </>
+      ) : (
+        <span className="text-xs text-gray-200">—</span>
+      )}
+    </div>
   )
 }
 
@@ -27,22 +77,23 @@ function NumCell({
 export function GestioneSchemaPage() {
   const qc = useQueryClient()
   const [schemaNum, setSchemaNum] = useState(1)
-  const [changes, setChanges]     = useState<Record<string, Partial<SchemaModello>>>({})
-  const [saving, setSaving]       = useState(false)
+  // modifiche pendenti: id slot → patch parziale
+  const [changes, setChanges]   = useState<Record<string, Partial<SchemaModello>>>({})
+  const [saving, setSaving]     = useState(false)
   const [messaggio, setMessaggio] = useState('')
 
-  // ── Fetch schemi ──
+  // ── Dati ──────────────────────────────────────────────────────
   const { data: schemi = [], isLoading } = useQuery<SchemaModello[]>({
     queryKey: ['schemi_modello'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('schemi_modello').select('*').order('giorno_settimana').order('slot')
+        .from('schemi_modello').select('*')
+        .order('giorno_settimana').order('slot')
       if (error) throw error
       return data
     },
   })
 
-  // ── Fetch medici (per mostrare i nomi) ──
   const { data: medici = [] } = useQuery<Medico[]>({
     queryKey: ['medici'],
     queryFn: async () => {
@@ -53,19 +104,16 @@ export function GestioneSchemaPage() {
     },
   })
 
-  // Mappa numero_ordine → nome
-  const medicoNome = useMemo(() => {
+  const nomeMap = useMemo(() => {
     const m: Record<number, string> = {}
     medici.forEach(med => { m[med.numero_ordine] = med.nome })
     return m
   }, [medici])
 
-  // ── Schemi filtrati per schema_num selezionato ──
   const schemiCorrenti = useMemo(() =>
     schemi.filter(s => s.schema_num === schemaNum),
   [schemi, schemaNum])
 
-  // ── Raggruppati per giorno_settimana ──
   const perGiorno = useMemo(() => {
     const map: Record<number, SchemaModello[]> = {}
     for (let g = 1; g <= 7; g++) {
@@ -75,245 +123,294 @@ export function GestioneSchemaPage() {
     return map
   }, [schemiCorrenti])
 
-  // ── Key univoca per uno slot ──
-  function rowKey(s: SchemaModello) { return s.id }
-
-  // ── Legge il valore corrente di un campo (locale o DB) ──
-  function getVal(s: SchemaModello, field: keyof SchemaModello) {
-    const ch = changes[rowKey(s)]
-    if (ch && field in ch) return (ch as Record<string, unknown>)[field as string]
+  // ── Helpers ──────────────────────────────────────────────────
+  function getVal<K extends keyof SchemaModello>(s: SchemaModello, field: K): SchemaModello[K] {
+    const ch = changes[s.id]
+    if (ch && field in ch) return (ch as Record<string, unknown>)[field as string] as SchemaModello[K]
     return s[field]
   }
 
-  // ── Aggiorna un campo localmente ──
   function setVal(s: SchemaModello, field: keyof SchemaModello, val: unknown) {
     setChanges(prev => ({
       ...prev,
-      [rowKey(s)]: { ...prev[rowKey(s)], [field]: val },
+      [s.id]: { ...prev[s.id], [field]: val },
     }))
   }
 
-  // ── Aggiunge uno slot vuoto (solo localmente, salvato su "Salva") ──
+  // ── Aggiungi slot ─────────────────────────────────────────────
   async function aggiungiSlot(giorno: number) {
-    const slotsGiorno = perGiorno[giorno]
-    const nextSlot = slotsGiorno.length > 0
-      ? Math.max(...slotsGiorno.map(s => s.slot)) + 1
-      : 0
-
-    const { data, error } = await supabase.from('schemi_modello').insert({
-      schema_num: schemaNum,
-      giorno_settimana: giorno,
-      slot: nextSlot,
-      numero_medico_mattina: null,
-      numero_medico_pomeriggio: null,
-      numero_medico_rm: null,
-      numero_medico_rp: null,
-      is_reperibilita: false,
-    }).select().single()
-
+    const slots = perGiorno[giorno]
+    const nextSlot = slots.length > 0 ? Math.max(...slots.map(s => s.slot)) + 1 : 0
+    const { error } = await supabase.from('schemi_modello').insert({
+      schema_num: schemaNum, giorno_settimana: giorno, slot: nextSlot,
+      numero_medico_mattina: null, numero_medico_pomeriggio: null,
+      numero_medico_rm: null, numero_medico_rp: null, is_reperibilita: false,
+    })
     if (error) { setMessaggio('Errore: ' + error.message); return }
     qc.invalidateQueries({ queryKey: ['schemi_modello'] })
   }
 
-  // ── Elimina uno slot ──
+  // ── Elimina slot ──────────────────────────────────────────────
   async function eliminaSlot(s: SchemaModello) {
-    if (!confirm(`Eliminare slot ${s.slot} di ${GIORNI[s.giorno_settimana]}?`)) return
+    if (!confirm(`Eliminare questo slot da ${GIORNI_SHORT[s.giorno_settimana]}?`)) return
     await supabase.from('schemi_modello').delete().eq('id', s.id)
-    setChanges(prev => {
-      const n = { ...prev }; delete n[s.id]; return n
-    })
+    setChanges(prev => { const n = { ...prev }; delete n[s.id]; return n })
     qc.invalidateQueries({ queryKey: ['schemi_modello'] })
   }
 
-  // ── Salva tutti i cambiamenti ──
+  // ── Salva modifiche ───────────────────────────────────────────
   async function salva() {
     const ids = Object.keys(changes)
-    if (ids.length === 0) { setMessaggio('Nessuna modifica da salvare.'); return }
+    if (ids.length === 0) { setMessaggio('Nessuna modifica.'); return }
     setSaving(true); setMessaggio('')
-    let errori = 0
+    let err = 0
 
     for (const id of ids) {
       const { error } = await supabase
-        .from('schemi_modello')
-        .update(changes[id])
-        .eq('id', id)
-      if (error) errori++
+        .from('schemi_modello').update(changes[id]).eq('id', id)
+      if (error) err++
     }
 
     setSaving(false)
-    if (errori > 0) {
-      setMessaggio(`Salvato con ${errori} errori.`)
+    if (err > 0) {
+      setMessaggio(`Salvato con ${err} errori.`)
     } else {
       setChanges({})
-      setMessaggio(`✓ Salvati ${ids.length} slot.`)
+      setMessaggio(`✓ Salvati ${ids.length} slot`)
       qc.invalidateQueries({ queryKey: ['schemi_modello'] })
       setTimeout(() => setMessaggio(''), 3000)
     }
   }
 
-  const numChanges = Object.keys(changes).length
+  const numPendenti = Object.keys(changes).length
+
+  // ─────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-4 max-w-4xl">
-      {/* Header */}
-      <div className="flex items-start justify-between">
+    <div className="space-y-4">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-xl font-bold text-gray-800">Gestione Schema</h2>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Modifica la tabella di rotazione. Dopo aver salvato lo schema,
-            vai su <strong>Genera Calendario</strong> per ricalcolare i turni.
+          <h2 className="text-xl font-bold text-gray-800">Schema Turni</h2>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Clicca su un numero per modificarlo · Invio/clic fuori per confermare
           </p>
         </div>
-
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <select
             value={schemaNum}
             onChange={e => { setSchemaNum(+e.target.value); setChanges({}) }}
-            className="input w-32"
+            className="input w-32 text-sm"
           >
-            {[1, 2, 3].map(n => <option key={n} value={n}>Schema {n}</option>)}
+            {[1,2,3].map(n => <option key={n} value={n}>Schema {n}</option>)}
           </select>
-
           <button
             onClick={salva}
-            disabled={saving || numChanges === 0}
-            className="btn-primary"
+            disabled={saving || numPendenti === 0}
+            className="btn-primary text-sm py-1.5"
           >
-            <Save size={15} />
-            {saving ? 'Salvataggio...' : `Salva${numChanges > 0 ? ` (${numChanges})` : ''}`}
+            <Save size={14} />
+            {saving ? 'Salvo...' : `Salva${numPendenti > 0 ? ` (${numPendenti})` : ''}`}
           </button>
         </div>
       </div>
 
-      {/* Messaggio esito */}
+      {/* Feedback */}
       {messaggio && (
-        <div className={`text-sm px-3 py-2 rounded-lg ${
+        <div className={`text-sm px-3 py-1.5 rounded-lg border ${
           messaggio.startsWith('✓')
-            ? 'bg-green-50 text-green-700 border border-green-200'
-            : 'bg-amber-50 text-amber-700 border border-amber-200'
-        }`}>
-          {messaggio}
-        </div>
+            ? 'bg-green-50 text-green-700 border-green-200'
+            : 'bg-amber-50 text-amber-700 border-amber-200'
+        }`}>{messaggio}</div>
       )}
 
-      {/* Legenda */}
-      <div className="flex flex-wrap gap-3 text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
-        <span className="flex items-center gap-1"><Info size={12} /> Legenda:</span>
-        <span><strong>M</strong> = Mattina clinica</span>
-        <span><strong>P</strong> = Pomeriggio clinico</span>
-        <span><strong>RM</strong> = Ricerca mattina</span>
-        <span><strong>RP</strong> = Ricerca pomeriggio</span>
-        <span><strong>REP</strong> = slot reperibilità (chi ha quel numero è in REP)</span>
-        <span>Il numero corrisponde a <em>numero_ordine</em> del medico</span>
-      </div>
+      {isLoading && <p className="text-gray-400 text-sm py-4">Caricamento schema...</p>}
 
-      {isLoading && <p className="text-gray-400 text-sm">Caricamento...</p>}
+      {/* ── Tabella stile Excel ─────────────────────────────────── */}
+      {!isLoading && (
+        <div className="card overflow-x-auto">
+          <table className="w-full border-collapse text-sm" style={{ minWidth: 520 }}>
+            <thead>
+              <tr className="bg-gray-800 text-white text-xs">
+                <th className="border border-gray-600 px-3 py-2 text-left w-28">Giorno</th>
+                <th className="border border-gray-600 px-2 py-2 text-center w-24">
+                  <div>MATTINA</div>
+                  <div className="font-normal opacity-60 text-[10px]">cM</div>
+                </th>
+                <th className="border border-gray-600 px-2 py-2 text-center w-24">
+                  <div>POMERIGGIO</div>
+                  <div className="font-normal opacity-60 text-[10px]">cP</div>
+                </th>
+                <th className="border border-gray-600 px-2 py-2 text-center w-24">
+                  <div>RIC. MAT.</div>
+                  <div className="font-normal opacity-60 text-[10px]">cRM</div>
+                </th>
+                <th className="border border-gray-600 px-2 py-2 text-center w-24">
+                  <div>RIC. POM.</div>
+                  <div className="font-normal opacity-60 text-[10px]">cRP</div>
+                </th>
+                <th className="border border-gray-600 px-2 py-2 text-center w-10 text-[10px]">REP</th>
+                <th className="border border-gray-600 w-8"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {[1,2,3,4,5,6,7].map(giorno => {
+                const slots = perGiorno[giorno] ?? []
+                const numSlots = Math.max(slots.length, 1)
 
-      {/* Tabella per ogni giorno */}
-      {[1, 2, 3, 4, 5, 6, 7].map(giorno => {
-        const slots = perGiorno[giorno] ?? []
-        return (
-          <div key={giorno} className="card overflow-hidden">
-            {/* Header giorno */}
-            <div className="flex items-center justify-between px-4 py-2 bg-blue-700 text-white">
-              <span className="font-semibold text-sm">{GIORNI[giorno]}</span>
-              <button
-                onClick={() => aggiungiSlot(giorno)}
-                className="flex items-center gap-1 text-xs bg-blue-600 hover:bg-blue-500
-                           px-2 py-1 rounded transition-colors"
-              >
-                <Plus size={12} /> Aggiungi slot
-              </button>
-            </div>
-
-            {/* Tabella slot */}
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-3 py-1.5 text-left text-xs font-semibold text-gray-500 w-12">Slot</th>
-                  <th className="px-2 py-1.5 text-center text-xs font-semibold text-gray-500">Mattina (M)</th>
-                  <th className="px-2 py-1.5 text-center text-xs font-semibold text-gray-500">Pomeriggio (P)</th>
-                  <th className="px-2 py-1.5 text-center text-xs font-semibold text-gray-500">Ric. Mat (RM)</th>
-                  <th className="px-2 py-1.5 text-center text-xs font-semibold text-gray-500">Ric. Pom (RP)</th>
-                  <th className="px-2 py-1.5 text-center text-xs font-semibold text-gray-500">REP?</th>
-                  <th className="w-8"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {slots.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="px-3 py-3 text-center text-gray-400 text-xs">
-                      Nessuno slot — clicca "+ Aggiungi slot"
-                    </td>
-                  </tr>
-                )}
-                {slots.map(s => {
-                  const m   = getVal(s, 'numero_medico_mattina')    as number | null
-                  const p   = getVal(s, 'numero_medico_pomeriggio') as number | null
-                  const rm  = getVal(s, 'numero_medico_rm')         as number | null
-                  const rp  = getVal(s, 'numero_medico_rp')         as number | null
-                  const rep = getVal(s, 'is_reperibilita')           as boolean
-                  const isChanged = !!changes[s.id]
-
-                  return (
-                    <tr key={s.id} className={`hover:bg-gray-50 ${isChanged ? 'bg-blue-50' : ''}`}>
-                      <td className="px-3 py-1.5 text-gray-400 font-mono text-xs">{s.slot}</td>
-
-                      {/* Mattina */}
-                      <td className="px-2 py-1.5 text-center">
-                        <div className="flex flex-col items-center gap-0.5">
-                          <NumCell value={m} onChange={v => setVal(s, 'numero_medico_mattina', v)} />
-                          {m && <span className="text-[10px] text-gray-400">{medicoNome[m] ?? '?'}</span>}
-                        </div>
+                return slots.length === 0
+                  // Riga giorno vuota
+                  ? (
+                    <tr key={`g${giorno}`} className="bg-white">
+                      <td
+                        className="border border-gray-300 px-3 py-2 font-bold text-xs
+                                   bg-blue-50 text-blue-800 align-middle text-center"
+                      >
+                        {GIORNI_LABEL[giorno]}
                       </td>
-
-                      {/* Pomeriggio */}
-                      <td className="px-2 py-1.5 text-center">
-                        <div className="flex flex-col items-center gap-0.5">
-                          <NumCell value={p} onChange={v => setVal(s, 'numero_medico_pomeriggio', v)} />
-                          {p && <span className="text-[10px] text-gray-400">{medicoNome[p] ?? '?'}</span>}
-                        </div>
+                      <td colSpan={5} className="border border-gray-300 px-3 py-2 text-gray-300 text-xs text-center">
+                        nessuno slot
                       </td>
-
-                      {/* RM */}
-                      <td className="px-2 py-1.5 text-center">
-                        <NumCell value={rm} onChange={v => setVal(s, 'numero_medico_rm', v)} />
-                      </td>
-
-                      {/* RP */}
-                      <td className="px-2 py-1.5 text-center">
-                        <NumCell value={rp} onChange={v => setVal(s, 'numero_medico_rp', v)} />
-                      </td>
-
-                      {/* REP */}
-                      <td className="px-2 py-1.5 text-center">
-                        <input
-                          type="checkbox"
-                          checked={!!rep}
-                          onChange={e => setVal(s, 'is_reperibilita', e.target.checked)}
-                          className="w-4 h-4 accent-red-500"
-                          title="Questo slot è reperibilità"
-                        />
-                      </td>
-
-                      {/* Elimina */}
-                      <td className="px-2 py-1.5 text-right">
+                      <td className="border border-gray-300 px-1 py-1 text-center">
                         <button
-                          onClick={() => eliminaSlot(s)}
-                          className="text-gray-300 hover:text-red-500 p-0.5"
-                          title="Elimina slot"
+                          onClick={() => aggiungiSlot(giorno)}
+                          className="text-blue-400 hover:text-blue-600"
+                          title="Aggiungi slot"
                         >
-                          <Trash2 size={13} />
+                          <Plus size={13} />
                         </button>
                       </td>
                     </tr>
                   )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )
-      })}
+                  // Righe giorno con slot
+                  : slots.map((s, idx) => {
+                    const m   = getVal(s, 'numero_medico_mattina')    as number | null
+                    const p   = getVal(s, 'numero_medico_pomeriggio') as number | null
+                    const rm  = getVal(s, 'numero_medico_rm')         as number | null
+                    const rp  = getVal(s, 'numero_medico_rp')         as number | null
+                    const rep = getVal(s, 'is_reperibilita')           as boolean
+                    const changed = !!changes[s.id]
+
+                    // Colori riga
+                    const rowBg = rep
+                      ? 'bg-red-50'
+                      : changed
+                        ? 'bg-blue-50'
+                        : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'
+
+                    return (
+                      <tr key={s.id} className={rowBg}>
+                        {/* Cella giorno (solo prima riga del gruppo, con rowspan) */}
+                        {idx === 0 && (
+                          <td
+                            rowSpan={numSlots}
+                            className="border border-gray-300 px-2 py-1 font-bold text-xs
+                                       bg-blue-700 text-white text-center align-middle"
+                          >
+                            <div>{GIORNI_LABEL[giorno]}</div>
+                            <button
+                              onClick={() => aggiungiSlot(giorno)}
+                              className="mt-2 flex items-center gap-0.5 text-blue-200
+                                         hover:text-white text-[10px] mx-auto"
+                              title="Aggiungi slot"
+                            >
+                              <Plus size={10} /> slot
+                            </button>
+                          </td>
+                        )}
+
+                        {/* M */}
+                        <td className={`border border-gray-200 px-1 py-1 text-center
+                          ${rep ? 'bg-red-50' : ''}`}>
+                          <CellaNumero
+                            value={m}
+                            nome={m ? nomeMap[m] : undefined}
+                            isRep={rep}
+                            onChange={v => setVal(s, 'numero_medico_mattina', v)}
+                          />
+                        </td>
+
+                        {/* P */}
+                        <td className={`border border-gray-200 px-1 py-1 text-center
+                          ${rep ? 'bg-red-50' : ''}`}>
+                          <CellaNumero
+                            value={p}
+                            nome={p ? nomeMap[p] : undefined}
+                            isRep={false}
+                            onChange={v => setVal(s, 'numero_medico_pomeriggio', v)}
+                          />
+                        </td>
+
+                        {/* RM */}
+                        <td className="border border-gray-200 px-1 py-1 text-center bg-violet-50/30">
+                          <CellaNumero
+                            value={rm}
+                            nome={rm ? nomeMap[rm] : undefined}
+                            isRep={false}
+                            onChange={v => setVal(s, 'numero_medico_rm', v)}
+                          />
+                        </td>
+
+                        {/* RP */}
+                        <td className="border border-gray-200 px-1 py-1 text-center bg-pink-50/30">
+                          <CellaNumero
+                            value={rp}
+                            nome={rp ? nomeMap[rp] : undefined}
+                            isRep={false}
+                            onChange={v => setVal(s, 'numero_medico_rp', v)}
+                          />
+                        </td>
+
+                        {/* REP checkbox */}
+                        <td className="border border-gray-200 px-1 py-1 text-center">
+                          <input
+                            type="checkbox"
+                            checked={!!rep}
+                            onChange={e => setVal(s, 'is_reperibilita', e.target.checked)}
+                            className="accent-red-500 w-3.5 h-3.5"
+                            title="Slot reperibilità"
+                          />
+                        </td>
+
+                        {/* Elimina */}
+                        <td className="border border-gray-200 px-1 py-1 text-center">
+                          <button
+                            onClick={() => eliminaSlot(s)}
+                            className="text-gray-300 hover:text-red-400"
+                            title="Elimina slot"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Legenda */}
+      <div className="flex flex-wrap gap-4 text-xs text-gray-500 pt-1">
+        <span className="flex items-center gap-1">
+          <span className="w-3 h-3 rounded bg-red-100 border border-red-300 inline-block" />
+          Reperibilità
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-3 h-3 rounded bg-violet-100 inline-block" />
+          Ricerca mattina
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-3 h-3 rounded bg-pink-100 inline-block" />
+          Ricerca pomeriggio
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-3 h-3 rounded bg-blue-50 border border-blue-200 inline-block" />
+          Modificata
+        </span>
+        <span>· Stesso numero in M e P = turno lungo (L)</span>
+      </div>
     </div>
   )
 }
