@@ -34,12 +34,13 @@ export function GestioneUtentiPage() {
   const { data: utenti = [], isLoading: loadingUtenti } = useQuery<UtenteAutorizzato[]>({
     queryKey: ['utenti_autorizzati'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('utenti_autorizzati').select('*').order('created_at')
+      // Usa RPC con SECURITY DEFINER per bypassare la RLS policy
+      // che altrimenti permetterebbe di vedere solo la propria riga
+      const { data, error } = await supabase.rpc('get_all_utenti_autorizzati')
       if (error) throw error
-      return data
+      return (data ?? []) as UtenteAutorizzato[]
     },
-    staleTime: 0,  // sempre freschi per questa pagina
+    staleTime: 0,
   })
 
   const { data: medici = [] } = useQuery<Medico[]>({
