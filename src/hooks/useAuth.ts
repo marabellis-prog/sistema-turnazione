@@ -2,19 +2,51 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { AuthUser } from '../types'
 
-// Timeout per evitare spinner infinito
-const TIMEOUT_MS = 8000
+const CACHE_KEY    = 'auth_user_profile'
+const TIMEOUT_MS   = 8000
+
+// ── Cache sessionStorage ──────────────────────────────────────────
+function getCached(): AuthUser | null {
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY)
+    return raw ? (JSON.parse(raw) as AuthUser) : null
+  } catch { return null }
+}
+function setCached(u: AuthUser) {
+  try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(u)) } catch {}
+}
+function clearCached() {
+  try { sessionStorage.removeItem(CACHE_KEY) } catch {}
+}
+
+// ─────────────────────────────────────────────────────────────────
 
 export function useAuth() {
-  const [user, setUser]       = useState<AuthUser | null>(null)
+  const [user, setUser]       = useState<AuthUser | null>(() => getCached())
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (event, session) => {
+        if (event === 'SIGNED_OUT') {
+          clearCached()
+          setUser(null)
+          setLoading(false)
+          return
+        }
+
         if (session?.user?.email) {
+          // Se abbiamo la cache E l'email corrisponde → usa subito la cache
+          const cached = getCached()
+          if (cached && cached.email.toLowerCase() === session.user.email.toLowerCase()) {
+            setUser(cached)
+            setLoading(false)
+            return
+          }
+          // Altrimenti recupera dal DB
           await loadUser(session.user.email)
         } else {
+          clearCached()
           setUser(null)
           setLoading(false)
         }
@@ -24,7 +56,6 @@ export function useAuth() {
   }, [])
 
   async function loadUser(email: string) {
-    // Promise con timeout: se la query non risponde entro 8s → fallback
     const queryPromise = supabase.rpc('get_my_profile')
     const timeoutPromise = new Promise<{ data: null; error: Error }>(resolve =>
       setTimeout(() => resolve({ data: null, error: new Error('timeout') }), TIMEOUT_MS)
@@ -36,26 +67,25 @@ export function useAuth() {
 
       if (error) {
         console.error('[Auth] Errore get_my_profile:', error.message)
-        // Non fare signOut su errori di rete/timeout: mostra pagina login
         setUser(null)
         return
       }
 
-      // rpc() restituisce un array; prendi il primo elemento
       const profile = Array.isArray(data) ? data[0] : data
 
       if (!profile) {
-        // Utente autenticato con Google ma non nella whitelist
         console.warn('[Auth] Profilo non trovato per:', email.toLowerCase())
         await supabase.auth.signOut()
         setUser(null)
       } else {
-        setUser({
+        const authUser: AuthUser = {
           id:    profile.id,
           email: profile.email,
           ruolo: profile.ruolo as 'admin' | 'user',
           nome:  profile.nome ?? null,
-        })
+        }
+        setCached(authUser)
+        setUser(authUser)
       }
     } catch (e) {
       console.error('[Auth] Errore imprevisto:', e)
@@ -77,6 +107,7 @@ export function useAuth() {
   }
 
   async function signOut() {
+    clearCached()
     await supabase.auth.signOut()
     setUser(null)
   }
