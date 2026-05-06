@@ -85,12 +85,16 @@ function AppRoutes() {
           } />
         </Route>
 
-        {/* Root → redirect */}
+        {/* Root → redirect (spinner durante loading, mai pagina bianca) */}
         <Route
           path="/"
           element={
             loading
-              ? null
+              ? (
+                <div className="flex min-h-screen items-center justify-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+                </div>
+              )
               : user
                 ? <Navigate to="/calendario" replace />
                 : <Navigate to="/login" replace />
