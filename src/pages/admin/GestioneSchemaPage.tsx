@@ -2,6 +2,8 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Save, RotateCcw, Plus, X, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { useConfirm } from '../../hooks/useConfirm'
+import { ConfirmModal } from '../../components/ConfirmModal'
 import type { SchemaModello, Medico } from '../../types'
 
 // ── Colori pastello (uno per turnista) ───────────────────────────
@@ -97,6 +99,7 @@ export function GestioneSchemaPage() {
   const [msg,        setMsg]        = useState('')
 
   const draggingNum = useRef<number | null>(null)
+  const { confirm, confirmState } = useConfirm()
 
   // ── Queries ──────────────────────────────────────────────────
   const { data: schemi = [] } = useQuery<SchemaModello[]>({
@@ -185,11 +188,17 @@ export function GestioneSchemaPage() {
     })
   }
 
-  function rimuoviSlot(giorno: number, idx: number) {
+  async function rimuoviSlot(giorno: number, idx: number) {
     const row = (griglia[giorno] ?? [])[idx]
     if (!row) return
     if (!isSlotVuoto(row)) {
-      if (!confirm('Lo slot non è vuoto. Eliminarlo?')) return
+      const ok = await confirm({
+        title:        'Elimina slot',
+        message:      'Lo slot contiene dati. Vuoi eliminarlo comunque?',
+        confirmLabel: 'Elimina',
+        danger:       true,
+      })
+      if (!ok) return
     }
     setGriglia(prev => {
       const rows = [...(prev[giorno] ?? [])]
@@ -212,8 +221,14 @@ export function GestioneSchemaPage() {
     setNuovaCol(''); setAddColOpen(false)
   }
 
-  function rimuoviColonna(col: string) {
-    if (!confirm(`Eliminare la colonna "${col}"? I dati di quella colonna andranno persi.`)) return
+  async function rimuoviColonna(col: string) {
+    const ok = await confirm({
+      title:        `Elimina colonna "${col}"`,
+      message:      'I dati di questa colonna andranno persi. Continuare?',
+      confirmLabel: 'Elimina',
+      danger:       true,
+    })
+    if (!ok) return
     setColonne(prev => prev.filter(c => c !== col))
     setGriglia(prev => {
       const g: Record<number, SlotRow[]> = {}
@@ -250,8 +265,14 @@ export function GestioneSchemaPage() {
     })
   }
 
-  function azzera() {
-    if (!confirm('Azzerare tutte le celle dello schema?')) return
+  async function azzera() {
+    const ok = await confirm({
+      title:        'Azzera schema',
+      message:      'Tutte le celle verranno svuotate. Questa operazione non può essere annullata.',
+      confirmLabel: 'Azzera',
+      danger:       true,
+    })
+    if (!ok) return
     setGriglia(prev => {
       const g: Record<number, SlotRow[]> = {}
       Object.entries(prev).forEach(([d, rows]) => {
@@ -300,6 +321,10 @@ export function GestioneSchemaPage() {
   // ─────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-[calc(100vh-112px)] overflow-hidden gap-2">
+
+      {/* Modal di conferma globale */}
+      <ConfirmModal {...confirmState.opts} open={confirmState.open}
+        onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
 
       {/* ═══ CONFIG BAR ════════════════════════════════════════ */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 shrink-0

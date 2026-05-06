@@ -3,10 +3,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, CheckCircle, XCircle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { MESI_IT } from '../../lib/algorithm'
+import { useConfirm } from '../../hooks/useConfirm'
+import { ConfirmModal } from '../../components/ConfirmModal'
 import type { Medico, Ferie } from '../../types'
 
 export function GestioneFeriePage() {
   const qc = useQueryClient()
+  const { confirm, confirmState } = useConfirm()
   const [medicoId, setMedicoId]     = useState('')
   const [dataInizio, setDataInizio] = useState('')
   const [dataFine, setDataFine]     = useState('')
@@ -76,7 +79,13 @@ export function GestioneFeriePage() {
   }
 
   async function elimina(f: Ferie & { medico: Medico }) {
-    if (!confirm(`Rimuovere le ferie di ${f.medico.nome}?`)) return
+    const ok = await confirm({
+      title:        `Elimina ferie di ${f.medico.nome}`,
+      message:      `Le ferie dal ${formatDataIt(f.data_inizio)} al ${formatDataIt(f.data_fine)} verranno rimosse e le celle del calendario ripristinate.`,
+      confirmLabel: 'Elimina',
+      danger:       true,
+    })
+    if (!ok) return
     await supabase.from('ferie').delete().eq('id', f.id)
     // Rimuove il flag is_ferie dai turni
     await supabase
@@ -96,6 +105,8 @@ export function GestioneFeriePage() {
 
   return (
     <div className="max-w-2xl space-y-6">
+      <ConfirmModal {...confirmState.opts} open={confirmState.open}
+        onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
       <div>
         <h2 className="text-xl font-bold text-gray-800">Gestione Ferie</h2>
         <p className="text-sm text-gray-500">

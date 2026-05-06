@@ -2,10 +2,13 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, Shield, User } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { useConfirm } from '../../hooks/useConfirm'
+import { ConfirmModal } from '../../components/ConfirmModal'
 import type { UtenteAutorizzato } from '../../types'
 
 export function GestioneUtentiPage() {
   const qc = useQueryClient()
+  const { confirm, confirmState } = useConfirm()
   const [email, setEmail]   = useState('')
   const [nome, setNome]     = useState('')
   const [ruolo, setRuolo]   = useState<'user' | 'admin'>('user')
@@ -52,13 +55,21 @@ export function GestioneUtentiPage() {
   }
 
   async function elimina(id: string) {
-    if (!confirm('Rimuovere questo utente?')) return
+    const ok = await confirm({
+      title:        'Rimuovi utente',
+      message:      'L\'utente non potrà più accedere all\'applicazione. Continuare?',
+      confirmLabel: 'Rimuovi',
+      danger:       true,
+    })
+    if (!ok) return
     await supabase.from('utenti_autorizzati').delete().eq('id', id)
     qc.invalidateQueries({ queryKey: ['utenti_autorizzati'] })
   }
 
   return (
     <div className="max-w-2xl space-y-6">
+      <ConfirmModal {...confirmState.opts} open={confirmState.open}
+        onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
       <div>
         <h2 className="text-xl font-bold text-gray-800">Utenti Autorizzati</h2>
         <p className="text-sm text-gray-500">
