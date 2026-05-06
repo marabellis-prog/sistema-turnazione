@@ -136,55 +136,60 @@ RETURNS BOOLEAN AS $$
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
 -- ── utenti_autorizzati ──
--- Ogni utente può vedere il proprio record (per sapere il proprio ruolo)
--- Gli admin vedono tutti
+DROP POLICY IF EXISTS "ua_select" ON utenti_autorizzati;
+DROP POLICY IF EXISTS "ua_insert" ON utenti_autorizzati;
+DROP POLICY IF EXISTS "ua_update" ON utenti_autorizzati;
+DROP POLICY IF EXISTS "ua_delete" ON utenti_autorizzati;
+
 CREATE POLICY "ua_select" ON utenti_autorizzati
   FOR SELECT USING (
     email = (SELECT email FROM auth.users WHERE id = auth.uid())
     OR is_admin()
   );
-
 CREATE POLICY "ua_insert" ON utenti_autorizzati
   FOR INSERT WITH CHECK (is_admin());
-
 CREATE POLICY "ua_update" ON utenti_autorizzati
   FOR UPDATE USING (is_admin());
-
 CREATE POLICY "ua_delete" ON utenti_autorizzati
   FOR DELETE USING (is_admin());
 
 -- ── medici ──
+DROP POLICY IF EXISTS "medici_select" ON medici;
+DROP POLICY IF EXISTS "medici_modify"  ON medici;
 CREATE POLICY "medici_select" ON medici
   FOR SELECT USING (is_utente_attivo());
-
 CREATE POLICY "medici_modify" ON medici
   FOR ALL USING (is_admin());
 
 -- ── configurazione ──
+DROP POLICY IF EXISTS "config_select"  ON configurazione;
+DROP POLICY IF EXISTS "config_modify"  ON configurazione;
 CREATE POLICY "config_select" ON configurazione
   FOR SELECT USING (is_utente_attivo());
-
 CREATE POLICY "config_modify" ON configurazione
   FOR ALL USING (is_admin());
 
 -- ── schemi_modello ──
+DROP POLICY IF EXISTS "schemi_select" ON schemi_modello;
+DROP POLICY IF EXISTS "schemi_modify" ON schemi_modello;
 CREATE POLICY "schemi_select" ON schemi_modello
   FOR SELECT USING (is_utente_attivo());
-
 CREATE POLICY "schemi_modify" ON schemi_modello
   FOR ALL USING (is_admin());
 
 -- ── turni ──
+DROP POLICY IF EXISTS "turni_select" ON turni;
+DROP POLICY IF EXISTS "turni_modify"  ON turni;
 CREATE POLICY "turni_select" ON turni
   FOR SELECT USING (is_utente_attivo());
-
 CREATE POLICY "turni_modify" ON turni
   FOR ALL USING (is_admin());
 
 -- ── ferie ──
+DROP POLICY IF EXISTS "ferie_select" ON ferie;
+DROP POLICY IF EXISTS "ferie_modify"  ON ferie;
 CREATE POLICY "ferie_select" ON ferie
   FOR SELECT USING (is_utente_attivo());
-
 CREATE POLICY "ferie_modify" ON ferie
   FOR ALL USING (is_admin());
 
