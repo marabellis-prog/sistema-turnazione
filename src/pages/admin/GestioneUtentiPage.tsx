@@ -78,14 +78,13 @@ export function GestioneUtentiPage() {
   async function saveEdit() {
     if (!editEmail.trim()) { setErrore('Email obbligatoria.'); return }
     setSaving(true); setErrore('')
-    const { error } = await supabase
-      .from('utenti_autorizzati')
-      .update({
-        email: editEmail.trim().toLowerCase(),
-        nome:  editNome.trim().toUpperCase() || null,
-        ruolo: editRuolo,
-      })
-      .eq('id', editId!)
+    // RPC bypassa RLS (UPDATE diretto bloccato silenziosamente dalla policy)
+    const { error } = await supabase.rpc('update_utente_autorizzato', {
+      p_id:    editId!,
+      p_email: editEmail.trim().toLowerCase(),
+      p_nome:  editNome.trim().toUpperCase() || null,
+      p_ruolo: editRuolo,
+    })
     setSaving(false)
     if (error) { setErrore(error.message); return }
     setEditId(null)
@@ -101,7 +100,8 @@ export function GestioneUtentiPage() {
       danger:       true,
     })
     if (!ok) return
-    await supabase.from('utenti_autorizzati').delete().eq('id', u.id)
+    // RPC bypassa RLS
+    await supabase.rpc('delete_utente_autorizzato', { p_id: u.id })
     await refetchUtenti()
   }
 
@@ -111,15 +111,16 @@ export function GestioneUtentiPage() {
     if (!mail) return
     const ruoloDaUsare = ruoloMedico[m.id] ?? 'user'
     setSaving(true); setErrore('')
-    const { error } = await supabase.from('utenti_autorizzati').insert({
-      email: mail, nome: m.nome, ruolo: ruoloDaUsare, attivo: true,
+    // RPC bypassa RLS
+    const { error } = await supabase.rpc('insert_utente_autorizzato', {
+      p_email: mail,
+      p_nome:  m.nome,
+      p_ruolo: ruoloDaUsare,
     })
     setSaving(false)
     if (error) { setErrore(error.message); return }
-    // Pulisci i campi di questo medico
     setEmailMedico(prev => { const n = { ...prev }; delete n[m.id]; return n })
     setRuoloMedico(prev => { const n = { ...prev }; delete n[m.id]; return n })
-    // Forza refetch immediato
     await refetchUtenti()
   }
 
@@ -127,10 +128,10 @@ export function GestioneUtentiPage() {
   async function aggiungiManuale() {
     if (!email.trim()) { setErrore("Inserisci un'email."); return }
     setSaving(true); setErrore('')
-    const { error } = await supabase.from('utenti_autorizzati').insert({
-      email: email.trim().toLowerCase(),
-      nome:  nome.trim().toUpperCase() || null,
-      ruolo, attivo: true,
+    const { error } = await supabase.rpc('insert_utente_autorizzato', {
+      p_email: email.trim().toLowerCase(),
+      p_nome:  nome.trim().toUpperCase() || null,
+      p_ruolo: ruolo,
     })
     setSaving(false)
     if (error) { setErrore(error.message); return }
