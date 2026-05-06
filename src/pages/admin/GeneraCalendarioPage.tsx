@@ -1,21 +1,137 @@
-import { useState } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Zap, AlertTriangle, CheckCircle } from 'lucide-react'
+import { Zap, AlertTriangle, CheckCircle, Info } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { calcolaCalendarioCompleto } from '../../lib/algorithm'
+import { calcolaCalendarioCompleto, primoLunediDelPeriodo, MESI_IT } from '../../lib/algorithm'
+import { useConfirm } from '../../hooks/useConfirm'
+import { ConfirmModal } from '../../components/ConfirmModal'
 import type { Configurazione, Medico, SchemaModello } from '../../types'
 
+// Colori pastello coerenti con la pagina Schema
+const PASTEL: { bg: string; fg: string }[] = [
+  { bg: '#fecdd3', fg: '#9f1239' }, { bg: '#fed7aa', fg: '#9a3412' },
+  { bg: '#fef9c3', fg: '#713f12' }, { bg: '#bbf7d0', fg: '#14532d' },
+  { bg: '#a5f3fc', fg: '#164e63' }, { bg: '#bfdbfe', fg: '#1e3a8a' },
+  { bg: '#ddd6fe', fg: '#4c1d95' }, { bg: '#f5d0fe', fg: '#701a75' },
+  { bg: '#fbcfe8', fg: '#831843' }, { bg: '#d1fae5', fg: '#064e3b' },
+  { bg: '#ccfbf1', fg: '#134e4a' }, { bg: '#e0e7ff', fg: '#3730a3' },
+]
+const GIORNI_S = ['','Lun','Mar','Mer','Gio','Ven','Sab','Dom']
+const ANNI     = [2025, 2026, 2027, 2028]
+
+// ── Anteprima schema (mini tabella colorata) ─────────────────────
+function AntepremaSchema({
+  schemi, medici, schemaNum,
+}: {
+  schemi:    SchemaModello[]
+  medici:    Medico[]
+  schemaNum: number
+}) {
+  const colorMap = useMemo(() => {
+    const m: Record<number, { bg: string; fg: string }> = {}
+    medici.forEach((med, i) => { m[med.numero_ordine] = PASTEL[i % PASTEL.length] })
+    return m
+  }, [medici])
+
+  const filtered = schemi
+    .filter(s => s.schema_num === schemaNum)
+    .sort((a, b) => a.giorno_settimana - b.giorno_settimana || a.slot - b.slot)
+
+  const perGiorno: Record<number, SchemaModello[]> = {}
+  for (let g = 1; g <= 7; g++) perGiorno[g] = []
+  filtered.forEach(r => perGiorno[r.giorno_settimana].push(r))
+
+  const COLS: Array<keyof Pick<SchemaModello, 'numero_medico_mattina'|'numero_medico_pomeriggio'|'numero_medico_rm'|'numero_medico_rp'>> =
+    ['numero_medico_mattina','numero_medico_pomeriggio','numero_medico_rm','numero_medico_rp']
+  const LABELS = ['M','P','RM','RP']
+
+  if (filtered.length === 0) return (
+    <div className="flex items-center justify-center h-40 text-gray-300 text-xs">
+      Schema {schemaNum} vuoto
+    </div>
+  )
+
+  return (
+    <div className="overflow-auto">
+      <table style={{ borderCollapse: 'collapse', fontSize: 10 }}>
+        <thead>
+          <tr>
+            <th style={{ background: '#1e3a8a', color: '#fff', padding: '2px 4px',
+                         border: '1px solid #1e40af', width: 28, fontSize: 9 }}>
+              GG
+            </th>
+            {LABELS.map(l => (
+              <th key={l} style={{ background: '#1e3a8a', color: '#fff', padding: '2px 3px',
+                                   border: '1px solid #1e40af', width: 26, textAlign: 'center', fontSize: 9 }}>
+                {l}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {[1,2,3,4,5,6,7].map(g => {
+            const slots = perGiorno[g]
+            if (slots.length === 0) return null
+            return slots.map((s, idx) => {
+              const isRep = s.is_reperibilita
+              const rowBg = isRep ? '#fee2e2' : idx % 2 === 0 ? '#fff' : '#f9fafb'
+              return (
+                <tr key={`${g}-${idx}`} style={{ background: rowBg }}>
+                  {idx === 0 && (
+                    <td rowSpan={slots.length} style={{
+                      background: '#1d4ed8', color: '#fff', fontWeight: 700, fontSize: 9,
+                      padding: '1px 3px', border: '1px solid #1e40af', textAlign: 'center',
+                      verticalAlign: 'middle',
+                    }}>
+                      {GIORNI_S[g]}
+                    </td>
+                  )}
+                  {COLS.map((col, ci) => {
+                    const num = s[col] as number | null
+                    const color = num ? colorMap[num] : null
+                    return (
+                      <td key={ci} style={{
+                        width: 26, height: 20, textAlign: 'center', verticalAlign: 'middle',
+                        border: '1px solid #e5e7eb',
+                        background: isRep ? '#fee2e2' : (num && color ? color.bg : rowBg),
+                        fontSize: 10, fontWeight: 700,
+                        color: num && color ? color.fg : '#d1d5db',
+                      }}>
+                        {num ?? '—'}
+                      </td>
+                    )
+                  })}
+                </tr>
+              )
+            })
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════
 export function GeneraCalendarioPage() {
   const qc = useQueryClient()
-  const [stato, setStato] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
-  const [messaggio, setMessaggio] = useState('')
-  const [conferma, setConferma] = useState(false)
+  const { confirm, confirmState } = useConfirm()
 
-  const { data: config } = useQuery<Configurazione>({
+  // Parametri locali (inizializzati da configurazione DB)
+  const [schemaNum,   setSchemaNum]   = useState(1)
+  const [meseInizio,  setMeseInizio]  = useState(5)
+  const [annoInizio,  setAnnoInizio]  = useState(2026)
+  const [meseFine,    setMeseFine]    = useState(10)
+  const [annoFine,    setAnnoFine]    = useState(2026)
+  const [conferma,    setConferma]    = useState(false)
+  const [stato,       setStato]       = useState<'idle'|'loading'|'ok'|'error'>('idle')
+  const [messaggio,   setMessaggio]   = useState('')
+
+  // ── Queries ──────────────────────────────────────────────────
+  const { data: config } = useQuery<Configurazione | null>({
     queryKey: ['configurazione'],
     queryFn: async () => {
       const { data, error } = await supabase.from('configurazione')
-        .select('*').order('updated_at', { ascending: false }).limit(1).single()
+        .select('*').order('updated_at', { ascending: false }).limit(1).maybeSingle()
       if (error) throw error
       return data
     },
@@ -40,47 +156,96 @@ export function GeneraCalendarioPage() {
     },
   })
 
+  // Inizializza i parametri dalla configurazione DB
+  useEffect(() => {
+    if (!config) return
+    setSchemaNum(config.schema_attivo)
+    setMeseInizio(config.mese_inizio)
+    setAnnoInizio(config.anno_inizio)
+    setMeseFine(config.mese_fine)
+    setAnnoFine(config.anno_fine)
+  }, [config])
+
+  // ── Riepilogo dinamico ───────────────────────────────────────
+  const slotSchema = useMemo(
+    () => schemi.filter(s => s.schema_num === schemaNum).length,
+    [schemi, schemaNum]
+  )
+
+  const stimaTurni = useMemo(() => {
+    const start = new Date(annoInizio, meseInizio - 1, 1)
+    const end   = new Date(annoFine, meseFine, 0)
+    const giorni = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1
+    return giorni * medici.length
+  }, [annoInizio, meseInizio, annoFine, meseFine, medici.length])
+
+  const periodoLabel = `${MESI_IT[meseInizio]} ${annoInizio} → ${MESI_IT[meseFine]} ${annoFine}`
+
+  // ── Genera ──────────────────────────────────────────────────
   async function genera() {
-    if (!config || medici.length === 0 || schemi.length === 0) return
-    setStato('loading')
-    setConferma(false)
+    // Conferma rafforzata
+    const ok = await confirm({
+      title:        '⚠️ Conferma generazione',
+      message:      `Stai per generare il calendario con Schema ${schemaNum} per il periodo ${periodoLabel}.\n\nTutte le modifiche manuali ai turni esistenti in questo periodo andranno DEFINITIVAMENTE perse e non potranno essere recuperate.\n\nProcedere?`,
+      confirmLabel: 'Sì, genera',
+      danger:       true,
+    })
+    if (!ok) return
+
+    setStato('loading'); setConferma(false)
 
     try {
-      // 1. Calcola turni teorici
+      // Salva la configurazione scelta
+      setMessaggio('Aggiornamento configurazione...')
+      const configPayload = {
+        anno_inizio: annoInizio, mese_inizio: meseInizio,
+        anno_fine:   annoFine,   mese_fine:   meseFine,
+        schema_attivo: schemaNum,
+        updated_at: new Date().toISOString(),
+      }
+      if (config?.id) {
+        await supabase.from('configurazione').update(configPayload).eq('id', config.id)
+      } else {
+        await supabase.from('configurazione').insert(configPayload)
+      }
+      qc.invalidateQueries({ queryKey: ['configurazione'] })
+
+      // Calcola turni
       setMessaggio('Calcolo turni in corso...')
-      const turniGenerati = calcolaCalendarioCompleto(config, schemi, medici)
+      const cfgObj = {
+        id: config?.id ?? '',
+        anno_inizio: annoInizio, mese_inizio: meseInizio,
+        anno_fine:   annoFine,   mese_fine:   meseFine,
+        schema_attivo: schemaNum,
+        updated_at: new Date().toISOString(),
+      }
+      const turniGenerati = calcolaCalendarioCompleto(cfgObj, schemi, medici)
 
-      // 2. Cancella turni esistenti nel periodo tramite medico_id
-      //    (filtro esplicito per superare eventuali restrizioni RLS)
+      // Cancella turni esistenti per il periodo
       setMessaggio('Cancellazione turni precedenti...')
-      const medicoIds = medici.map(m => m.id)
-      const dataInizio = `${config.anno_inizio}-${String(config.mese_inizio).padStart(2,'0')}-01`
-      const dataFine = new Date(config.anno_fine, config.mese_fine, 0).toISOString().split('T')[0]
+      const medicoIds  = medici.map(m => m.id)
+      const dataInizio = `${annoInizio}-${String(meseInizio).padStart(2,'0')}-01`
+      const dataFine   = new Date(annoFine, meseFine, 0).toISOString().split('T')[0]
 
-      const { error: delErr } = await supabase
-        .from('turni')
+      const { error: delErr } = await supabase.from('turni')
         .delete()
         .in('medico_id', medicoIds)
         .gte('data', dataInizio)
         .lte('data', dataFine)
-
       if (delErr) throw new Error(`Cancellazione fallita: ${delErr.message}`)
 
-      // 3. Inserisce i nuovi turni con upsert (più robusto di insert)
+      // Inserisce in batch
       const BATCH = 400
       for (let i = 0; i < turniGenerati.length; i += BATCH) {
         const chunk = turniGenerati.slice(i, i + BATCH)
         setMessaggio(`Salvataggio ${Math.min(i + BATCH, turniGenerati.length)} / ${turniGenerati.length} turni...`)
-
-        const { error: insErr } = await supabase
-          .from('turni')
+        const { error: insErr } = await supabase.from('turni')
           .upsert(chunk, { onConflict: 'medico_id,data' })
-
-        if (insErr) throw new Error(`Inserimento fallito al batch ${i/BATCH + 1}: ${insErr.message}`)
+        if (insErr) throw new Error(`Inserimento fallito: ${insErr.message}`)
       }
 
       setStato('ok')
-      setMessaggio(`✓ Generati ${turniGenerati.length} turni per ${medici.length} medici.`)
+      setMessaggio(`✓ Generati ${turniGenerati.length} turni · Schema ${schemaNum} · ${periodoLabel}`)
       qc.invalidateQueries({ queryKey: ['turni'] })
 
     } catch (e: unknown) {
@@ -89,99 +254,196 @@ export function GeneraCalendarioPage() {
     }
   }
 
-  if (!config) {
-    return (
-      <div className="card p-6 max-w-lg">
-        <p className="text-gray-500">Configura prima il sistema nella sezione Configurazione.</p>
-      </div>
-    )
-  }
-
-  const dataInizio = `${String(config.mese_inizio).padStart(2,'0')}/${config.anno_inizio}`
-  const dataFine   = `${String(config.mese_fine).padStart(2,'0')}/${config.anno_fine}`
-
+  // ─────────────────────────────────────────────────────────────
   return (
-    <div className="max-w-lg space-y-6">
-      <div>
-        <h2 className="text-xl font-bold text-gray-800 mb-1">Genera Calendario</h2>
-        <p className="text-sm text-gray-500">
-          Calcola e salva tutti i turni teorici in base allo schema di rotazione.
-        </p>
-      </div>
+    <div className="flex gap-6 max-w-5xl">
+      <ConfirmModal {...confirmState.opts} open={confirmState.open}
+        onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
 
-      <div className="card p-4 space-y-2 text-sm">
-        <h3 className="font-semibold text-gray-700">Parametri attuali</h3>
-        <div className="grid grid-cols-2 gap-2 text-gray-600">
-          <span>Periodo:</span>
-          <span className="font-medium">{dataInizio} → {dataFine}</span>
-          <span>Schema:</span>
-          <span className="font-medium">{config.schema_attivo}</span>
-          <span>Medici attivi:</span>
-          <span className="font-medium">{medici.length}</span>
-          <span>Slot schema:</span>
-          <span className="font-medium">
-            {schemi.filter(s => s.schema_num === config.schema_attivo).length} righe
-          </span>
-        </div>
-      </div>
-
-      <div className="flex gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-        <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+      {/* ═══ COLONNA SINISTRA ═══════════════════════════════════ */}
+      <div className="flex-1 space-y-5">
         <div>
-          <p className="font-semibold mb-1">Attenzione</p>
-          <p>
-            Cancella tutti i turni esistenti del periodo e li ricalcola da zero.
-            Le modifiche manuali andranno perse.
+          <h2 className="text-xl font-bold text-gray-800 mb-0.5">Genera Calendario</h2>
+          <p className="text-sm text-gray-500">
+            Scegli schema e periodo, poi genera tutti i turni teorici.
           </p>
         </div>
-      </div>
 
-      {stato === 'idle' && (
-        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={conferma}
-            onChange={e => setConferma(e.target.checked)}
-            className="rounded"
-          />
-          Ho capito, voglio procedere con la generazione
-        </label>
-      )}
-
-      {stato === 'idle' && (
-        <button onClick={genera} disabled={!conferma} className="btn-primary">
-          <Zap size={16} />
-          Genera Calendario
-        </button>
-      )}
-
-      {stato === 'loading' && (
-        <div className="flex items-center gap-3 text-blue-700">
-          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-700" />
-          <span className="text-sm">{messaggio}</span>
-        </div>
-      )}
-
-      {(stato === 'ok' || stato === 'error') && (
-        <div className={`flex items-start gap-3 p-4 rounded-xl text-sm
-          ${stato === 'ok'
-            ? 'bg-green-50 border border-green-200 text-green-800'
-            : 'bg-red-50 border border-red-200 text-red-800'}`}
-        >
-          {stato === 'ok'
-            ? <CheckCircle size={18} className="shrink-0 mt-0.5" />
-            : <AlertTriangle size={18} className="shrink-0 mt-0.5" />}
-          <div>
-            <p>{messaggio}</p>
-            <button
-              onClick={() => { setStato('idle'); setMessaggio('') }}
-              className="mt-2 text-xs underline opacity-70 hover:opacity-100"
-            >
-              Torna indietro
-            </button>
+        {/* ── Selettore schema ── */}
+        <div className="card p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-gray-700">Schema di rotazione</h3>
+          <div className="flex gap-2">
+            {[1,2,3].map(n => (
+              <button
+                key={n}
+                onClick={() => setSchemaNum(n)}
+                className={`flex-1 py-2 rounded-lg border text-sm font-semibold transition-colors
+                  ${schemaNum === n
+                    ? 'bg-blue-700 text-white border-blue-700 shadow'
+                    : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+              >
+                Schema {n}
+                <span className="block text-[10px] font-normal opacity-70 mt-0.5">
+                  {schemi.filter(s => s.schema_num === n).length} slot
+                </span>
+              </button>
+            ))}
           </div>
         </div>
-      )}
+
+        {/* ── Selettore periodo ── */}
+        <div className="card p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-gray-700">Periodo</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label text-xs">Mese inizio</label>
+              <select value={meseInizio} onChange={e => setMeseInizio(+e.target.value)} className="input text-sm">
+                {MESI_IT.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label text-xs">Anno inizio</label>
+              <select value={annoInizio} onChange={e => setAnnoInizio(+e.target.value)} className="input text-sm">
+                {ANNI.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label text-xs">Mese fine</label>
+              <select value={meseFine} onChange={e => setMeseFine(+e.target.value)} className="input text-sm">
+                {MESI_IT.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label text-xs">Anno fine</label>
+              <select value={annoFine} onChange={e => setAnnoFine(+e.target.value)} className="input text-sm">
+                {ANNI.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Riepilogo dinamico ── */}
+        <div className="card p-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
+            <Info size={14} className="text-blue-500" />
+            Riepilogo
+          </h3>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+            <span className="text-gray-500">Schema attivo:</span>
+            <span className="font-semibold text-gray-800">Schema {schemaNum}</span>
+
+            <span className="text-gray-500">Periodo:</span>
+            <span className="font-semibold text-gray-800">{periodoLabel}</span>
+
+            <span className="text-gray-500">Medici attivi:</span>
+            <span className={`font-semibold ${medici.length === 0 ? 'text-red-600' : 'text-gray-800'}`}>
+              {medici.length}
+              {medici.length === 0 && ' ⚠️'}
+            </span>
+
+            <span className="text-gray-500">Slot schema:</span>
+            <span className={`font-semibold ${slotSchema === 0 ? 'text-red-600' : 'text-gray-800'}`}>
+              {slotSchema} righe
+              {slotSchema === 0 && ' ⚠️ schema vuoto'}
+            </span>
+
+            <span className="text-gray-500">Turni stimati:</span>
+            <span className="font-semibold text-gray-800">
+              ~{stimaTurni.toLocaleString('it-IT')}
+            </span>
+          </div>
+        </div>
+
+        {/* ── Warning ── */}
+        <div className="flex gap-3 p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold mb-0.5">Attenzione</p>
+            <p className="text-xs leading-relaxed">
+              La generazione <strong>cancella e riscrive</strong> tutti i turni del periodo selezionato.
+              Le eventuali <strong>modifiche manuali</strong> ai turni esistenti andranno perse.
+              Salva l'attuale configurazione prima di procedere se necessario.
+            </p>
+          </div>
+        </div>
+
+        {/* ── Checkbox + bottone ── */}
+        {stato === 'idle' && (
+          <>
+            <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer select-none">
+              <input type="checkbox" checked={conferma}
+                onChange={e => setConferma(e.target.checked)}
+                className="rounded mt-0.5 shrink-0" />
+              <span>
+                Ho letto l'avviso e voglio generare il calendario{' '}
+                <strong>{periodoLabel}</strong> con <strong>Schema {schemaNum}</strong>
+              </span>
+            </label>
+
+            <button
+              onClick={genera}
+              disabled={!conferma || medici.length === 0 || slotSchema === 0}
+              className="btn-primary w-full justify-center py-2.5"
+            >
+              <Zap size={16} />
+              Genera Calendario
+            </button>
+          </>
+        )}
+
+        {/* ── Loading ── */}
+        {stato === 'loading' && (
+          <div className="flex items-center gap-3 p-4 bg-blue-50 border border-blue-200 rounded-xl text-blue-700">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-700 shrink-0" />
+            <span className="text-sm">{messaggio}</span>
+          </div>
+        )}
+
+        {/* ── Esito ── */}
+        {(stato === 'ok' || stato === 'error') && (
+          <div className={`flex items-start gap-3 p-4 rounded-xl text-sm
+            ${stato === 'ok'
+              ? 'bg-green-50 border border-green-200 text-green-800'
+              : 'bg-red-50 border border-red-200 text-red-800'}`}>
+            {stato === 'ok'
+              ? <CheckCircle size={18} className="shrink-0 mt-0.5" />
+              : <AlertTriangle size={18} className="shrink-0 mt-0.5" />}
+            <div>
+              <p className="font-medium">{messaggio}</p>
+              <button onClick={() => { setStato('idle'); setMessaggio('') }}
+                className="mt-2 text-xs underline opacity-70 hover:opacity-100">
+                Genera di nuovo
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ═══ COLONNA DESTRA — anteprima schema ══════════════════ */}
+      <div className="w-56 shrink-0">
+        <div className="card p-3 sticky top-0">
+          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+            Anteprima Schema {schemaNum}
+          </h3>
+          <div className="text-[10px] text-gray-400 mb-2 flex gap-2 flex-wrap">
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded bg-red-100 border border-red-200 inline-block" />
+              REP
+            </span>
+            <span>M=Mattina · P=Pom.</span>
+          </div>
+          <AntepremaSchema
+            schemi={schemi}
+            medici={medici}
+            schemaNum={schemaNum}
+          />
+          <div className="mt-3 pt-2 border-t border-gray-100">
+            <p className="text-[10px] text-gray-400 text-center">
+              Vai su <strong>Schema Turni</strong> per modificarlo
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
