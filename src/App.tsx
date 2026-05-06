@@ -12,6 +12,7 @@ import { GestioneMediciPage }   from './pages/admin/GestioneMediciPage'
 import { GestioneFeriePage }    from './pages/admin/GestioneFeriePage'
 import { GestioneUtentiPage }   from './pages/admin/GestioneUtentiPage'
 import { ConfigPage }           from './pages/admin/ConfigPage'
+import { GestioneSchemaPage }   from './pages/admin/GestioneSchemaPage'
 import { useAuth }           from './hooks/useAuth'
 
 const queryClient = new QueryClient({
@@ -79,6 +80,7 @@ function AppRoutes() {
           <Route path="ferie"   element={<GestioneFeriePage />} />
           <Route path="utenti"  element={<GestioneUtentiPage />} />
           <Route path="config"  element={<ConfigPage />} />
+          <Route path="schema"  element={<GestioneSchemaPage />} />
           {/* turni: placeholder, sviluppato nella prossima iterazione */}
           <Route path="turni"   element={
             <div className="text-gray-500 text-sm">

@@ -13,23 +13,40 @@ import type {
 // ─── Utility data ──────────────────────────────────────────────────
 
 /**
- * Numero di settimane intere trascorse tra dataInizio e dataCorrente.
- * Identico alla funzione GAS ContaLunedi().
+ * Numero di settimane intere trascorse tra dataRif e dataCorrente.
+ * Può restituire valori NEGATIVI: i giorni prima del primo lunedì del
+ * periodo hanno sett=-1 e vengono trattati come fine del ciclo precedente.
  */
-export function contaLunedi(dataInizio: Date, dataCorrente: Date): number {
-  // Riporta entrambe le date al lunedì della loro settimana
-  const lunInizio = new Date(dataInizio)
-  lunInizio.setDate(lunInizio.getDate() - ((lunInizio.getDay() + 6) % 7))
-  lunInizio.setHours(0, 0, 0, 0)
+export function contaLunedi(dataRif: Date, dataCorrente: Date): number {
+  const lunRif = new Date(dataRif)
+  lunRif.setDate(lunRif.getDate() - ((lunRif.getDay() + 6) % 7))
+  lunRif.setHours(0, 0, 0, 0)
 
   const lunCorrente = new Date(dataCorrente)
   lunCorrente.setDate(lunCorrente.getDate() - ((lunCorrente.getDay() + 6) % 7))
   lunCorrente.setHours(0, 0, 0, 0)
 
-  const diff = Math.round(
-    (lunCorrente.getTime() - lunInizio.getTime()) / (7 * 24 * 3600 * 1000)
+  return Math.round(
+    (lunCorrente.getTime() - lunRif.getTime()) / (7 * 24 * 3600 * 1000)
   )
-  return diff < 0 ? 0 : diff
+  // NOTA: nessun clamp a 0 — valori negativi gestiti dalla matematica modulare
+}
+
+/**
+ * Restituisce il primo lunedì del periodo (su o dopo dataInizio).
+ * Questo è il punto di riferimento della rotazione (settimana 0).
+ * I giorni prima di questo lunedì (es. Ven-Dom di inizio mese) ricevono
+ * sett=-1 e vengono calcolati come fine del ciclo precedente.
+ */
+export function primoLunediDelPeriodo(dataInizio: Date): Date {
+  const d = new Date(dataInizio)
+  d.setHours(0, 0, 0, 0)
+  const dow = d.getDay() // 0=Dom, 1=Lun, ..., 6=Sab
+  if (dow !== 1) {
+    // Avanza al lunedì successivo (domenica: +1, altri: 8-dow)
+    d.setDate(d.getDate() + (dow === 0 ? 1 : 8 - dow))
+  }
+  return d
 }
 
 /**
@@ -62,8 +79,8 @@ export function calcolaTurnoTeorico(
   const sett = contaLunedi(dataInizio, data)
   const dWeek = getDayOfWeek(data)
 
-  // Filtra gli slot per il giorno della settimana corretto
-  const slots = schemiGiorno.filter(s => s.giorno_settimana === dWeek)
+  // schemiGiorno è già filtrato per giorno_settimana dal chiamante
+  const slots = schemiGiorno
 
   // Trova il numero-schema (calcNum) assegnato a questo medico questa settimana
   let calcNum = 0
@@ -133,13 +150,16 @@ export function calcolaCalendarioCompleto(
   dataInizio.setHours(0, 0, 0, 0)
 
   const dataFine = new Date(config.anno_fine, config.mese_fine - 1, 1)
-  // Ultimo giorno del mese di fine
   dataFine.setMonth(dataFine.getMonth() + 1, 0)
   dataFine.setHours(0, 0, 0, 0)
 
+  // ── Punto di riferimento rotazione: primo lunedì del periodo ──────
+  // I giorni prima (es. Ven-Dom se il mese inizia venerdì) ricevono
+  // sett=-1 e sono calcolati come fine del ciclo precedente.
+  const dataRifRotazione = primoLunediDelPeriodo(dataInizio)
+
   const risultati: TurnoGenerato[] = []
 
-  // Itera ogni giorno dell'intervallo
   const corrente = new Date(dataInizio)
   while (corrente <= dataFine) {
     const dataISO = formatDate(corrente)
@@ -150,7 +170,7 @@ export function calcolaCalendarioCompleto(
       const { turno_clinico, turno_ricerca } = calcolaTurnoTeorico(
         n,
         corrente,
-        dataInizio,
+        dataRifRotazione,   // ← primo lunedì, non giorno 1
         numMedici,
         schemiGiorno
       )
