@@ -1,0 +1,24 @@
+name: Supabase Keepalive
+
+# Esegue ogni 3 giorni alle 07:00 UTC per evitare che il DB vada in pausa
+on:
+  schedule:
+    - cron: '0 7 */3 * *'
+  workflow_dispatch:     # permette di lanciarlo manualmente
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase (keepalive)
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "apikey: ${{ secrets.VITE_SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.VITE_SUPABASE_ANON_KEY }}" \
+            "${{ secrets.VITE_SUPABASE_URL }}/rest/v1/medici?select=id&limit=1")
+          echo "Supabase status: $STATUS"
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "401" ]; then
+            echo "Attenzione: risposta inattesa $STATUS"
+            exit 1
+          fi
+          echo "✓ Supabase attivo"

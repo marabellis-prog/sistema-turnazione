@@ -4,3 +4,8 @@ dist
 .env.local
 .DS_Store
 *.log
+
+# Credenziali OAuth (NON committare mai questi file)
+client_secret*.json
+credentials*.json
+*service-account*.json
