@@ -4,38 +4,30 @@ import { Save, RotateCcw, Plus, X, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import type { SchemaModello, Medico } from '../../types'
 
-// ── Colori pastello (uno per turnista, deterministici per indice) ─
+// ── Colori pastello (uno per turnista) ───────────────────────────
 const PASTEL: { bg: string; fg: string }[] = [
-  { bg: '#fecdd3', fg: '#9f1239' }, // rosa
-  { bg: '#fed7aa', fg: '#9a3412' }, // arancio
-  { bg: '#fef9c3', fg: '#713f12' }, // giallo
-  { bg: '#bbf7d0', fg: '#14532d' }, // verde
-  { bg: '#a5f3fc', fg: '#164e63' }, // ciano
-  { bg: '#bfdbfe', fg: '#1e3a8a' }, // blu
-  { bg: '#ddd6fe', fg: '#4c1d95' }, // viola
-  { bg: '#f5d0fe', fg: '#701a75' }, // fucsia
-  { bg: '#fbcfe8', fg: '#831843' }, // pink
-  { bg: '#d1fae5', fg: '#064e3b' }, // smeraldo
-  { bg: '#ccfbf1', fg: '#134e4a' }, // teal
-  { bg: '#e0e7ff', fg: '#3730a3' }, // indaco
+  { bg: '#fecdd3', fg: '#9f1239' },
+  { bg: '#fed7aa', fg: '#9a3412' },
+  { bg: '#fef9c3', fg: '#713f12' },
+  { bg: '#bbf7d0', fg: '#14532d' },
+  { bg: '#a5f3fc', fg: '#164e63' },
+  { bg: '#bfdbfe', fg: '#1e3a8a' },
+  { bg: '#ddd6fe', fg: '#4c1d95' },
+  { bg: '#f5d0fe', fg: '#701a75' },
+  { bg: '#fbcfe8', fg: '#831843' },
+  { bg: '#d1fae5', fg: '#064e3b' },
+  { bg: '#ccfbf1', fg: '#134e4a' },
+  { bg: '#e0e7ff', fg: '#3730a3' },
 ]
 
-// ── Mappatura nomi colonna → campo DB ────────────────────────────
-const CAMPO: Record<string, 'numero_medico_mattina' | 'numero_medico_pomeriggio' | 'numero_medico_rm' | 'numero_medico_rp'> = {
-  M:  'numero_medico_mattina',
-  P:  'numero_medico_pomeriggio',
-  RM: 'numero_medico_rm',
-  RP: 'numero_medico_rp',
-}
-const COLONNE_PRESET = ['M', 'P', 'RM', 'RP']
-
 const GIORNI_IT  = ['','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato','Domenica']
+const COLONNE_PRESET = ['M', 'P', 'RM', 'RP']
+const REP_BG = '#fee2e2'
 
-// ── Tipi interni ─────────────────────────────────────────────────
 interface SlotRow {
-  id:   string | null  // null = non ancora salvato su DB
+  id:   string | null
   slot: number
-  vals: Record<string, number | null>  // colonna → numero medico
+  vals: Record<string, number | null>
   REP:  boolean
 }
 
@@ -45,13 +37,18 @@ function emptySlot(slot: number, colonne: string[]): SlotRow {
   return { id: null, slot, vals, REP: false }
 }
 
-// ── Componente Cella (drop target) ───────────────────────────────
+function isSlotVuoto(r: SlotRow) {
+  return Object.values(r.vals).every(v => v === null) && !r.REP
+}
+
+// ── Cella (drop target) ──────────────────────────────────────────
 function Cella({
-  valore, colore, testo, onDrop, onClear,
+  valore, bg, fg, onDrop, onClear, isRep,
 }: {
   valore:  number | null
-  colore:  { bg: string; fg: string } | null
-  testo:   string
+  bg:      string
+  fg:      string
+  isRep:   boolean
   onDrop:  () => void
   onClear: () => void
 }) {
@@ -59,99 +56,46 @@ function Cella({
 
   return (
     <td
-      className={`border border-gray-200 align-middle text-center
-        transition-all duration-100 cursor-pointer select-none
-        ${over ? 'ring-2 ring-blue-400 ring-inset' : ''}
-      `}
       style={{
-        width: 72, minWidth: 72, height: 52,
-        background: valore && colore ? colore.bg : over ? '#eff6ff' : '#fafafa',
+        width: 46, minWidth: 46, height: 30,
+        background: isRep ? REP_BG : (valore ? bg : over ? '#eff6ff' : '#fff'),
+        outline: over ? '2px solid #3b82f6' : undefined,
+        outlineOffset: over ? '-2px' : undefined,
+        cursor: 'default',
+        textAlign: 'center',
+        verticalAlign: 'middle',
+        borderRight: '1px solid #e5e7eb',
+        borderBottom: '1px solid #e5e7eb',
+        transition: 'background 0.1s',
       }}
       onDragOver={e => { e.preventDefault(); setOver(true) }}
-      onDragLeave={()  => setOver(false)}
+      onDragLeave={() => setOver(false)}
       onDrop={e => { e.preventDefault(); setOver(false); onDrop() }}
       onDoubleClick={onClear}
-      title={valore ? `${testo} — doppio clic per svuotare` : 'Trascina un turnista qui'}
+      title={valore ? `${valore} — doppio clic per svuotare` : 'Trascina un turnista qui'}
     >
-      {valore ? (
-        <div className="flex flex-col items-center leading-tight">
-          <span
-            className="font-bold text-base"
-            style={{ color: colore?.fg }}
-          >
-            {valore}
-          </span>
-          <span className="text-[9px] uppercase tracking-tight opacity-70"
-            style={{ color: colore?.fg }}>
-            {testo.slice(0, 7)}
-          </span>
-        </div>
-      ) : (
-        <span className="text-gray-200 text-xs">—</span>
-      )}
+      {valore
+        ? <span style={{ color: fg, fontWeight: 700, fontSize: 13 }}>{valore}</span>
+        : <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>
+      }
     </td>
   )
 }
 
-// ── Componente chip turnista (draggable) ─────────────────────────
-function ChipTurnista({
-  medico, color, onDragStart,
-}: {
-  medico:      Medico
-  color:       { bg: string; fg: string }
-  onDragStart: () => void
-}) {
-  return (
-    <div className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-gray-50">
-      {/* Info medico */}
-      <div
-        className="flex-1 rounded px-2 py-0.5 text-xs font-medium truncate"
-        style={{ background: color.bg, color: color.fg }}
-      >
-        {medico.nome}
-      </div>
-
-      {/* Chip draggabile */}
-      <div
-        draggable
-        onDragStart={e => {
-          e.dataTransfer.setData('doctorNum', String(medico.numero_ordine))
-          e.dataTransfer.effectAllowed = 'copy'
-          onDragStart()
-        }}
-        className="rounded-md w-10 h-8 flex items-center justify-center
-                   font-bold text-sm cursor-grab active:cursor-grabbing
-                   shadow-sm border border-white/60 shrink-0
-                   hover:scale-110 transition-transform"
-        style={{ background: color.bg, color: color.fg }}
-        title={`Trascina il numero ${medico.numero_ordine} (${medico.nome}) in una cella`}
-      >
-        {medico.numero_ordine}
-      </div>
-    </div>
-  )
-}
-
-// ════════════════════════════════════════════════════════════════
-// Pagina principale
 // ════════════════════════════════════════════════════════════════
 export function GestioneSchemaPage() {
   const qc = useQueryClient()
 
-  // Config schema
   const [schemaNum,  setSchemaNum]  = useState(1)
   const [tipoSchema, setTipoSchema] = useState<'weekly' | 'custom'>('weekly')
   const [colonne,    setColonne]    = useState<string[]>(['M', 'P'])
   const [giorni,     setGiorni]     = useState<number[]>([1,2,3,4,5,6,7])
   const [nuovaCol,   setNuovaCol]   = useState('')
   const [addColOpen, setAddColOpen] = useState(false)
+  const [griglia,    setGriglia]    = useState<Record<number, SlotRow[]>>({})
+  const [saving,     setSaving]     = useState(false)
+  const [msg,        setMsg]        = useState('')
 
-  // Dati griglia
-  const [griglia,  setGriglia]  = useState<Record<number, SlotRow[]>>({})
-  const [saving,   setSaving]   = useState(false)
-  const [messaggio,setMessaggio] = useState('')
-
-  // Drag state (ref per evitare re-render inutili)
   const draggingNum = useRef<number | null>(null)
 
   // ── Queries ──────────────────────────────────────────────────
@@ -175,115 +119,93 @@ export function GestioneSchemaPage() {
     },
   })
 
-  // Mappa numero_ordine → nome
-  const nomeMap = useMemo(() => {
-    const m: Record<number, string> = {}
-    medici.forEach(med => { m[med.numero_ordine] = med.nome })
-    return m
-  }, [medici])
-
-  // Mappa numero_ordine → colore pastello
   const colorMap = useMemo(() => {
     const m: Record<number, { bg: string; fg: string }> = {}
     medici.forEach((med, i) => { m[med.numero_ordine] = PASTEL[i % PASTEL.length] })
     return m
   }, [medici])
 
-  // ── Carica schema dal DB ──────────────────────────────────────
+  // ── Carica dal DB ─────────────────────────────────────────────
   useEffect(() => {
     const data = schemi.filter(s => s.schema_num === schemaNum)
-
     if (data.length === 0) {
-      // Schema vuoto — crea struttura iniziale
-      const g: Record<number, SlotRow[]> = {}
       const days = tipoSchema === 'weekly' ? [1,2,3,4,5,6,7] : []
+      const g: Record<number, SlotRow[]> = {}
       days.forEach(d => { g[d] = [emptySlot(0, colonne)] })
       setGriglia(g)
       if (tipoSchema === 'weekly') setGiorni([1,2,3,4,5,6,7])
       return
     }
-
-    // Rileva le colonne usate nello schema
-    const colUsate = new Set<string>(['M', 'P'])
+    const colUsate = new Set<string>()
     data.forEach(r => {
-      if (r.numero_medico_rm  !== null) colUsate.add('RM')
-      if (r.numero_medico_rp  !== null) colUsate.add('RP')
+      if (r.numero_medico_mattina    !== null) colUsate.add('M')
+      if (r.numero_medico_pomeriggio !== null) colUsate.add('P')
+      if (r.numero_medico_rm         !== null) colUsate.add('RM')
+      if (r.numero_medico_rp         !== null) colUsate.add('RP')
     })
-    const colList = COLONNE_PRESET.filter(c => colUsate.has(c))
-    setColonne(colList)
+    const colList = ['M','P','RM','RP'].filter(c => colUsate.has(c))
+    if (colList.length > 0) setColonne(colList)
 
-    // Popola griglia
     const g: Record<number, SlotRow[]> = {}
     const giorniUsati = new Set<number>()
     data.forEach(r => {
       giorniUsati.add(r.giorno_settimana)
       if (!g[r.giorno_settimana]) g[r.giorno_settimana] = []
-      const vals: Record<string, number | null> = {
-        M:  r.numero_medico_mattina,
-        P:  r.numero_medico_pomeriggio,
-        RM: r.numero_medico_rm,
-        RP: r.numero_medico_rp,
-      }
-      g[r.giorno_settimana].push({ id: r.id, slot: r.slot, vals, REP: r.is_reperibilita })
+      g[r.giorno_settimana].push({
+        id: r.id, slot: r.slot,
+        vals: { M: r.numero_medico_mattina, P: r.numero_medico_pomeriggio,
+                RM: r.numero_medico_rm,     RP: r.numero_medico_rp },
+        REP: r.is_reperibilita,
+      })
     })
-
-    // Ordina per slot
-    Object.values(g).forEach(rows => rows.sort((a, b) => a.slot - b.slot))
-
+    Object.values(g).forEach(rows => rows.sort((a,b) => a.slot - b.slot))
     setGriglia(g)
-    const giorniOrdinati = [...giorniUsati].sort((a, b) => a - b)
-    setGiorni(giorniOrdinati)
-    if (giorniOrdinati.length < 7) setTipoSchema('custom')
+    const sorted = [...giorniUsati].sort((a,b) => a - b)
+    setGiorni(sorted)
+    if (sorted.length < 7) setTipoSchema('custom')
   }, [schemi, schemaNum])
 
-  // ── Gestione giorni ──────────────────────────────────────────
+  // ── Azioni ───────────────────────────────────────────────────
   function aggiungiGiorno(g: number) {
     if (giorni.includes(g)) return
-    const nuovi = [...giorni, g].sort((a, b) => a - b)
+    const nuovi = [...giorni, g].sort((a,b) => a - b)
     setGiorni(nuovi)
-    setGriglia(prev => ({
-      ...prev,
-      [g]: [emptySlot(0, colonne)],
-    }))
+    setGriglia(prev => ({ ...prev, [g]: [emptySlot(0, colonne)] }))
   }
-
   function rimuoviGiorno(g: number) {
     setGiorni(prev => prev.filter(d => d !== g))
-    setGriglia(prev => {
-      const n = { ...prev }; delete n[g]; return n
-    })
+    setGriglia(prev => { const n = { ...prev }; delete n[g]; return n })
   }
 
-  // ── Gestione slot ─────────────────────────────────────────────
   function aggiungiSlot(giorno: number) {
     setGriglia(prev => {
       const rows = prev[giorno] ?? []
-      const nextSlot = rows.length > 0 ? Math.max(...rows.map(r => r.slot)) + 1 : 0
-      return { ...prev, [giorno]: [...rows, emptySlot(nextSlot, colonne)] }
+      const next = rows.length > 0 ? Math.max(...rows.map(r => r.slot)) + 1 : 0
+      return { ...prev, [giorno]: [...rows, emptySlot(next, colonne)] }
     })
   }
 
-  function rimuoviSlot(giorno: number, slotIdx: number) {
+  function rimuoviSlot(giorno: number, idx: number) {
+    const row = (griglia[giorno] ?? [])[idx]
+    if (!row) return
+    if (!isSlotVuoto(row)) {
+      if (!confirm('Lo slot non è vuoto. Eliminarlo?')) return
+    }
     setGriglia(prev => {
       const rows = [...(prev[giorno] ?? [])]
-      rows.splice(slotIdx, 1)
+      rows.splice(idx, 1)
       return { ...prev, [giorno]: rows }
     })
   }
 
-  // ── Gestione colonne ─────────────────────────────────────────
   function aggiungiColonna(nome: string) {
     const n = nome.trim().toUpperCase()
     if (!n || colonne.includes(n)) return
     setColonne(prev => [...prev, n])
-    // Aggiunge la nuova colonna a tutti gli slot esistenti
     setGriglia(prev => {
       const g: Record<number, SlotRow[]> = {}
-      Object.entries(prev).forEach(([giorno, rows]) => {
-        g[+giorno] = rows.map(r => ({
-          ...r,
-          vals: { ...r.vals, [n]: null },
-        }))
+      Object.entries(prev).forEach(([d, rows]) => {
+        g[+d] = rows.map(r => ({ ...r, vals: { ...r.vals, [n]: null } }))
       })
       return g
     })
@@ -291,88 +213,68 @@ export function GestioneSchemaPage() {
   }
 
   function rimuoviColonna(col: string) {
+    if (!confirm(`Eliminare la colonna "${col}"? I dati di quella colonna andranno persi.`)) return
     setColonne(prev => prev.filter(c => c !== col))
     setGriglia(prev => {
       const g: Record<number, SlotRow[]> = {}
-      Object.entries(prev).forEach(([giorno, rows]) => {
-        g[+giorno] = rows.map(r => {
-          const v = { ...r.vals }; delete v[col]
-          return { ...r, vals: v }
-        })
+      Object.entries(prev).forEach(([d, rows]) => {
+        g[+d] = rows.map(r => { const v = { ...r.vals }; delete v[col]; return { ...r, vals: v } })
       })
       return g
     })
   }
 
-  // ── Drop su cella ─────────────────────────────────────────────
-  function handleDrop(giorno: number, slotIdx: number, col: string) {
+  function handleDrop(giorno: number, idx: number, col: string) {
     const num = draggingNum.current
     if (!num) return
     setGriglia(prev => {
       const rows = [...(prev[giorno] ?? [])]
-      rows[slotIdx] = {
-        ...rows[slotIdx],
-        vals: { ...rows[slotIdx].vals, [col]: num },
-      }
+      rows[idx] = { ...rows[idx], vals: { ...rows[idx].vals, [col]: num } }
       return { ...prev, [giorno]: rows }
     })
   }
 
-  function clearCella(giorno: number, slotIdx: number, col: string) {
+  function clearCella(giorno: number, idx: number, col: string) {
     setGriglia(prev => {
       const rows = [...(prev[giorno] ?? [])]
-      rows[slotIdx] = {
-        ...rows[slotIdx],
-        vals: { ...rows[slotIdx].vals, [col]: null },
-      }
+      rows[idx] = { ...rows[idx], vals: { ...rows[idx].vals, [col]: null } }
       return { ...prev, [giorno]: rows }
     })
   }
 
-  function toggleRep(giorno: number, slotIdx: number) {
+  function toggleRep(giorno: number, idx: number) {
     setGriglia(prev => {
       const rows = [...(prev[giorno] ?? [])]
-      rows[slotIdx] = { ...rows[slotIdx], REP: !rows[slotIdx].REP }
+      rows[idx] = { ...rows[idx], REP: !rows[idx].REP }
       return { ...prev, [giorno]: rows }
     })
   }
 
-  // ── Azzera schema ─────────────────────────────────────────────
   function azzera() {
-    if (!confirm('Azzerare tutte le celle dello schema corrente?')) return
+    if (!confirm('Azzerare tutte le celle dello schema?')) return
     setGriglia(prev => {
       const g: Record<number, SlotRow[]> = {}
-      Object.entries(prev).forEach(([giorno, rows]) => {
-        g[+giorno] = rows.map(r => ({
-          ...r,
+      Object.entries(prev).forEach(([d, rows]) => {
+        g[+d] = rows.map(r => ({
+          ...r, REP: false,
           vals: Object.fromEntries(Object.keys(r.vals).map(c => [c, null])),
-          REP: false,
         }))
       })
       return g
     })
   }
 
-  // ── Salva schema su DB ────────────────────────────────────────
   async function salva() {
-    setSaving(true); setMessaggio('')
+    setSaving(true); setMsg('')
     try {
-      // 1. Cancella tutti gli slot esistenti per questo schema
-      const { error: delErr } = await supabase
-        .from('schemi_modello')
-        .delete()
-        .eq('schema_num', schemaNum)
+      const { error: delErr } = await supabase.from('schemi_modello')
+        .delete().eq('schema_num', schemaNum)
       if (delErr) throw delErr
-
-      // 2. Inserisce tutti gli slot correnti
       const rows: Omit<SchemaModello, 'id'>[] = []
-      for (const [giornoStr, slots] of Object.entries(griglia)) {
-        const giorno = +giornoStr
+      for (const [dStr, slots] of Object.entries(griglia)) {
         slots.forEach((r, idx) => {
           rows.push({
-            schema_num:               schemaNum,
-            giorno_settimana:         giorno,
-            slot:                     idx,
+            schema_num: schemaNum, giorno_settimana: +dStr, slot: idx,
             numero_medico_mattina:    r.vals['M']  ?? null,
             numero_medico_pomeriggio: r.vals['P']  ?? null,
             numero_medico_rm:         r.vals['RM'] ?? null,
@@ -381,316 +283,288 @@ export function GestioneSchemaPage() {
           })
         })
       }
-
       if (rows.length > 0) {
         const { error: insErr } = await supabase.from('schemi_modello').insert(rows)
         if (insErr) throw insErr
       }
-
-      setMessaggio(`✓ Schema ${schemaNum} salvato (${rows.length} slot)`)
+      setMsg(`✓ Schema ${schemaNum} salvato (${rows.length} slot)`)
       qc.invalidateQueries({ queryKey: ['schemi_modello'] })
     } catch (e: unknown) {
-      setMessaggio('Errore: ' + (e as Error).message)
+      setMsg('Errore: ' + (e as Error).message)
     } finally {
       setSaving(false)
-      setTimeout(() => setMessaggio(''), 4000)
+      setTimeout(() => setMsg(''), 4000)
     }
   }
 
   // ─────────────────────────────────────────────────────────────
   return (
-    <div className="flex gap-4 h-[calc(100vh-112px)] overflow-hidden">
+    <div className="flex flex-col h-[calc(100vh-112px)] overflow-hidden gap-2">
 
-      {/* ════ SEZIONE GRIGLIA (sinistra) ═══════════════════════ */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-
-        {/* ── Config bar ── */}
-        <div className="flex flex-wrap items-center gap-3 pb-3 mb-3 border-b border-gray-200 shrink-0">
-          {/* Schema selector */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-gray-500 font-medium">Schema</span>
-            {[1,2,3].map(n => (
-              <button
-                key={n}
-                onClick={() => { setSchemaNum(n); setGriglia({}) }}
-                className={`w-7 h-7 rounded text-xs font-bold border transition-colors
-                  ${schemaNum === n
-                    ? 'bg-blue-700 text-white border-blue-700'
-                    : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-
-          {/* Tipo schema */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-gray-500 font-medium">Tipo</span>
-            {(['weekly','custom'] as const).map(t => (
-              <button
-                key={t}
-                onClick={() => {
-                  setTipoSchema(t)
-                  if (t === 'weekly') {
-                    setGiorni([1,2,3,4,5,6,7])
-                    setGriglia(g => {
-                      const n: typeof g = {}
-                      for (let d = 1; d <= 7; d++) n[d] = g[d] ?? [emptySlot(0, colonne)]
-                      return n
-                    })
-                  }
-                }}
-                className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors
-                  ${tipoSchema === t
-                    ? 'bg-blue-700 text-white border-blue-700'
-                    : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
-              >
-                {t === 'weekly' ? '7 giorni fissi' : 'Personalizzato'}
-              </button>
-            ))}
-          </div>
-
-          {/* Colonne */}
-          <div className="flex items-center gap-1 flex-wrap">
-            <span className="text-xs text-gray-500 font-medium">Colonne turno:</span>
-            {colonne.map(col => (
-              <span key={col}
-                className="inline-flex items-center gap-0.5 bg-gray-100 text-gray-700
-                           text-xs px-2 py-0.5 rounded-full border border-gray-200">
-                {col}
-                <button onClick={() => rimuoviColonna(col)} className="text-gray-400 hover:text-red-500 ml-0.5">
-                  <X size={10} />
-                </button>
-              </span>
-            ))}
-            {addColOpen ? (
-              <div className="flex items-center gap-1">
-                <input
-                  value={nuovaCol}
-                  onChange={e => setNuovaCol(e.target.value.toUpperCase())}
-                  onKeyDown={e => e.key === 'Enter' && aggiungiColonna(nuovaCol)}
-                  placeholder="es. RM"
-                  autoFocus
-                  className="border border-blue-400 rounded px-1.5 py-0.5 text-xs w-20 focus:outline-none"
-                />
-                <div className="flex gap-1">
-                  {COLONNE_PRESET.filter(c => !colonne.includes(c)).map(c => (
-                    <button key={c} onClick={() => aggiungiColonna(c)}
-                      className="bg-blue-100 text-blue-700 text-xs px-1.5 py-0.5 rounded hover:bg-blue-200">
-                      {c}
-                    </button>
-                  ))}
-                </div>
-                <button onClick={() => aggiungiColonna(nuovaCol)}
-                  className="text-blue-600 hover:text-blue-800"><Plus size={13} /></button>
-                <button onClick={() => setAddColOpen(false)}
-                  className="text-gray-400 hover:text-gray-600"><X size={13} /></button>
-              </div>
-            ) : (
-              <button onClick={() => setAddColOpen(true)}
-                className="text-blue-500 hover:text-blue-700 flex items-center gap-0.5 text-xs">
-                <Plus size={12} /> aggiungi
-              </button>
-            )}
-          </div>
-
-          {/* Aggiungi giorno (solo custom) */}
-          {tipoSchema === 'custom' && (
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-gray-500">+Giorno:</span>
-              {[1,2,3,4,5,6,7].filter(g => !giorni.includes(g)).map(g => (
-                <button key={g} onClick={() => aggiungiGiorno(g)}
-                  className="text-xs bg-gray-100 hover:bg-blue-100 text-gray-600
-                             hover:text-blue-700 px-1.5 py-0.5 rounded border border-gray-200">
-                  {GIORNI_IT[g].slice(0,3)}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Azioni */}
-          <div className="ml-auto flex items-center gap-2">
-            <button onClick={azzera} className="btn-secondary py-1 text-xs gap-1">
-              <RotateCcw size={13} /> Azzera
+      {/* ═══ CONFIG BAR ════════════════════════════════════════ */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 shrink-0
+                      bg-white border border-gray-200 rounded-lg px-3 py-2">
+        {/* Schema */}
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-gray-500 font-medium">Schema:</span>
+          {[1,2,3].map(n => (
+            <button key={n} onClick={() => { setSchemaNum(n); setGriglia({}) }}
+              className={`w-6 h-6 rounded text-xs font-bold border
+                ${schemaNum === n ? 'bg-blue-700 text-white border-blue-700' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+              {n}
             </button>
-            <button onClick={salva} disabled={saving} className="btn-primary py-1 text-xs gap-1">
-              <Save size={13} /> {saving ? 'Salvo...' : 'Salva schema'}
-            </button>
-          </div>
+          ))}
         </div>
 
-        {/* Feedback */}
-        {messaggio && (
-          <div className={`text-xs px-3 py-1.5 rounded-lg mb-2 shrink-0 ${
-            messaggio.startsWith('✓')
-              ? 'bg-green-50 text-green-700 border border-green-200'
-              : 'bg-red-50 text-red-700 border border-red-200'
-          }`}>{messaggio}</div>
+        {/* Tipo */}
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-gray-500 font-medium">Tipo:</span>
+          {(['weekly','custom'] as const).map(t => (
+            <button key={t} onClick={() => {
+              setTipoSchema(t)
+              if (t === 'weekly') {
+                setGiorni([1,2,3,4,5,6,7])
+                setGriglia(g => {
+                  const n: typeof g = {}
+                  for (let d = 1; d <= 7; d++) n[d] = g[d] ?? [emptySlot(0, colonne)]
+                  return n
+                })
+              }
+            }}
+              className={`px-2 py-0.5 rounded text-xs font-medium border
+                ${tipoSchema === t ? 'bg-blue-700 text-white border-blue-700' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+              {t === 'weekly' ? '7 giorni' : 'Personalizzato'}
+            </button>
+          ))}
+        </div>
+
+        {/* Colonne */}
+        <div className="flex items-center gap-1 flex-wrap">
+          <span className="text-xs text-gray-500 font-medium">Colonne:</span>
+          {colonne.map(col => (
+            <span key={col} className="inline-flex items-center gap-0.5 bg-gray-100 text-gray-700
+                           text-xs px-1.5 py-0.5 rounded-full border border-gray-200">
+              {col}
+              <button onClick={() => rimuoviColonna(col)} className="text-gray-400 hover:text-red-500 ml-0.5 leading-none">
+                <X size={9} />
+              </button>
+            </span>
+          ))}
+          {addColOpen ? (
+            <div className="flex items-center gap-1">
+              <input value={nuovaCol} onChange={e => setNuovaCol(e.target.value.toUpperCase())}
+                onKeyDown={e => e.key === 'Enter' && aggiungiColonna(nuovaCol)}
+                placeholder="es. RM" autoFocus
+                className="border border-blue-400 rounded px-1 py-0.5 text-xs w-16 focus:outline-none" />
+              {COLONNE_PRESET.filter(c => !colonne.includes(c)).map(c => (
+                <button key={c} onClick={() => aggiungiColonna(c)}
+                  className="bg-blue-100 text-blue-700 text-xs px-1 py-0.5 rounded hover:bg-blue-200">{c}</button>
+              ))}
+              <button onClick={() => setAddColOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={12} /></button>
+            </div>
+          ) : (
+            <button onClick={() => setAddColOpen(true)}
+              className="text-blue-500 hover:text-blue-700 flex items-center gap-0.5 text-xs">
+              <Plus size={11} /> aggiungi
+            </button>
+          )}
+        </div>
+
+        {/* Aggiungi giorno (solo custom) */}
+        {tipoSchema === 'custom' && (
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-gray-500">+Giorno:</span>
+            {[1,2,3,4,5,6,7].filter(g => !giorni.includes(g)).map(g => (
+              <button key={g} onClick={() => aggiungiGiorno(g)}
+                className="text-xs bg-gray-100 hover:bg-blue-100 text-gray-600
+                           hover:text-blue-700 px-1.5 py-0.5 rounded border border-gray-200">
+                {GIORNI_IT[g].slice(0,3)}
+              </button>
+            ))}
+          </div>
         )}
 
-        {/* ── Griglia ── */}
-        <div className="overflow-auto flex-1">
-          <table className="border-collapse" style={{ minWidth: 320 }}>
-            {/* Header colonne */}
-            <thead>
-              <tr>
-                <th className="bg-gray-800 text-white text-xs px-3 py-2 text-left border border-gray-600 w-28">
-                  Giorno
-                </th>
-                {colonne.map(col => (
-                  <th key={col}
-                    className="bg-gray-800 text-white text-xs px-2 py-2 text-center
-                               border border-gray-600"
-                    style={{ width: 72 }}>
-                    {col}
-                  </th>
-                ))}
-                <th className="bg-gray-800 text-white text-xs px-2 py-2 text-center
-                               border border-gray-600 w-10">
-                  REP
-                </th>
-                <th className="bg-gray-800 border border-gray-600 w-7" />
-              </tr>
-            </thead>
+        {/* Bottoni azione */}
+        <div className="ml-auto flex items-center gap-1.5">
+          {msg && (
+            <span className={`text-xs px-2 py-0.5 rounded ${
+              msg.startsWith('✓') ? 'text-green-700 bg-green-50' : 'text-red-700 bg-red-50'
+            }`}>{msg}</span>
+          )}
+          <button onClick={azzera} className="btn-secondary py-1 px-2 text-xs gap-1">
+            <RotateCcw size={12} /> Azzera
+          </button>
+          <button onClick={salva} disabled={saving} className="btn-primary py-1 px-2 text-xs gap-1">
+            <Save size={12} /> {saving ? 'Salvo...' : 'Salva schema'}
+          </button>
+        </div>
+      </div>
 
-            <tbody>
-              {giorni.map(giorno => {
-                const slots = griglia[giorno] ?? []
-                const bgGiorno = 'bg-blue-700'
+      {/* ═══ STRIP TURNISTI (vicino alla tabella) ══════════════ */}
+      <div className="flex flex-wrap items-center gap-1.5 shrink-0
+                      bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5">
+        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mr-1">
+          Turnisti →
+        </span>
+        {medici.map((med, i) => {
+          const color = PASTEL[i % PASTEL.length]
+          return (
+            <div
+              key={med.id}
+              draggable
+              onDragStart={e => {
+                e.dataTransfer.setData('doctorNum', String(med.numero_ordine))
+                draggingNum.current = med.numero_ordine
+              }}
+              className="flex items-center gap-1 rounded-md px-2 py-0.5
+                         cursor-grab active:cursor-grabbing select-none
+                         shadow-sm border border-white/60 hover:scale-105 transition-transform"
+              style={{ background: color.bg, color: color.fg }}
+              title={`Trascina ${med.nome} (${med.numero_ordine}) in una cella`}
+            >
+              <span className="text-[10px] font-medium">{med.nome.slice(0, 9)}</span>
+              <span className="font-black text-xs ml-0.5">[{med.numero_ordine}]</span>
+            </div>
+          )
+        })}
+        <span className="ml-auto text-[10px] text-gray-300 italic">
+          doppio clic su cella per svuotare
+        </span>
+      </div>
 
-                return slots.length === 0 ? (
-                  <tr key={`g${giorno}-empty`}>
-                    <td className={`${bgGiorno} text-white text-xs font-bold px-2 py-2 border border-blue-600`}>
-                      <div>{GIORNI_IT[giorno]}</div>
-                      {tipoSchema === 'custom' && (
-                        <button onClick={() => rimuoviGiorno(giorno)}
-                          className="text-blue-200 hover:text-white text-[10px] mt-0.5">
-                          ✕ rimuovi
+      {/* ═══ GRIGLIA SCHEMA ════════════════════════════════════ */}
+      <div className="flex-1 overflow-auto">
+        <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
+          {/* Header colonne */}
+          <thead>
+            <tr>
+              <th style={{
+                background: '#1e3a8a', color: '#fff', fontSize: 11, fontWeight: 700,
+                padding: '4px 8px', textAlign: 'left', width: 86,
+                border: '1px solid #1e40af', position: 'sticky', top: 0, zIndex: 10,
+              }}>
+                Giorno
+              </th>
+              {colonne.map(col => (
+                <th key={col} style={{
+                  background: '#1e3a8a', color: '#fff', fontSize: 11, fontWeight: 700,
+                  padding: '4px 2px', textAlign: 'center', width: 46,
+                  border: '1px solid #1e40af', position: 'sticky', top: 0, zIndex: 10,
+                }}>
+                  {col}
+                </th>
+              ))}
+              <th style={{
+                background: '#1e3a8a', color: '#fca5a5', fontSize: 10, fontWeight: 700,
+                padding: '4px 2px', textAlign: 'center', width: 34,
+                border: '1px solid #1e40af', position: 'sticky', top: 0, zIndex: 10,
+              }}>
+                REP
+              </th>
+              <th style={{
+                background: '#1e3a8a', width: 22,
+                border: '1px solid #1e40af', position: 'sticky', top: 0, zIndex: 10,
+              }} />
+            </tr>
+          </thead>
+
+          <tbody>
+            {giorni.map(giorno => {
+              const slots = griglia[giorno] ?? []
+              if (slots.length === 0) return (
+                <tr key={`g${giorno}-e`}>
+                  <td style={{
+                    background: '#1d4ed8', color: '#fff', fontWeight: 700, fontSize: 11,
+                    padding: '3px 6px', border: '1px solid #1e40af', textAlign: 'center',
+                  }}>
+                    {GIORNI_IT[giorno].slice(0,3).toUpperCase()}
+                  </td>
+                  <td colSpan={colonne.length + 2} style={{
+                    border: '1px solid #e5e7eb', padding: '3px 8px', color: '#9ca3af',
+                  }}>
+                    <button onClick={() => aggiungiSlot(giorno)}
+                      className="flex items-center gap-1 text-blue-400 hover:text-blue-600 text-xs">
+                      <Plus size={11} /> Aggiungi slot
+                    </button>
+                  </td>
+                </tr>
+              )
+
+              return slots.map((row, idx) => {
+                const isRep = row.REP
+                // Alterna bianco / grigio chiaro (ma REP prevale sempre)
+                const rowBg = isRep ? REP_BG : (idx % 2 === 0 ? '#fff' : '#f9fafb')
+
+                return (
+                  <tr key={`${giorno}-${idx}`} style={{ background: rowBg }}>
+                    {/* Cella giorno (rowspan) */}
+                    {idx === 0 && (
+                      <td rowSpan={slots.length} style={{
+                        background: '#1d4ed8', color: '#fff', fontWeight: 700, fontSize: 11,
+                        padding: '3px 5px', border: '1px solid #1e40af',
+                        textAlign: 'center', verticalAlign: 'middle',
+                      }}>
+                        <div>{GIORNI_IT[giorno].slice(0,3).toUpperCase()}</div>
+                        <button onClick={() => aggiungiSlot(giorno)}
+                          style={{ fontSize: 9, color: '#93c5fd', marginTop: 3,
+                                   display: 'flex', alignItems: 'center', gap: 2, margin: '3px auto 0' }}>
+                          <Plus size={9} /> slot
                         </button>
-                      )}
+                        {tipoSchema === 'custom' && (
+                          <button onClick={() => rimuoviGiorno(giorno)}
+                            style={{ fontSize: 9, color: '#93c5fd', marginTop: 2 }}>
+                            ✕
+                          </button>
+                        )}
+                      </td>
+                    )}
+
+                    {/* Celle turno */}
+                    {colonne.map(col => (
+                      <Cella
+                        key={col}
+                        valore={row.vals[col] ?? null}
+                        bg={row.vals[col] ? (colorMap[row.vals[col]!]?.bg ?? '#f3f4f6') : '#fff'}
+                        fg={row.vals[col] ? (colorMap[row.vals[col]!]?.fg ?? '#374151') : '#374151'}
+                        isRep={isRep}
+                        onDrop={() => handleDrop(giorno, idx, col)}
+                        onClear={() => clearCella(giorno, idx, col)}
+                      />
+                    ))}
+
+                    {/* REP checkbox */}
+                    <td style={{
+                      width: 34, textAlign: 'center', verticalAlign: 'middle',
+                      borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb',
+                      background: isRep ? REP_BG : rowBg,
+                    }}>
+                      <input type="checkbox" checked={isRep}
+                        onChange={() => toggleRep(giorno, idx)}
+                        style={{ accentColor: '#ef4444', width: 12, height: 12, cursor: 'pointer' }}
+                        title="Reperibilità" />
                     </td>
-                    <td colSpan={colonne.length + 2}
-                      className="border border-gray-200 text-center text-gray-300 text-xs py-2">
-                      <button onClick={() => aggiungiSlot(giorno)}
-                        className="text-blue-400 hover:text-blue-600 flex items-center gap-1 mx-auto text-xs">
-                        <Plus size={12} /> Aggiungi slot
+
+                    {/* Elimina slot */}
+                    <td style={{
+                      width: 22, textAlign: 'center', verticalAlign: 'middle',
+                      borderBottom: '1px solid #e5e7eb',
+                      background: isRep ? REP_BG : rowBg,
+                    }}>
+                      <button onClick={() => rimuoviSlot(giorno, idx)}
+                        style={{ color: '#d1d5db', padding: 2 }}
+                        onMouseEnter={e => (e.currentTarget.style.color = '#f87171')}
+                        onMouseLeave={e => (e.currentTarget.style.color = '#d1d5db')}
+                        title="Elimina slot">
+                        <Trash2 size={10} />
                       </button>
                     </td>
                   </tr>
-                ) : (
-                  slots.map((row, slotIdx) => {
-                    const isRep = row.REP
-                    const rowBg = isRep ? '#fff1f2' : slotIdx % 2 === 0 ? '#ffffff' : '#f9fafb'
-
-                    return (
-                      <tr key={`${giorno}-${slotIdx}`} style={{ background: rowBg }}>
-                        {/* Cella giorno con rowspan */}
-                        {slotIdx === 0 && (
-                          <td
-                            rowSpan={slots.length}
-                            className={`${bgGiorno} text-white text-xs font-bold px-2 py-2
-                                       border border-blue-600 text-center align-middle`}
-                            style={{ verticalAlign: 'middle' }}
-                          >
-                            <div>{GIORNI_IT[giorno]}</div>
-                            <button
-                              onClick={() => aggiungiSlot(giorno)}
-                              className="mt-2 flex items-center gap-0.5 text-blue-200
-                                         hover:text-white text-[10px] mx-auto"
-                            >
-                              <Plus size={10} /> slot
-                            </button>
-                            {tipoSchema === 'custom' && (
-                              <button onClick={() => rimuoviGiorno(giorno)}
-                                className="mt-1 text-blue-300 hover:text-white text-[10px]">
-                                ✕
-                              </button>
-                            )}
-                          </td>
-                        )}
-
-                        {/* Celle per ogni colonna */}
-                        {colonne.map(col => (
-                          <Cella
-                            key={col}
-                            valore={row.vals[col] ?? null}
-                            colore={row.vals[col] ? (colorMap[row.vals[col]!] ?? null) : null}
-                            testo={row.vals[col] ? (nomeMap[row.vals[col]!] ?? String(row.vals[col])) : ''}
-                            onDrop={() => handleDrop(giorno, slotIdx, col)}
-                            onClear={() => clearCella(giorno, slotIdx, col)}
-                          />
-                        ))}
-
-                        {/* REP checkbox */}
-                        <td className={`border border-gray-200 text-center
-                          ${isRep ? 'bg-red-50' : ''}`}
-                          style={{ width: 40 }}>
-                          <input
-                            type="checkbox"
-                            checked={isRep}
-                            onChange={() => toggleRep(giorno, slotIdx)}
-                            className="accent-red-500 w-3.5 h-3.5"
-                            title="Slot reperibilità"
-                          />
-                        </td>
-
-                        {/* Elimina slot */}
-                        <td className="border border-gray-200 text-center" style={{ width: 28 }}>
-                          <button
-                            onClick={() => rimuoviSlot(giorno, slotIdx)}
-                            className="text-gray-200 hover:text-red-400 p-0.5"
-                          >
-                            <Trash2 size={11} />
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })
                 )
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Istruzioni */}
-        <div className="shrink-0 pt-2 text-xs text-gray-400 border-t border-gray-100 mt-2">
-          💡 <strong>Trascina</strong> un turnista sulla cella · <strong>Doppio clic</strong> sulla cella per svuotarla ·
-          Stesso numero in M e P = turno lungo (L)
-        </div>
+              })
+            })}
+          </tbody>
+        </table>
       </div>
-
-      {/* ════ PANNELLO TURNISTI (destra) ════════════════════════ */}
-      <div className="w-56 shrink-0 flex flex-col overflow-hidden">
-        <div className="card flex-1 overflow-y-auto">
-          <div className="px-3 pt-3 pb-2 border-b border-gray-100">
-            <h3 className="text-xs font-bold text-gray-600 uppercase tracking-wider">
-              Turnisti
-            </h3>
-            <p className="text-[10px] text-gray-400 mt-0.5">
-              Trascina il quadratino colorato nelle celle
-            </p>
-          </div>
-
-          <div className="p-1">
-            {medici.map(med => (
-              <ChipTurnista
-                key={med.id}
-                medico={med}
-                color={colorMap[med.numero_ordine] ?? PASTEL[0]}
-                onDragStart={() => { draggingNum.current = med.numero_ordine }}
-              />
-            ))}
-          </div>
-
-          {/* Legenda */}
-          <div className="px-3 py-2 border-t border-gray-100 text-[10px] text-gray-400 space-y-0.5">
-            <p>• Numero = posizione nella rotazione</p>
-            <p>• REP = reperibilità (flag sulla riga)</p>
-            <p>• Dopo salvataggio → rigenera il calendario</p>
-          </div>
-        </div>
-      </div>
-
     </div>
   )
 }
