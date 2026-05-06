@@ -1,28 +1,34 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Shield, User, Lock, UserPlus } from 'lucide-react'
+import { Plus, Trash2, Shield, User, Lock, UserPlus, Pencil, Save, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import type { UtenteAutorizzato, Medico } from '../../types'
 
-// Email dell'admin permanente (non eliminabile)
 const ADMIN_PERMANENTE = 'marabelli.s@gmail.com'
 
 export function GestioneUtentiPage() {
   const qc = useQueryClient()
   const { confirm, confirmState } = useConfirm()
 
-  // Stato per aggiunta manuale
-  const [email,   setEmail]   = useState('')
-  const [nome,    setNome]    = useState('')
-  const [ruolo,   setRuolo]   = useState<'user' | 'admin'>('user')
+  // ── Editing inline utenti attivi ─────────────────────────────
+  const [editId,    setEditId]    = useState<string | null>(null)
+  const [editEmail, setEditEmail] = useState('')
+  const [editNome,  setEditNome]  = useState('')
+  const [editRuolo, setEditRuolo] = useState<'user' | 'admin'>('user')
+
+  // ── Aggiunta veloce da medico ────────────────────────────────
+  const [emailMedico, setEmailMedico] = useState<Record<string, string>>({})
+  const [ruoloMedico, setRuoloMedico] = useState<Record<string, 'user' | 'admin'>>({})
+
+  // ── Aggiunta manuale ─────────────────────────────────────────
+  const [email,  setEmail]  = useState('')
+  const [nome,   setNome]   = useState('')
+  const [ruolo,  setRuolo]  = useState<'user' | 'admin'>('user')
+
   const [errore,  setErrore]  = useState('')
   const [saving,  setSaving]  = useState(false)
-
-  // Stato per aggiunta veloce da medico
-  const [emailMedico, setEmailMedico] = useState<Record<string, string>>({})
-  const [ruoloMedico, setRuoloMedico] = useState<Record<string, 'user' | 'admin'>>({})  // default 'user'
 
   // ── Queries ──────────────────────────────────────────────────
   const { data: utenti = [], isLoading: loadingUtenti } = useQuery<UtenteAutorizzato[]>({
@@ -33,6 +39,7 @@ export function GestioneUtentiPage() {
       if (error) throw error
       return data
     },
+    staleTime: 0,  // sempre freschi per questa pagina
   })
 
   const { data: medici = [] } = useQuery<Medico[]>({
@@ -45,8 +52,7 @@ export function GestioneUtentiPage() {
     },
   })
 
-  // Medici che NON hanno ancora un account (confronto per nome, case-insensitive)
-  // Esclude automaticamente MARABELLI se è già admin
+  // Medici non ancora in utenti_autorizzati (confronto per nome)
   const mediciSenzaAccount = useMemo(() => {
     const nomiConAccount = new Set(
       utenti.map(u => (u.nome ?? '').toUpperCase().trim()).filter(Boolean)
@@ -54,8 +60,69 @@ export function GestioneUtentiPage() {
     return medici.filter(m => !nomiConAccount.has(m.nome.toUpperCase().trim()))
   }, [medici, utenti])
 
-  // ── Azioni ───────────────────────────────────────────────────
+  // ── Helper: forza refetch utenti ─────────────────────────────
+  async function refetchUtenti() {
+    await qc.refetchQueries({ queryKey: ['utenti_autorizzati'] })
+  }
 
+  // ── Editing inline (account attivi) ──────────────────────────
+  function startEdit(u: UtenteAutorizzato) {
+    setEditId(u.id)
+    setEditEmail(u.email)
+    setEditNome(u.nome ?? '')
+    setEditRuolo(u.ruolo)
+    setErrore('')
+  }
+
+  async function saveEdit() {
+    if (!editEmail.trim()) { setErrore('Email obbligatoria.'); return }
+    setSaving(true); setErrore('')
+    const { error } = await supabase
+      .from('utenti_autorizzati')
+      .update({
+        email: editEmail.trim().toLowerCase(),
+        nome:  editNome.trim().toUpperCase() || null,
+        ruolo: editRuolo,
+      })
+      .eq('id', editId!)
+    setSaving(false)
+    if (error) { setErrore(error.message); return }
+    setEditId(null)
+    await refetchUtenti()
+  }
+
+  async function elimina(u: UtenteAutorizzato) {
+    if (u.email === ADMIN_PERMANENTE) return
+    const ok = await confirm({
+      title:        `Rimuovi accesso a ${u.nome ?? u.email}`,
+      message:      `L'utente non potrà più accedere all'applicazione. Il suo nominativo nell'elenco medici rimarrà invariato.`,
+      confirmLabel: 'Rimuovi accesso',
+      danger:       true,
+    })
+    if (!ok) return
+    await supabase.from('utenti_autorizzati').delete().eq('id', u.id)
+    await refetchUtenti()
+  }
+
+  // ── Aggiunta da medico ───────────────────────────────────────
+  async function aggiungiDaMedico(m: Medico) {
+    const mail = (emailMedico[m.id] ?? '').trim().toLowerCase()
+    if (!mail) return
+    const ruoloDaUsare = ruoloMedico[m.id] ?? 'user'
+    setSaving(true); setErrore('')
+    const { error } = await supabase.from('utenti_autorizzati').insert({
+      email: mail, nome: m.nome, ruolo: ruoloDaUsare, attivo: true,
+    })
+    setSaving(false)
+    if (error) { setErrore(error.message); return }
+    // Pulisci i campi di questo medico
+    setEmailMedico(prev => { const n = { ...prev }; delete n[m.id]; return n })
+    setRuoloMedico(prev => { const n = { ...prev }; delete n[m.id]; return n })
+    // Forza refetch immediato
+    await refetchUtenti()
+  }
+
+  // ── Aggiunta manuale ─────────────────────────────────────────
   async function aggiungiManuale() {
     if (!email.trim()) { setErrore("Inserisci un'email."); return }
     setSaving(true); setErrore('')
@@ -67,41 +134,7 @@ export function GestioneUtentiPage() {
     setSaving(false)
     if (error) { setErrore(error.message); return }
     setEmail(''); setNome('')
-    qc.invalidateQueries({ queryKey: ['utenti_autorizzati'] })
-  }
-
-  async function aggiungiDaMedico(m: Medico) {
-    const mail = (emailMedico[m.id] ?? '').trim().toLowerCase()
-    if (!mail) return
-    const ruolo = ruoloMedico[m.id] ?? 'user'
-    setSaving(true)
-    const { error } = await supabase.from('utenti_autorizzati').insert({
-      email: mail, nome: m.nome, ruolo, attivo: true,
-    })
-    setSaving(false)
-    if (error) { setErrore(error.message); return }
-    setEmailMedico(prev => { const n = { ...prev }; delete n[m.id]; return n })
-    qc.invalidateQueries({ queryKey: ['utenti_autorizzati'] })
-  }
-
-  async function cambiaRuolo(u: UtenteAutorizzato) {
-    if (u.email === ADMIN_PERMANENTE) return
-    const nuovoRuolo = u.ruolo === 'admin' ? 'user' : 'admin'
-    await supabase.from('utenti_autorizzati').update({ ruolo: nuovoRuolo }).eq('id', u.id)
-    qc.invalidateQueries({ queryKey: ['utenti_autorizzati'] })
-  }
-
-  async function elimina(u: UtenteAutorizzato) {
-    if (u.email === ADMIN_PERMANENTE) return   // protezione extra
-    const ok = await confirm({
-      title:        `Rimuovi ${u.nome ?? u.email}`,
-      message:      `L'utente non potrà più accedere all'applicazione. Continuare?`,
-      confirmLabel: 'Rimuovi',
-      danger:       true,
-    })
-    if (!ok) return
-    await supabase.from('utenti_autorizzati').delete().eq('id', u.id)
-    qc.invalidateQueries({ queryKey: ['utenti_autorizzati'] })
+    await refetchUtenti()
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -123,7 +156,7 @@ export function GestioneUtentiPage() {
         </div>
       )}
 
-      {/* ══ UTENTI ESISTENTI ═══════════════════════════════════ */}
+      {/* ══ ACCOUNT ATTIVI ═════════════════════════════════════ */}
       <div className="card overflow-hidden">
         <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200">
           <h3 className="font-semibold text-gray-700 text-sm">Account attivi</h3>
@@ -133,58 +166,105 @@ export function GestioneUtentiPage() {
             <tr>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Email</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Nome</th>
-              <th className="px-3 py-2 text-center text-xs font-semibold text-gray-500 w-20">Ruolo</th>
-              <th className="px-3 py-2 w-16" />
+              <th className="px-3 py-2 text-center text-xs font-semibold text-gray-500 w-24">Ruolo</th>
+              <th className="px-3 py-2 w-20" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {loadingUtenti && (
               <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">Caricamento...</td></tr>
             )}
+
             {utenti.map(u => {
-              const isPermanente = u.email === ADMIN_PERMANENTE
+              const isPerm = u.email === ADMIN_PERMANENTE
+
+              /* ── riga in editing ── */
+              if (editId === u.id) return (
+                <tr key={u.id} className="bg-blue-50">
+                  <td className="px-2 py-1.5">
+                    <input
+                      value={editEmail}
+                      onChange={e => setEditEmail(e.target.value)}
+                      placeholder="email@gmail.com"
+                      type="email"
+                      className="input py-0.5 text-xs w-full"
+                      autoFocus
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      value={editNome}
+                      onChange={e => setEditNome(e.target.value.toUpperCase())}
+                      placeholder="NOME"
+                      className="input py-0.5 text-xs w-full uppercase"
+                    />
+                  </td>
+                  <td className="px-2 py-1.5 text-center">
+                    <select
+                      value={editRuolo}
+                      onChange={e => setEditRuolo(e.target.value as 'user' | 'admin')}
+                      className="input py-0.5 text-xs w-full"
+                    >
+                      <option value="user">User</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <div className="flex gap-1 justify-end">
+                      <button onClick={saveEdit} disabled={saving}
+                        className="btn-primary py-0.5 px-2 text-xs gap-1">
+                        <Save size={11} /> Salva
+                      </button>
+                      <button onClick={() => setEditId(null)}
+                        className="btn-secondary py-0.5 px-1.5 text-xs">
+                        <X size={11} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )
+
+              /* ── riga normale ── */
               return (
-                <tr key={u.id} className={`hover:bg-gray-50 ${isPermanente ? 'bg-blue-50/40' : ''}`}>
+                <tr key={u.id} className={`hover:bg-gray-50 group ${isPerm ? 'bg-blue-50/30' : ''}`}>
                   <td className="px-3 py-2 font-mono text-xs text-gray-600">{u.email}</td>
                   <td className="px-3 py-2 font-medium text-gray-800 uppercase">
                     {u.nome || '—'}
                   </td>
                   <td className="px-3 py-2 text-center">
-                    <button
-                      onClick={() => cambiaRuolo(u)}
-                      disabled={isPermanente}
-                      title={isPermanente ? 'Admin permanente — non modificabile' : 'Clicca per cambiare ruolo'}
-                      className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded font-medium
-                        ${u.ruolo === 'admin'
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-blue-100 text-blue-800'}
-                        ${isPermanente ? 'cursor-default opacity-80' : 'hover:opacity-80 cursor-pointer'}`}
-                    >
-                      {isPermanente
+                    <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded font-medium
+                      ${u.ruolo === 'admin' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>
+                      {isPerm
                         ? <Lock size={10} />
                         : u.ruolo === 'admin' ? <Shield size={10} /> : <User size={10} />
                       }
                       {u.ruolo}
-                    </button>
+                    </span>
                   </td>
-                  <td className="px-3 py-2 text-right">
-                    {isPermanente ? (
+                  <td className="px-3 py-2">
+                    {isPerm ? (
                       <span className="text-xs text-blue-300 flex items-center gap-1 justify-end">
                         <Lock size={11} /> permanente
                       </span>
                     ) : (
-                      <button
-                        onClick={() => elimina(u)}
-                        className="text-gray-300 hover:text-red-500 p-1 transition-colors"
-                        title="Rimuovi utente"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => startEdit(u)}
+                          className="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          title="Modifica">
+                          <Pencil size={13} />
+                        </button>
+                        <button onClick={() => elimina(u)}
+                          className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                          title="Rimuovi accesso">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
               )
             })}
+
             {utenti.length === 0 && !loadingUtenti && (
               <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400 text-sm">Nessun utente</td></tr>
             )}
@@ -206,19 +286,14 @@ export function GestioneUtentiPage() {
           </div>
           <div className="divide-y divide-gray-100">
             {mediciSenzaAccount.map(m => (
-              <div key={m.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50">
-                {/* Badge con numero ordine */}
+              <div key={m.id} className="flex items-center gap-2 px-4 py-2.5 hover:bg-gray-50">
                 <span className="w-7 h-7 rounded-full bg-gray-200 text-gray-600 text-xs
                                  font-bold flex items-center justify-center shrink-0">
                   {m.numero_ordine}
                 </span>
-
-                {/* Nome medico */}
-                <span className="font-semibold text-gray-800 uppercase text-sm w-32 shrink-0">
+                <span className="font-semibold text-gray-800 uppercase text-sm w-28 shrink-0">
                   {m.nome}
                 </span>
-
-                {/* Input email */}
                 <input
                   type="email"
                   placeholder="email@gmail.com"
@@ -227,18 +302,14 @@ export function GestioneUtentiPage() {
                   onKeyDown={e => e.key === 'Enter' && aggiungiDaMedico(m)}
                   className="input flex-1 text-sm py-1"
                 />
-
-                {/* Selettore ruolo */}
                 <select
                   value={ruoloMedico[m.id] ?? 'user'}
                   onChange={e => setRuoloMedico(prev => ({ ...prev, [m.id]: e.target.value as 'user' | 'admin' }))}
-                  className="input text-sm py-1 w-28 shrink-0"
+                  className="input text-sm py-1 w-24 shrink-0"
                 >
                   <option value="user">User</option>
                   <option value="admin">Admin</option>
                 </select>
-
-                {/* Bottone aggiungi */}
                 <button
                   onClick={() => aggiungiDaMedico(m)}
                   disabled={!emailMedico[m.id]?.trim() || saving}
@@ -255,9 +326,7 @@ export function GestioneUtentiPage() {
       {/* ══ AGGIUNGI MANUALMENTE ══════════════════════════════ */}
       <div className="card p-4 space-y-3">
         <h3 className="font-semibold text-gray-700 text-sm">Aggiungi account manualmente</h3>
-        <p className="text-xs text-gray-400">
-          Per aggiungere un account non presente tra i medici (es. un osservatore, un sostituto, ecc.)
-        </p>
+        <p className="text-xs text-gray-400">Per account non presenti tra i medici (sostituti, osservatori, ecc.)</p>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="label text-xs">Email Google *</label>
@@ -270,7 +339,7 @@ export function GestioneUtentiPage() {
               placeholder="NOME COGNOME" className="input text-sm uppercase" />
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-end gap-3">
           <div>
             <label className="label text-xs">Ruolo</label>
             <select value={ruolo} onChange={e => setRuolo(e.target.value as 'user' | 'admin')}
@@ -279,27 +348,18 @@ export function GestioneUtentiPage() {
               <option value="admin">Admin – gestione completa</option>
             </select>
           </div>
-          <button onClick={aggiungiManuale} disabled={saving || !email.trim()}
-            className="btn-primary text-sm mt-5">
+          <button onClick={aggiungiManuale} disabled={saving || !email.trim()} className="btn-primary text-sm">
             <Plus size={15} /> Aggiungi
           </button>
         </div>
       </div>
 
-      {/* Legenda ruoli */}
+      {/* Legenda */}
       <div className="text-xs text-gray-400 space-y-1 px-1">
-        <p className="flex items-center gap-1.5">
-          <Lock size={11} className="text-blue-400" /> Admin permanente: non eliminabile dall'interfaccia
-        </p>
-        <p className="flex items-center gap-1.5">
-          <Shield size={11} className="text-amber-500" /> Admin: accesso completo a tutti i pannelli
-        </p>
-        <p className="flex items-center gap-1.5">
-          <User size={11} className="text-blue-500" /> User: solo visualizzazione calendario
-        </p>
-        <p className="text-gray-300 italic mt-1">
-          Nota: un medico può essere rimosso dall'elenco medici senza perdere l'accesso come utente, e viceversa.
-        </p>
+        <p className="flex items-center gap-1.5"><Lock size={11} className="text-blue-400" /> Admin permanente: non eliminabile</p>
+        <p className="flex items-center gap-1.5"><Shield size={11} className="text-amber-500" /> Admin: accesso completo</p>
+        <p className="flex items-center gap-1.5"><User size={11} className="text-blue-500" /> User: solo visualizzazione calendario</p>
+        <p className="text-gray-300 italic">Eliminare un utente rimuove solo l'accesso, non il nominativo dai medici.</p>
       </div>
     </div>
   )
