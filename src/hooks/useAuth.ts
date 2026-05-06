@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { AuthUser } from '../types'
 
+// Timeout per evitare spinner infinito
+const TIMEOUT_MS = 8000
+
 export function useAuth() {
   const [user, setUser]       = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Un solo listener, gestisce sia l'inizializzazione (INITIAL_SESSION)
-    // sia i cambiamenti successivi (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         if (session?.user?.email) {
@@ -23,34 +24,37 @@ export function useAuth() {
   }, [])
 
   async function loadUser(email: string) {
-    try {
-      const emailLower = email.toLowerCase().trim()
+    // Promise con timeout: se la query non risponde entro 8s → fallback
+    const queryPromise = supabase.rpc('get_my_profile')
+    const timeoutPromise = new Promise<{ data: null; error: Error }>(resolve =>
+      setTimeout(() => resolve({ data: null, error: new Error('timeout') }), TIMEOUT_MS)
+    )
 
-      const { data, error } = await supabase
-        .from('utenti_autorizzati')
-        .select('id, email, ruolo, nome, attivo')
-        .ilike('email', emailLower)   // case-insensitive
-        .eq('attivo', true)
-        .maybeSingle()
+    try {
+      const result = await Promise.race([queryPromise, timeoutPromise])
+      const { data, error } = result as Awaited<typeof queryPromise>
 
       if (error) {
-        // Errore DB (es. RLS block) – non fare signOut, potrebbe essere temporaneo
-        console.error('[Auth] Errore query:', error.code, error.message)
+        console.error('[Auth] Errore get_my_profile:', error.message)
+        // Non fare signOut su errori di rete/timeout: mostra pagina login
         setUser(null)
         return
       }
 
-      if (!data) {
-        // Email non nella whitelist → logout
-        console.warn('[Auth] Email non autorizzata:', emailLower)
+      // rpc() restituisce un array; prendi il primo elemento
+      const profile = Array.isArray(data) ? data[0] : data
+
+      if (!profile) {
+        // Utente autenticato con Google ma non nella whitelist
+        console.warn('[Auth] Profilo non trovato per:', email.toLowerCase())
         await supabase.auth.signOut()
         setUser(null)
       } else {
         setUser({
-          id:    data.id,
-          email: data.email,
-          ruolo: data.ruolo,
-          nome:  data.nome,
+          id:    profile.id,
+          email: profile.email,
+          ruolo: profile.ruolo as 'admin' | 'user',
+          nome:  profile.nome ?? null,
         })
       }
     } catch (e) {
