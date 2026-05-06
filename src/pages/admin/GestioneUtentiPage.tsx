@@ -20,8 +20,9 @@ export function GestioneUtentiPage() {
   const [errore,  setErrore]  = useState('')
   const [saving,  setSaving]  = useState(false)
 
-  // Stato per aggiunta veloce da medico (key = medico.id → email digitata)
+  // Stato per aggiunta veloce da medico
   const [emailMedico, setEmailMedico] = useState<Record<string, string>>({})
+  const [ruoloMedico, setRuoloMedico] = useState<Record<string, 'user' | 'admin'>>({})  // default 'user'
 
   // ── Queries ──────────────────────────────────────────────────
   const { data: utenti = [], isLoading: loadingUtenti } = useQuery<UtenteAutorizzato[]>({
@@ -72,9 +73,10 @@ export function GestioneUtentiPage() {
   async function aggiungiDaMedico(m: Medico) {
     const mail = (emailMedico[m.id] ?? '').trim().toLowerCase()
     if (!mail) return
+    const ruolo = ruoloMedico[m.id] ?? 'user'
     setSaving(true)
     const { error } = await supabase.from('utenti_autorizzati').insert({
-      email: mail, nome: m.nome, ruolo: 'user', attivo: true,
+      email: mail, nome: m.nome, ruolo, attivo: true,
     })
     setSaving(false)
     if (error) { setErrore(error.message); return }
@@ -225,6 +227,16 @@ export function GestioneUtentiPage() {
                   onKeyDown={e => e.key === 'Enter' && aggiungiDaMedico(m)}
                   className="input flex-1 text-sm py-1"
                 />
+
+                {/* Selettore ruolo */}
+                <select
+                  value={ruoloMedico[m.id] ?? 'user'}
+                  onChange={e => setRuoloMedico(prev => ({ ...prev, [m.id]: e.target.value as 'user' | 'admin' }))}
+                  className="input text-sm py-1 w-28 shrink-0"
+                >
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
 
                 {/* Bottone aggiungi */}
                 <button
