@@ -60,8 +60,8 @@ function AntepremaSchema({
   )
 
   return (
-    <div className="overflow-auto">
-      <table style={{ borderCollapse: 'collapse', fontSize: 11 }}>
+    <div style={{ overflowX: 'auto', overflowY: 'visible' }}>
+      <table style={{ borderCollapse: 'collapse', fontSize: 11, width: '100%' }}>
         <thead>
           <tr>
             <th style={{
@@ -445,25 +445,38 @@ export function GeneraCalendarioPage() {
       </div>
 
       {/* ═══ COLONNA DESTRA — anteprima schema ══════════════════ */}
-      <div className="w-80 shrink-0">
-        <div className="card p-4 sticky top-0">
-          <h3 className="text-sm font-bold mb-1" style={{ color: '#2b3c24' }}>
-            Anteprima Schema {schemaNum}
-          </h3>
-          <div className="text-[10px] mb-3 flex gap-3 flex-wrap" style={{ color: '#7a7a6a' }}>
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded inline-block" style={{ background: '#fee2e2', border: '1px solid #f0c0c0' }} />
-              Reperibilità (REP)
-            </span>
-            <span>Num. = posizione rotazione</span>
+      <div className="w-80 shrink-0 min-w-0">
+        <div className="card sticky top-0 flex flex-col"
+          style={{ maxHeight: 'calc(100vh - 80px)' }}>
+
+          {/* Header fisso */}
+          <div className="p-4 pb-2 shrink-0">
+            <h3 className="text-sm font-bold mb-1" style={{ color: '#2b3c24' }}>
+              Anteprima Schema {schemaNum}
+            </h3>
+            <div className="text-[10px] flex gap-3 flex-wrap" style={{ color: '#7a7a6a' }}>
+              <span className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded inline-block"
+                  style={{ background: '#fee2e2', border: '1px solid #f0c0c0' }} />
+                Reperibilità
+              </span>
+              <span>Num. = posizione rotazione</span>
+            </div>
           </div>
-          <AntepremaSchema
-            schemi={schemi}
-            medici={medici}
-            schemaNum={schemaNum}
-          />
-          <div className="mt-3 pt-2 border-t border-gray-100">
-            <p className="text-[10px] text-gray-400 text-center">
+
+          {/* Tabella scrollabile — non esce mai dalla pagina */}
+          <div className="flex-1 overflow-auto px-4 pb-3">
+            <AntepremaSchema
+              schemi={schemi}
+              medici={medici}
+              schemaNum={schemaNum}
+            />
+          </div>
+
+          {/* Footer fisso */}
+          <div className="px-4 py-2 border-t shrink-0"
+            style={{ borderColor: '#e0e8d8' }}>
+            <p className="text-[10px] text-center" style={{ color: '#9a9a8a' }}>
               Vai su <strong>Schema Turni</strong> per modificarlo
             </p>
           </div>
