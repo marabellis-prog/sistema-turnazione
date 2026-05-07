@@ -28,9 +28,16 @@ function AntepremaSchema({
   medici:    Medico[]
   schemaNum: number
 }) {
+  // Tutti gli hook PRIMA di qualsiasi early return (Rules of Hooks)
   const colorMap = useMemo(() => {
     const m: Record<number, { bg: string; fg: string }> = {}
     medici.forEach((med, i) => { m[med.numero_ordine] = PASTEL[i % PASTEL.length] })
+    return m
+  }, [medici])
+
+  const nomeMap = useMemo(() => {
+    const m: Record<number, string> = {}
+    medici.forEach(med => { m[med.numero_ordine] = med.nome.slice(0, 7) })
     return m
   }, [medici])
 
@@ -47,17 +54,10 @@ function AntepremaSchema({
   const LABELS = ['M','P','RM','RP']
 
   if (filtered.length === 0) return (
-    <div className="flex items-center justify-center h-40 text-gray-300 text-xs">
+    <div className="flex items-center justify-center h-40 text-xs" style={{ color: '#b0a898' }}>
       Schema {schemaNum} vuoto
     </div>
   )
-
-  // Mappa numero → nome abbreviato
-  const nomeMap = useMemo(() => {
-    const m: Record<number, string> = {}
-    medici.forEach(med => { m[med.numero_ordine] = med.nome.slice(0, 7) })
-    return m
-  }, [medici])
 
   return (
     <div className="overflow-auto">
