@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useLayoutEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Zap, AlertTriangle, CheckCircle, Info } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { calcolaCalendarioCompleto, primoLunediDelPeriodo, MESI_IT } from '../../lib/algorithm'
 import { useConfirm } from '../../hooks/useConfirm'
@@ -526,12 +527,16 @@ export function GeneraCalendarioPage() {
             />
           </div>
 
-          {/* Footer */}
-          <div className="px-4 py-2 border-t shrink-0" style={{ borderColor: '#e0e8d8' }}>
-            <p className="text-[10px] text-center" style={{ color: '#9a9a8a' }}>
-              Modifica in <strong>Disegna Schema</strong>
-            </p>
-          </div>
+          {/* Footer cliccabile → pagina Disegna Schema */}
+          <Link to="/admin/schema"
+            className="block px-4 py-2 border-t text-center shrink-0 transition-colors"
+            style={{ borderColor: '#e0e8d8', color: '#9a9a8a', textDecoration: 'none' }}
+            onMouseEnter={e => (e.currentTarget.style.background = '#f0ece4')}
+            onMouseLeave={e => (e.currentTarget.style.background = '')}>
+            <span className="text-[10px]">
+              Modifica in <strong style={{ color: '#476540' }}>Disegna Schema</strong>
+            </span>
+          </Link>
         </div>
       </div>
     </div>
