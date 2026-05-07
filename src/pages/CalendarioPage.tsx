@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { RefreshCw, Info, AlertTriangle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { generaColonne, MESI_SHORT_IT } from '../lib/algorithm'
+import { generaColonne, MESI_IT, MESI_SHORT_IT } from '../lib/algorithm'
 import type {
   Medico, Turno, Configurazione, ColonnaCal,
   TurnoClinico, TurnoRicerca,
@@ -33,35 +33,61 @@ function LabelTurno({ tc, tr }: { tc: string; tr: string }) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// STRATEGIA DI CARICAMENTO — il DB è sempre la fonte di verità
+// STRATEGIA DI CARICAMENTO — fetch per mese (chunk semantici)
 //
-//  Il calcolo locale NON è sicuro per il display: se schema o medici
-//  cambiano dopo la generazione, il calcolo locale mostrarebbe turni
-//  diversi da quelli effettivamente assegnati. Il DB registra ciò che
-//  è stato realmente comunicato ai medici.
+//  1. Calcolo upfront: lista mesi + stima righe totali
+//     Noto PRIMA di qualsiasi fetch → contatore preciso dall'inizio
 //
-//  Per bypassare il limite di 1000 righe di Supabase si usa la
-//  PAGINAZIONE con .range(): 2-3 query invece di una sola.
-//  Con 11 medici × 184 giorni = 2024 righe → 3 chiamate (1000+1000+24).
+//  2. Fetch sequenziale per MESE: ogni chunk = 1 mese = max ~341 righe
+//     (31 gg × 11 medici), sempre sotto la soglia Supabase (1000)
+//     → zero paginazione interna, zero rischio di troncamento
 //
-//  Il contatore di progresso mostra quante righe sono state caricate
-//  in tempo reale so l'utente vede l'avanzamento preciso.
+//  3. Contatore: "Maggio 2026 (mese 1 di 6) · 341 / ~2.024 turni"
+//     L'utente vede esattamente quanti mesi mancano.
+//
+//  Il DB è sempre la fonte di verità — mai calcolo locale per il display.
 // ════════════════════════════════════════════════════════════════════
 
-const PAGE_SIZE = 1000
+interface ChunkMese { anno: number; mese: number; di: string; df: string }
+
+/** Lista dei mesi nel periodo configurato */
+function calcolaMesi(cfg: Configurazione): ChunkMese[] {
+  const mesi: ChunkMese[] = []
+  let anno = cfg.anno_inizio
+  let mese = cfg.mese_inizio
+  while (anno < cfg.anno_fine || (anno === cfg.anno_fine && mese <= cfg.mese_fine)) {
+    const di = `${anno}-${String(mese).padStart(2,'0')}-01`
+    const df = new Date(anno, mese, 0).toISOString().split('T')[0]
+    mesi.push({ anno, mese, di, df })
+    if (mese === 12) { anno++; mese = 1 } else mese++
+  }
+  return mesi
+}
+
+/** Stima totale righe (upfront, senza query) */
+function stimaRighe(cfg: Configurazione, nMedici: number): number {
+  const start = new Date(cfg.anno_inizio, cfg.mese_inizio - 1, 1)
+  const end   = new Date(cfg.anno_fine, cfg.mese_fine, 0)
+  return (Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1) * nMedici
+}
+
+// ═════════════════════════════════════════════════════════════════════
 
 export function CalendarioPage() {
   const [rigaSel,       setRigaSel]       = useState<string | null>(null)
   const [mostraLegenda, setMostraLegenda] = useState(true)
 
-  // Stato paginazione manuale
-  const [turni,         setTurni]         = useState<Turno[]>([])
-  const [loadedRows,    setLoadedRows]     = useState(0)
-  const [totalRows,     setTotalRows]      = useState<number | null>(null)
-  const [loadError,     setLoadError]      = useState<string | null>(null)
-  const [loadDone,      setLoadDone]       = useState(false)
+  // Stato caricamento per mese
+  const [turni,        setTurni]        = useState<Turno[]>([])
+  const [loadedRows,   setLoadedRows]   = useState(0)
+  const [stimaTotale,  setStimaTotale]  = useState(0)
+  const [meseCorrente, setMeseCorrente] = useState(0)   // indice chunk corrente
+  const [mesiTotali,   setMesiTotali]   = useState(0)
+  const [meseName,     setMeseName]     = useState('')  // "Maggio 2026"
+  const [loadError,    setLoadError]    = useState<string | null>(null)
+  const [loadDone,     setLoadDone]     = useState(false)
 
-  // ── Query dati statici (piccoli) ─────────────────────────────────
+  // ── Query dati statici ────────────────────────────────────────────
   const { data: config, isLoading: lCfg } = useQuery<Configurazione | null>({
     queryKey: ['configurazione'],
     queryFn: async () => {
@@ -83,78 +109,52 @@ export function CalendarioPage() {
     },
   })
 
-  // ── Fetch paginato dei turni dal DB ──────────────────────────────
-  const caricaTurni = useCallback(async (cfg: Configurazione) => {
+  // ── Fetch chunk per chunk (1 mese alla volta) ─────────────────────
+  const caricaTurni = useCallback(async (cfg: Configurazione, nMedici: number) => {
     setTurni([])
     setLoadedRows(0)
-    setTotalRows(null)
     setLoadError(null)
     setLoadDone(false)
 
-    const di = `${cfg.anno_inizio}-${String(cfg.mese_inizio).padStart(2,'0')}-01`
-    const df = new Date(cfg.anno_fine, cfg.mese_fine, 0).toISOString().split('T')[0]
+    // Calcolo upfront: mesi e stima totale PRIMA di iniziare
+    const mesi  = calcolaMesi(cfg)
+    const stima = stimaRighe(cfg, nMedici)
+    setMesiTotali(mesi.length)
+    setStimaTotale(stima)
 
     let all: Turno[] = []
-    let from = 0
-    let totale: number | null = null
-
     try {
-      while (true) {
-        // Prima pagina: chiedi anche il count totale
-        const query = supabase
+      for (let i = 0; i < mesi.length; i++) {
+        const { anno, mese, di, df } = mesi[i]
+        setMeseCorrente(i + 1)
+        setMeseName(`${MESI_IT[mese]} ${anno}`)
+
+        const { data, error } = await supabase
           .from('turni')
-          .select(from === 0 ? '*' : '*', from === 0 ? { count: 'exact' } : undefined)
+          .select('*')
           .gte('data', di)
           .lte('data', df)
           .order('data')
           .order('medico_id')
-          .range(from, from + PAGE_SIZE - 1)
 
-        const res = from === 0
-          ? await supabase
-              .from('turni')
-              .select('*', { count: 'exact' })
-              .gte('data', di).lte('data', df)
-              .order('data').order('medico_id')
-              .range(0, PAGE_SIZE - 1)
-          : await supabase
-              .from('turni')
-              .select('*')
-              .gte('data', di).lte('data', df)
-              .order('data').order('medico_id')
-              .range(from, from + PAGE_SIZE - 1)
-
-        if (res.error) throw res.error
-
-        if (from === 0 && res.count !== null) {
-          totale = res.count
-          setTotalRows(totale)
-        }
-
-        const page = res.data ?? []
-        all = [...all, ...page]
+        if (error) throw error
+        all = [...all, ...(data ?? [])]
         setLoadedRows(all.length)
-
-        // Ultima pagina?
-        if (page.length < PAGE_SIZE) break
-        from += PAGE_SIZE
       }
 
       setTurni(all)
       setLoadDone(true)
-
     } catch (e: unknown) {
       setLoadError((e as Error).message)
       setLoadDone(true)
     }
   }, [])
 
-  // Avvia il caricamento quando config è disponibile
   useEffect(() => {
-    if (config) caricaTurni(config)
-  }, [config, caricaTurni])
+    if (config && medici.length > 0) caricaTurni(config, medici.length)
+  }, [config, medici.length, caricaTurni])
 
-  // ── Mappa display (medico_id → data → CellDisplay) ───────────────
+  // ── Mappa display ─────────────────────────────────────────────────
   const turniMap = useMemo(() => {
     const map = new Map<string, Map<string, CellDisplay>>()
     for (const t of turni) {
@@ -170,7 +170,7 @@ export function CalendarioPage() {
     return map
   }, [turni])
 
-  // ── Colonne (giorni) e raggruppamento mesi ───────────────────────
+  // ── Colonne e mesi header ─────────────────────────────────────────
   const colonne = useMemo<ColonnaCal[]>(() => config ? generaColonne(config) : [], [config])
   const gruppiMese = useMemo(() => {
     const g: { mese: number; anno: number; count: number }[] = []
@@ -182,20 +182,22 @@ export function CalendarioPage() {
     return g
   }, [colonne])
 
-  // ── Schermata di caricamento ─────────────────────────────────────
+  // ── Loading screen ────────────────────────────────────────────────
   const isLoading = lCfg || lMed || !loadDone
 
   if (isLoading) {
-    const pct = totalRows && totalRows > 0
-      ? Math.round((loadedRows / totalRows) * 100)
-      : loadedRows > 0 ? 50 : (lCfg || lMed ? 10 : 20)
+    // Progresso preciso solo quando stima è nota
+    const pct = stimaTotale > 0
+      ? Math.min(Math.round((loadedRows / stimaTotale) * 100), 99)
+      : (lCfg || lMed ? 5 : meseCorrente > 0 ? Math.round((meseCorrente / mesiTotali) * 80) : 10)
 
     return (
       <div className="flex items-center justify-center h-[calc(100vh-48px)]"
         style={{ background: '#f4f1ea' }}>
-        <div className="rounded-2xl p-8 w-84 shadow-lg space-y-5"
-          style={{ background: '#faf8f3', border: '1px solid #d5ccb8', minWidth: 320 }}>
+        <div className="rounded-2xl p-8 shadow-lg space-y-5"
+          style={{ background: '#faf8f3', border: '1px solid #d5ccb8', width: 340 }}>
 
+          {/* Spinner + titolo */}
           <div className="text-center">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 mx-auto mb-3"
               style={{ borderColor: '#476540' }} />
@@ -204,50 +206,73 @@ export function CalendarioPage() {
             </h2>
           </div>
 
-          {/* Messaggio corrente */}
-          <div className="text-sm text-center space-y-1" style={{ color: '#5a5a4a' }}>
+          {/* Dettaglio */}
+          <div className="text-center space-y-1">
             {lCfg || lMed ? (
-              <p>Caricamento configurazione e medici...</p>
-            ) : totalRows === null && loadedRows === 0 ? (
-              <p>Connessione al database...</p>
-            ) : (
+              <p className="text-sm" style={{ color: '#5a5a4a' }}>
+                Configurazione e medici...
+              </p>
+            ) : meseCorrente > 0 ? (
               <>
                 <p className="font-semibold" style={{ color: '#374f30', fontSize: 15 }}>
+                  {meseName}
+                </p>
+                <p className="text-xs" style={{ color: '#7a7a6a' }}>
+                  Mese {meseCorrente} di {mesiTotali}
+                </p>
+                <p className="text-sm font-medium mt-1" style={{ color: '#3a3d30' }}>
                   {loadedRows.toLocaleString('it-IT')}
-                  {totalRows !== null && ` / ${totalRows.toLocaleString('it-IT')}`}
+                  {stimaTotale > 0 && (
+                    <span style={{ color: '#9a9a8a' }}>
+                      {' '}/ ~{stimaTotale.toLocaleString('it-IT')}
+                    </span>
+                  )}
                   {' '}turni caricati
                 </p>
-                {totalRows !== null && (
-                  <p style={{ color: '#9a9a8a', fontSize: 12 }}>
-                    Pagina {Math.ceil(loadedRows / PAGE_SIZE) || 1} di{' '}
-                    {Math.ceil(totalRows / PAGE_SIZE)}
-                    {' '}· {medici.length} medici
-                  </p>
-                )}
               </>
+            ) : (
+              <p className="text-sm" style={{ color: '#5a5a4a' }}>
+                Calcolo periodo in corso...
+              </p>
             )}
           </div>
 
           {/* Barra progresso */}
-          <div className="space-y-1">
-            <div className="flex justify-between text-xs" style={{ color: '#7a7a6a' }}>
+          <div className="space-y-1.5">
+            <div className="flex justify-between text-xs font-medium"
+              style={{ color: '#7a7a6a' }}>
               <span>Avanzamento</span>
-              <span className="font-semibold">{pct}%</span>
+              <span>{pct}%</span>
             </div>
             <div className="h-3 rounded-full overflow-hidden" style={{ background: '#e0e8d8' }}>
-              <div className="h-full rounded-full transition-all duration-300"
+              <div className="h-full rounded-full transition-all duration-400"
                 style={{
                   width: `${pct}%`,
-                  background: 'linear-gradient(90deg, #476540, #6b8254)',
+                  background: 'linear-gradient(90deg, #476540 0%, #6b8254 100%)',
                 }} />
             </div>
+            {/* Mini indicatori mesi */}
+            {mesiTotali > 0 && (
+              <div className="flex gap-0.5 mt-1">
+                {Array.from({ length: mesiTotali }).map((_, i) => (
+                  <div key={i} className="flex-1 h-1 rounded-full transition-all"
+                    style={{
+                      background: i < meseCorrente - 1
+                        ? '#476540'
+                        : i === meseCorrente - 1
+                          ? '#9ab488'
+                          : '#e0e8d8',
+                    }} />
+                ))}
+              </div>
+            )}
           </div>
 
           {loadError && (
             <div className="flex items-start gap-2 p-3 rounded-lg text-xs"
               style={{ background: '#fde8e8', color: '#7a2020', border: '1px solid #f0c0c0' }}>
               <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-              <span>Errore: {loadError}</span>
+              <span>{loadError}</span>
             </div>
           )}
         </div>
@@ -263,12 +288,12 @@ export function CalendarioPage() {
     )
   }
 
-  // ── Tabella ───────────────────────────────────────────────────────
+  // ── Tabella calendario ────────────────────────────────────────────
   return (
     <div className="flex flex-col h-[calc(100vh-48px)]">
 
       {/* Toolbar */}
-      <div className="flex items-center gap-3 px-4 py-2 shrink-0 print:hidden border-b"
+      <div className="flex items-center gap-3 px-4 py-2 shrink-0 border-b"
         style={{ background: '#faf8f3', borderColor: '#d5ccb8' }}>
         <h1 className="text-sm font-bold" style={{ color: '#2b3c24' }}>
           Calendario {config.anno_inizio}
@@ -276,14 +301,14 @@ export function CalendarioPage() {
         </h1>
         <span className="text-xs" style={{ color: '#9a9a8a' }}>
           {medici.length} medici · Schema {config.schema_attivo} ·{' '}
-          {turni.length.toLocaleString('it-IT')} turni
+          {turni.length.toLocaleString('it-IT')} turni · {mesiTotali} mesi
         </span>
         <div className="ml-auto flex items-center gap-2">
           <button onClick={() => setMostraLegenda(v => !v)}
             className="btn-secondary py-1 px-2 text-xs">
             <Info size={13} /> Legenda
           </button>
-          <button onClick={() => config && caricaTurni(config)}
+          <button onClick={() => config && caricaTurni(config, medici.length)}
             className="btn-secondary py-1 px-2 text-xs">
             <RefreshCw size={13} /> Aggiorna
           </button>
@@ -364,11 +389,9 @@ export function CalendarioPage() {
                       const tr    = cell?.turno_ricerca  ?? ''
                       const ferie = cell?.is_ferie ?? false
                       const modif = cell?.modificato_manualmente ?? false
-
                       let bg = isSel ? '#e8f0e0' : '#faf8f3'
                       if (ferie) bg = '#d5e5d0'
                       else if (col.isDomenica || col.isFestivo) bg = '#f0ead8'
-
                       return (
                         <td key={col.data}
                           className={`cal-cell ${modif ? 'cal-cell-modificata' : ''}`}
