@@ -44,8 +44,10 @@ export function GestioneMediciPage() {
   const [hasOrderChanges,  setHasOrderChanges]  = useState(false)
   const [savingOrder,      setSavingOrder]       = useState(false)
 
-  // ── Drag state ───────────────────────────────────────────────
-  const dragFromIdx = useRef<number | null>(null)
+  // ── Drag state (mouse + touch) ───────────────────────────────
+  const dragFromIdx     = useRef<number | null>(null)
+  const touchActive     = useRef(false)          // touch drag in corso
+  const tbodyRef        = useRef<HTMLTableSectionElement>(null)
   const [draggingIdx, setDraggingIdx] = useState<number | null>(null)
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
 
@@ -72,6 +74,16 @@ export function GestioneMediciPage() {
   useEffect(() => {
     if (!hasOrderChanges) setLocalMedici(medici)
   }, [medici, hasOrderChanges])
+
+  // Listener touchmove NON-PASSIVE sul tbody: impedisce lo scroll della pagina
+  // durante il drag su Safari/iOS (i listener React sono passivi di default)
+  useEffect(() => {
+    const el = tbodyRef.current
+    if (!el) return
+    const prevent = (e: TouchEvent) => { if (touchActive.current) e.preventDefault() }
+    el.addEventListener('touchmove', prevent, { passive: false })
+    return () => el.removeEventListener('touchmove', prevent)
+  }, [])
 
   // ── Drag & Drop handlers ─────────────────────────────────────
   function handleDragStart(idx: number) {
@@ -108,6 +120,39 @@ export function GestioneMediciPage() {
     setDragOverIdx(null)
     setDraggingIdx(null)
     dragFromIdx.current = null
+  }
+
+  // ── Touch handlers (Safari/iOS) ───────────────────────────────
+  function handleTouchStart(idx: number) {
+    if (editId) return
+    dragFromIdx.current = idx
+    setDraggingIdx(idx)
+    touchActive.current = true
+  }
+
+  /** Trova l'indice di riga sotto il dito usando data-drag-index */
+  function rowIdxFromPoint(clientX: number, clientY: number): number | null {
+    const el = document.elementFromPoint(clientX, clientY)
+    const tr = el?.closest('[data-drag-index]') as HTMLElement | null
+    if (!tr) return null
+    const n = parseInt(tr.dataset.dragIndex ?? '', 10)
+    return isNaN(n) ? null : n
+  }
+
+  function handleTouchMove(e: React.TouchEvent) {
+    if (!touchActive.current) return
+    const t = e.touches[0]
+    const toIdx = rowIdxFromPoint(t.clientX, t.clientY)
+    setDragOverIdx(toIdx)
+  }
+
+  function handleTouchEnd(e: React.TouchEvent) {
+    if (!touchActive.current) return
+    touchActive.current = false
+    const t = e.changedTouches[0]
+    const toIdx = rowIdxFromPoint(t.clientX, t.clientY)
+    if (toIdx !== null) handleDrop(toIdx)
+    else handleDragEnd()
   }
 
   // ── Salva nuovo ordine nel DB ─────────────────────────────────
@@ -312,7 +357,7 @@ export function GestioneMediciPage() {
               <th className="px-3 py-2 w-20" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody ref={tbodyRef} className="divide-y divide-gray-100">
             {isLoading && (
               <tr>
                 <td colSpan={5} className="px-3 py-4 text-center text-stone-500">
@@ -363,15 +408,19 @@ export function GestioneMediciPage() {
 
             ) : (
 
-              /* ── Riga normale — draggable ── */
+              /* ── Riga normale — draggable (mouse + touch) ── */
               <tr
                 key={m.id}
+                data-drag-index={idx}
                 draggable
                 onDragStart={() => handleDragStart(idx)}
                 onDragOver={e => handleDragOver(e, idx)}
                 onDragLeave={handleDragLeave}
                 onDrop={() => handleDrop(idx)}
                 onDragEnd={handleDragEnd}
+                onTouchStart={() => handleTouchStart(idx)}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
                 className="group transition-colors"
                 style={{
                   background:    dragOverIdx === idx  ? '#e0ead8'
