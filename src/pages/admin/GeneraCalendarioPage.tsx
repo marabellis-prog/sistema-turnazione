@@ -51,19 +51,30 @@ function AntepremaSchema({
     </div>
   )
 
+  // Mappa numero → nome abbreviato
+  const nomeMap = useMemo(() => {
+    const m: Record<number, string> = {}
+    medici.forEach(med => { m[med.numero_ordine] = med.nome.slice(0, 7) })
+    return m
+  }, [medici])
+
   return (
     <div className="overflow-auto">
-      <table style={{ borderCollapse: 'collapse', fontSize: 10 }}>
+      <table style={{ borderCollapse: 'collapse', fontSize: 11 }}>
         <thead>
           <tr>
-            <th style={{ background: '#374f30', color: '#e0e8d8', padding: '2px 4px',
-                         border: '1px solid #2b3c24', width: 28, fontSize: 9 }}>
-              GG
+            <th style={{
+              background: '#374f30', color: '#e0e8d8', padding: '4px 8px',
+              border: '1px solid #2b3c24', width: 52, fontSize: 10, fontWeight: 700,
+            }}>
+              Giorno
             </th>
             {LABELS.map(l => (
-              <th key={l} style={{ background: '#374f30', color: '#e0e8d8', padding: '2px 3px',
-                                   border: '1px solid #2b3c24', width: 26, textAlign: 'center', fontSize: 9 }}>
-                {l}
+              <th key={l} style={{
+                background: '#374f30', color: '#e0e8d8', padding: '4px 6px',
+                border: '1px solid #2b3c24', width: 54, textAlign: 'center', fontSize: 10, fontWeight: 700,
+              }}>
+                {l === 'M' ? 'Mattina' : l === 'P' ? 'Pom.' : l}
               </th>
             ))}
           </tr>
@@ -74,14 +85,14 @@ function AntepremaSchema({
             if (slots.length === 0) return null
             return slots.map((s, idx) => {
               const isRep = s.is_reperibilita
-              const rowBg = isRep ? '#fee2e2' : idx % 2 === 0 ? '#fff' : '#f9fafb'
+              const rowBg = isRep ? '#fee2e2' : idx % 2 === 0 ? '#faf8f3' : '#f0ece4'
               return (
                 <tr key={`${g}-${idx}`} style={{ background: rowBg }}>
                   {idx === 0 && (
                     <td rowSpan={slots.length} style={{
-                      background: '#476540', color: '#e0e8d8', fontWeight: 700, fontSize: 9,
-                      padding: '1px 3px', border: '1px solid #374f30', textAlign: 'center',
-                      verticalAlign: 'middle',
+                      background: '#476540', color: '#fff', fontWeight: 700, fontSize: 11,
+                      padding: '4px 6px', border: '1px solid #374f30',
+                      textAlign: 'center', verticalAlign: 'middle',
                     }}>
                       {GIORNI_S[g]}
                     </td>
@@ -91,13 +102,23 @@ function AntepremaSchema({
                     const color = num ? colorMap[num] : null
                     return (
                       <td key={ci} style={{
-                        width: 26, height: 20, textAlign: 'center', verticalAlign: 'middle',
-                        border: '1px solid #e5e7eb',
+                        width: 54, height: 36, textAlign: 'center', verticalAlign: 'middle',
+                        border: '1px solid #d5ccb8',
                         background: isRep ? '#fee2e2' : (num && color ? color.bg : rowBg),
-                        fontSize: 10, fontWeight: 700,
-                        color: num && color ? color.fg : '#d1d5db',
+                        padding: '2px 3px',
                       }}>
-                        {num ?? '—'}
+                        {num ? (
+                          <div style={{ lineHeight: 1.1 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: color?.fg ?? '#555' }}>
+                              {num}
+                            </div>
+                            <div style={{ fontSize: 8, color: color?.fg ?? '#888', opacity: 0.75 }}>
+                              {nomeMap[num] ?? ''}
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>
+                        )}
                       </td>
                     )
                   })}
@@ -256,7 +277,7 @@ export function GeneraCalendarioPage() {
 
   // ─────────────────────────────────────────────────────────────
   return (
-    <div className="flex gap-6 max-w-5xl">
+    <div className="flex gap-6 max-w-6xl">
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
         onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
 
@@ -421,17 +442,17 @@ export function GeneraCalendarioPage() {
       </div>
 
       {/* ═══ COLONNA DESTRA — anteprima schema ══════════════════ */}
-      <div className="w-56 shrink-0">
-        <div className="card p-3 sticky top-0">
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+      <div className="w-80 shrink-0">
+        <div className="card p-4 sticky top-0">
+          <h3 className="text-sm font-bold mb-1" style={{ color: '#2b3c24' }}>
             Anteprima Schema {schemaNum}
           </h3>
-          <div className="text-[10px] text-gray-400 mb-2 flex gap-2 flex-wrap">
+          <div className="text-[10px] mb-3 flex gap-3 flex-wrap" style={{ color: '#7a7a6a' }}>
             <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded bg-red-100 border border-red-200 inline-block" />
-              REP
+              <span className="w-3 h-3 rounded inline-block" style={{ background: '#fee2e2', border: '1px solid #f0c0c0' }} />
+              Reperibilità (REP)
             </span>
-            <span>M=Mattina · P=Pom.</span>
+            <span>Num. = posizione rotazione</span>
           </div>
           <AntepremaSchema
             schemi={schemi}
