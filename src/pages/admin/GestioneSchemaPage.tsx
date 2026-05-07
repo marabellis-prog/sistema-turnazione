@@ -44,38 +44,51 @@ function isSlotVuoto(r: SlotRow) {
   return Object.values(r.vals).every(v => v === null) && !r.REP
 }
 
-// ── Cella (drop target) ──────────────────────────────────────────
+// ── Cella (drag source + drop target) ───────────────────────────
+// - Se ha valore: draggable (per spostare/scambiare)
+// - Drop su vuota: sposta qui, svuota sorgente
+// - Drop su occupata: scambia i due valori
 function Cella({
-  valore, bg, fg, onDrop, onClear, isRep,
+  valore, bg, fg, onDrop, onClear, isRep, onDragStart,
 }: {
-  valore:  number | null
-  bg:      string
-  fg:      string
-  isRep:   boolean
-  onDrop:  () => void
-  onClear: () => void
+  valore:      number | null
+  bg:          string
+  fg:          string
+  isRep:       boolean
+  onDrop:      () => void
+  onClear:     () => void
+  onDragStart: () => void
 }) {
   const [over, setOver] = useState(false)
 
   return (
     <td
+      draggable={!!valore}
+      onDragStart={e => {
+        if (!valore) { e.preventDefault(); return }
+        e.dataTransfer.effectAllowed = 'move'
+        onDragStart()
+      }}
       style={{
         width: 46, minWidth: 46, height: 30,
-        background: isRep ? REP_BG : (valore ? bg : over ? '#eff6ff' : '#fff'),
-        outline: over ? '2px solid #3b82f6' : undefined,
+        background: isRep ? REP_BG : (valore ? bg : over ? '#e8f0e0' : '#fff'),
+        outline: over ? '2px solid #9ab488' : undefined,
         outlineOffset: over ? '-2px' : undefined,
-        cursor: 'default',
+        cursor: valore ? 'grab' : 'default',
         textAlign: 'center',
         verticalAlign: 'middle',
         borderRight: '1px solid #e5e7eb',
         borderBottom: '1px solid #e5e7eb',
         transition: 'background 0.1s',
+        userSelect: 'none',
       }}
       onDragOver={e => { e.preventDefault(); setOver(true) }}
       onDragLeave={() => setOver(false)}
       onDrop={e => { e.preventDefault(); setOver(false); onDrop() }}
       onDoubleClick={onClear}
-      title={valore ? `${valore} — doppio clic per svuotare` : 'Trascina un turnista qui'}
+      title={valore
+        ? `${valore} — trascina per spostare/scambiare · doppio clic per svuotare`
+        : 'Trascina un turnista qui'}
     >
       {valore
         ? <span style={{ color: fg, fontWeight: 700, fontSize: 13 }}>{valore}</span>
@@ -99,7 +112,13 @@ export function GestioneSchemaPage() {
   const [saving,     setSaving]     = useState(false)
   const [msg,        setMsg]        = useState('')
 
-  const draggingNum = useRef<number | null>(null)
+  // Sorgente del drag: può venire dalla strip (solo num) o da una cella (num + posizione)
+  const dragSource = useRef<{
+    num:           number
+    fromGiorno?:   number
+    fromSlotIdx?:  number
+    fromCol?:      string
+  } | null>(null)
   const { confirm, confirmState } = useConfirm()
   const { setNeedsRegen } = usePendingActions()
 
@@ -129,6 +148,20 @@ export function GestioneSchemaPage() {
     medici.forEach((med, i) => { m[med.numero_ordine] = PASTEL[i % PASTEL.length] })
     return m
   }, [medici])
+
+  // ── Contatore dinamico: quante celle ha ogni turnista ────────────
+  const contatori = useMemo(() => {
+    const counts: Record<number, number> = {}
+    medici.forEach(m => { counts[m.numero_ordine] = 0 })
+    for (const slots of Object.values(griglia)) {
+      for (const row of slots) {
+        for (const val of Object.values(row.vals)) {
+          if (val !== null) counts[val] = (counts[val] ?? 0) + 1
+        }
+      }
+    }
+    return counts
+  }, [griglia, medici])
 
   // ── Carica dal DB ─────────────────────────────────────────────
   useEffect(() => {
@@ -241,13 +274,47 @@ export function GestioneSchemaPage() {
     })
   }
 
-  function handleDrop(giorno: number, idx: number, col: string) {
-    const num = draggingNum.current
-    if (!num) return
+  function handleDrop(toGiorno: number, toIdx: number, toCol: string) {
+    const src = dragSource.current
+    if (!src) return
+
     setGriglia(prev => {
-      const rows = [...(prev[giorno] ?? [])]
-      rows[idx] = { ...rows[idx], vals: { ...rows[idx].vals, [col]: num } }
-      return { ...prev, [giorno]: rows }
+      // Helper: copia profonda di una riga
+      const cloneRow = (r: SlotRow) => ({ ...r, vals: { ...r.vals } })
+
+      // Copia le righe dei giorni coinvolti
+      const next = { ...prev }
+      next[toGiorno] = [...(prev[toGiorno] ?? [])].map(cloneRow)
+
+      const targetOldVal = next[toGiorno][toIdx]?.vals[toCol] ?? null
+
+      // Stessa cella: nessuna modifica
+      if (
+        src.fromGiorno === toGiorno &&
+        src.fromSlotIdx === toIdx &&
+        src.fromCol === toCol
+      ) return prev
+
+      // Scrive il valore sorgente nella cella di destinazione
+      next[toGiorno][toIdx].vals[toCol] = src.num
+
+      // Se la sorgente è una cella (non la strip dei turnisti)
+      if (src.fromGiorno !== undefined && src.fromSlotIdx !== undefined && src.fromCol !== undefined) {
+        const fG = src.fromGiorno, fI = src.fromSlotIdx, fC = src.fromCol
+
+        // Se il giorno sorgente è diverso, copia anche quelle righe
+        if (fG !== toGiorno) next[fG] = [...(prev[fG] ?? [])].map(cloneRow)
+
+        if (targetOldVal !== null) {
+          // Cella occupata → SCAMBIA
+          next[fG][fI].vals[fC] = targetOldVal
+        } else {
+          // Cella vuota → SPOSTA (svuota sorgente)
+          next[fG][fI].vals[fC] = null
+        }
+      }
+
+      return next
     })
   }
 
@@ -324,7 +391,10 @@ export function GestioneSchemaPage() {
 
   // ─────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-[calc(100vh-112px)] overflow-hidden gap-2">
+    <div className="flex gap-3 h-[calc(100vh-112px)] overflow-hidden">
+
+    {/* ═══ COLONNA SINISTRA (schema) ═════════════════════════════ */}
+    <div className="flex-1 flex flex-col overflow-hidden gap-2">
 
       {/* Modal di conferma globale */}
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
@@ -447,7 +517,8 @@ export function GestioneSchemaPage() {
               draggable
               onDragStart={e => {
                 e.dataTransfer.setData('doctorNum', String(med.numero_ordine))
-                draggingNum.current = med.numero_ordine
+                // Dalla strip: solo numero, nessuna posizione sorgente
+                dragSource.current = { num: med.numero_ordine }
               }}
               className="flex items-center gap-1 rounded-md px-2 py-0.5
                          cursor-grab active:cursor-grabbing select-none
@@ -562,6 +633,15 @@ export function GestioneSchemaPage() {
                         isRep={isRep}
                         onDrop={() => handleDrop(giorno, idx, col)}
                         onClear={() => clearCella(giorno, idx, col)}
+                        onDragStart={() => {
+                          // Dalla cella: numero + posizione sorgente per swap
+                          dragSource.current = {
+                            num:          row.vals[col]!,
+                            fromGiorno:   giorno,
+                            fromSlotIdx:  idx,
+                            fromCol:      col,
+                          }
+                        }}
                       />
                     ))}
 
@@ -598,6 +678,52 @@ export function GestioneSchemaPage() {
           </tbody>
         </table>
       </div>
+    </div>
+
+    {/* ═══ COLONNA DESTRA — contatore turnisti ══════════════════ */}
+    <div className="w-40 shrink-0 flex flex-col overflow-hidden">
+      <div className="card flex-1 overflow-y-auto">
+        <div className="px-3 pt-3 pb-2 border-b border-stone-200 shrink-0">
+          <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: '#476540' }}>
+            Contatore
+          </h3>
+          <p className="text-[10px] text-stone-400 mt-0.5">Celle assegnate</p>
+        </div>
+        <div className="divide-y divide-stone-100">
+          {medici.map((med, i) => {
+            const count = contatori[med.numero_ordine] ?? 0
+            const color = PASTEL[i % PASTEL.length]
+            return (
+              <div key={med.id} className="flex items-center gap-2 px-3 py-1.5">
+                {/* Badge colorato */}
+                <span className="w-6 h-6 rounded shrink-0 flex items-center justify-center
+                                 text-xs font-bold"
+                  style={{ background: color.bg, color: color.fg }}>
+                  {med.numero_ordine}
+                </span>
+                {/* Nome */}
+                <span className="text-xs text-stone-600 flex-1 truncate leading-tight">
+                  {med.nome}
+                </span>
+                {/* Contatore */}
+                <span className="text-sm font-bold shrink-0 min-w-[20px] text-right"
+                  style={{ color: count > 0 ? '#374f30' : '#c0bab0' }}>
+                  {count}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+        {/* Totale */}
+        <div className="px-3 py-2 border-t border-stone-200 mt-1">
+          <div className="flex justify-between text-xs font-semibold" style={{ color: '#476540' }}>
+            <span>Totale celle</span>
+            <span>{Object.values(contatori).reduce((s, n) => s + n, 0)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     </div>
   )
 }
