@@ -63,31 +63,42 @@ function isSlotVuoto(r: SlotRow) {
 // - Drop su vuota: sposta qui, svuota sorgente
 // - Drop su occupata: scambia i due valori
 function Cella({
-  valore, bg, fg, onDrop, onClear, isRep, onDragStart,
+  valore, bg, fg, onDrop, onClear, isRep, onDragStart, onTouchStart,
+  giorno, slotIdx, col, touchIsOver,
 }: {
-  valore:      number | null
-  bg:          string
-  fg:          string
-  isRep:       boolean
-  onDrop:      () => void
-  onClear:     () => void
-  onDragStart: () => void
+  valore:       number | null
+  bg:           string
+  fg:           string
+  isRep:        boolean
+  onDrop:       () => void
+  onClear:      () => void
+  onDragStart:  () => void
+  onTouchStart: () => void
+  giorno:       number
+  slotIdx:      number
+  col:          string
+  touchIsOver:  boolean
 }) {
   const [over, setOver] = useState(false)
+  const highlighted = over || touchIsOver
 
   return (
     <td
+      data-giorno={giorno}
+      data-slot-idx={slotIdx}
+      data-col={col}
       draggable={!!valore}
       onDragStart={e => {
         if (!valore) { e.preventDefault(); return }
         e.dataTransfer.effectAllowed = 'move'
         onDragStart()
       }}
+      onTouchStart={() => { if (valore) onTouchStart() }}
       style={{
         width: 46, minWidth: 46, height: 30,
-        background: isRep ? REP_BG : (valore ? bg : over ? '#e8f0e0' : '#fff'),
-        outline: over ? '2px solid #9ab488' : undefined,
-        outlineOffset: over ? '-2px' : undefined,
+        background: isRep ? REP_BG : (valore ? bg : highlighted ? '#e8f0e0' : '#fff'),
+        outline: highlighted ? '2px solid #9ab488' : undefined,
+        outlineOffset: highlighted ? '-2px' : undefined,
         cursor: valore ? 'grab' : 'default',
         textAlign: 'center',
         verticalAlign: 'middle',
@@ -168,6 +179,26 @@ export function GestioneSchemaPage() {
     return () => ro.disconnect()
   }, [showPreview])
 
+  // Listener touchmove NON-PASSIVE: impedisce lo scroll durante il drag su Safari/iOS
+  useEffect(() => {
+    const el = schemaContainerRef.current
+    if (!el) return
+    const onMove = (e: TouchEvent) => {
+      if (!touchActiveSch.current) return
+      e.preventDefault()
+      const t = e.touches[0]
+      const target = document.elementFromPoint(t.clientX, t.clientY)
+      const td = (target?.closest('[data-col]') as HTMLElement | null)
+      if (td?.dataset.col && td.dataset.giorno !== undefined && td.dataset.slotIdx !== undefined) {
+        setTouchOverKey(`${td.dataset.giorno}-${td.dataset.slotIdx}-${td.dataset.col}`)
+      } else {
+        setTouchOverKey(null)
+      }
+    }
+    el.addEventListener('touchmove', onMove, { passive: false })
+    return () => el.removeEventListener('touchmove', onMove)
+  }, [])
+
   // Helper: marca modifiche presenti
   const markUnsaved = () => setHasUnsaved(true)
 
@@ -175,13 +206,18 @@ export function GestioneSchemaPage() {
   const [previewWidth, setPreviewWidth] = useState(800)
   const previewContainerRef = useRef<HTMLDivElement>(null)
 
-  // ── Sorgente del drag ─────────────────────────────────────────
+  // ── Sorgente del drag (mouse) ────────────────────────────────
   const dragSource = useRef<{
     num:           number
     fromGiorno?:   number
     fromSlotIdx?:  number
     fromCol?:      string
   } | null>(null)
+
+  // ── Touch drag (Safari/iOS) ───────────────────────────────────
+  const touchActiveSch   = useRef(false)
+  const schemaContainerRef = useRef<HTMLDivElement>(null)
+  const [touchOverKey, setTouchOverKey] = useState<string | null>(null)
 
   // ── Queries ──────────────────────────────────────────────────
   const { data: schemi = [] } = useQuery<SchemaModello[]>({
@@ -498,7 +534,23 @@ export function GestioneSchemaPage() {
 
   // ─────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-[calc(100vh-112px)] overflow-hidden gap-2">
+    <div
+      ref={schemaContainerRef}
+      className="flex flex-col h-[calc(100vh-112px)] overflow-hidden gap-2"
+      onTouchEnd={e => {
+        if (!touchActiveSch.current) return
+        touchActiveSch.current = false
+        setTouchOverKey(null)
+        const t = e.changedTouches[0]
+        const target = document.elementFromPoint(t.clientX, t.clientY)
+        const td = target?.closest('[data-col]') as HTMLElement | null
+        if (td?.dataset.col && td.dataset.giorno !== undefined && td.dataset.slotIdx !== undefined) {
+          handleDrop(+td.dataset.giorno!, +td.dataset.slotIdx!, td.dataset.col!)
+        } else {
+          dragSource.current = null
+        }
+      }}
+    >
 
       {/* Modal di conferma globale */}
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
@@ -654,8 +706,11 @@ export function GestioneSchemaPage() {
               draggable
               onDragStart={e => {
                 e.dataTransfer.setData('doctorNum', String(med.numero_ordine))
-                // Dalla strip: solo numero, nessuna posizione sorgente
                 dragSource.current = { num: med.numero_ordine }
+              }}
+              onTouchStart={() => {
+                dragSource.current = { num: med.numero_ordine }
+                touchActiveSch.current = true
               }}
               className="flex items-center gap-1 rounded-md px-2 py-0.5
                          cursor-grab active:cursor-grabbing select-none
@@ -770,16 +825,28 @@ export function GestioneSchemaPage() {
                         bg={row.vals[col] ? (colorMap[row.vals[col]!]?.bg ?? '#f3f4f6') : '#fff'}
                         fg={row.vals[col] ? (colorMap[row.vals[col]!]?.fg ?? '#374151') : '#374151'}
                         isRep={isRep}
+                        giorno={giorno}
+                        slotIdx={idx}
+                        col={col}
+                        touchIsOver={touchOverKey === `${giorno}-${idx}-${col}`}
                         onDrop={() => handleDrop(giorno, idx, col)}
                         onClear={() => clearCella(giorno, idx, col)}
                         onDragStart={() => {
-                          // Dalla cella: numero + posizione sorgente per swap
                           dragSource.current = {
-                            num:          row.vals[col]!,
-                            fromGiorno:   giorno,
-                            fromSlotIdx:  idx,
-                            fromCol:      col,
+                            num:         row.vals[col]!,
+                            fromGiorno:  giorno,
+                            fromSlotIdx: idx,
+                            fromCol:     col,
                           }
+                        }}
+                        onTouchStart={() => {
+                          dragSource.current = {
+                            num:         row.vals[col]!,
+                            fromGiorno:  giorno,
+                            fromSlotIdx: idx,
+                            fromCol:     col,
+                          }
+                          touchActiveSch.current = true
                         }}
                       />
                     ))}
