@@ -5,37 +5,30 @@ import { supabase } from '../lib/supabase'
 import { generaColonne, MESI_IT, MESI_SHORT_IT } from '../lib/algorithm'
 import type { Medico, Turno, Configurazione, ColonnaCal, CellaCal } from '../types'
 
-// ─── Badge turno ───────────────────────────────────────────────────
+// ─── Etichette turno (testo semplice, niente alone/ombra) ─────────
 
-function BadgeTurno({ tc, tr }: { tc: string; tr: string }) {
-  const clinico = () => {
-    if (!tc) return null
-    const cls =
-      tc === 'M'   ? 'badge-m'   :
-      tc === 'P'   ? 'badge-p'   :
-      tc === 'L'   ? 'badge-l'   :
-      tc === 'REP' ? 'badge-rep' : ''
-    return <span className={cls}>{tc}</span>
-  }
-
-  const ricerca = () => {
-    if (!tr) return null
-    const parts = tr.split('+')
-    return (
-      <>
-        {parts.map(p => (
-          <span key={p} className={p === 'RM' ? 'badge-rm' : 'badge-rp'}>
-            {p}
-          </span>
-        ))}
-      </>
-    )
-  }
-
+function LabelTurno({ tc, tr }: { tc: string; tr: string }) {
   return (
-    <div className="flex flex-col items-center gap-0.5 leading-none">
-      {clinico()}
-      {ricerca()}
+    <div className="flex flex-col items-center leading-none gap-px">
+      {/* Turno clinico */}
+      {tc === 'M' && (
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#2e4a28' }}>M</span>
+      )}
+      {tc === 'P' && (
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#253a4a' }}>P</span>
+      )}
+      {tc === 'L' && (
+        <span style={{ fontSize: 13, fontWeight: 700, color: '#4a3a1a' }}>L</span>
+      )}
+      {tc === 'REP' && (
+        <span style={{ fontSize: 11, fontWeight: 700, color: '#b91c1c' }}>REP</span>
+      )}
+      {/* Turno ricerca */}
+      {tr && tr.split('+').map(p => (
+        <span key={p} style={{ fontSize: 9, fontWeight: 500, color: '#3a2858' }}>
+          {p}
+        </span>
+      ))}
     </div>
   )
 }
@@ -86,12 +79,15 @@ export function CalendarioPage() {
       const dataFine = new Date(config.anno_fine, config.mese_fine, 0)
         .toISOString().split('T')[0]
 
+      // Supabase limita a 1000 righe di default.
+      // 11 medici × 184 giorni = ~2024 righe → serve limit esplicito
       const { data, error } = await supabase
         .from('turni')
         .select('*')
         .gte('data', dataInizio)
         .lte('data', dataFine)
         .order('data')
+        .limit(10000)
       if (error) throw error
       return data
     },
@@ -180,16 +176,17 @@ export function CalendarioPage() {
 
       {/* ── Legenda ── */}
       {mostraLegenda && (
-        <div className="flex flex-wrap gap-3 px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs shrink-0">
-          <span className="flex items-center gap-1"><span className="badge-m">M</span> Mattina</span>
-          <span className="flex items-center gap-1"><span className="badge-p">P</span> Pomeriggio</span>
-          <span className="flex items-center gap-1"><span className="badge-l">L</span> Lungo (M+P)</span>
-          <span className="flex items-center gap-1"><span className="badge-rep">REP</span> Reperibilità</span>
-          <span className="flex items-center gap-1"><span className="badge-rm">RM</span> Ricerca mattina</span>
-          <span className="flex items-center gap-1"><span className="badge-rp">RP</span> Ricerca pomeriggio</span>
-          <span className="flex items-center gap-1 bg-amber-50 px-1 rounded border border-amber-200">🟡 Dom / Festivo</span>
-          <span className="flex items-center gap-1 bg-emerald-50 px-1 rounded border border-emerald-200">🟢 Ferie</span>
-          <span className="flex items-center gap-1 outline outline-2 outline-olive-400 px-1 rounded">🟢 Modificato</span>
+        <div className="flex flex-wrap gap-3 px-4 py-2 border-b text-xs shrink-0"
+          style={{ background: '#f0ece4', borderColor: '#d5ccb8' }}>
+          <span className="flex items-center gap-1.5"><LabelTurno tc="M"   tr="" /> Mattina</span>
+          <span className="flex items-center gap-1.5"><LabelTurno tc="P"   tr="" /> Pomeriggio</span>
+          <span className="flex items-center gap-1.5"><LabelTurno tc="L"   tr="" /> Lungo (M+P)</span>
+          <span className="flex items-center gap-1.5"><LabelTurno tc="REP" tr="" /> Reperibilità</span>
+          <span className="flex items-center gap-1.5"><LabelTurno tc=""   tr="RM" /> Ricerca mattina</span>
+          <span className="flex items-center gap-1.5"><LabelTurno tc=""   tr="RP" /> Ricerca pomeriggio</span>
+          <span className="flex items-center gap-1 px-1 rounded" style={{ background: '#f0ead8', border: '1px solid #d5ccb8' }}>🟡 Dom / Festivo</span>
+          <span className="flex items-center gap-1 px-1 rounded" style={{ background: '#d5e5d0', border: '1px solid #b0c8a8' }}>🌿 Ferie</span>
+          <span className="flex items-center gap-1 px-1 rounded" style={{ outline: '2px solid #9ab488' }}>✎ Modificato</span>
         </div>
       )}
 
@@ -267,7 +264,7 @@ export function CalendarioPage() {
 
                     return (
                       <td key={col.data} className={cellClass} title={note || undefined}>
-                        {(tc || tr) ? <BadgeTurno tc={tc} tr={tr} /> : null}
+                        {(tc || tr) ? <LabelTurno tc={tc} tr={tr} /> : null}
                       </td>
                     )
                   })}
