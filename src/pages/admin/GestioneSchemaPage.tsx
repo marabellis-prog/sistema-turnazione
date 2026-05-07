@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Save, RotateCcw, Plus, X, Trash2 } from 'lucide-react'
+import { Save, RotateCcw, Plus, X, Trash2, Eye, EyeOff } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
@@ -34,6 +34,11 @@ interface SlotRow {
   vals: Record<string, number | null>
   REP:  boolean
 }
+
+// ── Tipi per l'anteprima rotazione ──────────────────────────────
+interface SlotCellaPreview { col: string; num: number | null }
+interface GiornoPreview    { giorno: number; rows: SlotCellaPreview[][] }
+interface SettimanaPreview { sett: number; giorni: GiornoPreview[] }
 
 function emptySlot(slot: number, colonne: string[]): SlotRow {
   const vals: Record<string, number | null> = {}
@@ -112,6 +117,7 @@ export function GestioneSchemaPage() {
   const [griglia,    setGriglia]    = useState<Record<number, SlotRow[]>>({})
   const [saving,     setSaving]     = useState(false)
   const [msg,        setMsg]        = useState('')
+  const [showPreview, setShowPreview] = useState(false)
 
   // ── Hook dipendenze esterne (devono essere prima degli useEffect) ──
   const { confirm, confirmState } = useConfirm()
@@ -194,6 +200,36 @@ export function GestioneSchemaPage() {
     }
     return counts
   }, [griglia, medici])
+
+  // ── Anteprima rotazione (calcolata localmente, nessun DB) ────────
+  const provaPreview = useMemo<SettimanaPreview[] | null>(() => {
+    if (!showPreview) return null
+    const nMedici = medici.length
+    if (nMedici === 0 || giorni.length === 0) return []
+
+    const previews: SettimanaPreview[] = []
+    for (let sett = 0; sett < nMedici; sett++) {
+      const giornoRows: GiornoPreview[] = []
+      for (const giorno of giorni) {
+        const slots = griglia[giorno] ?? []
+        const rowSlots: SlotCellaPreview[][] = slots.map(row =>
+          colonne.map(col => {
+            const calcNum = row.vals[col]
+            if (calcNum === null) return { col, num: null }
+            // Inversione rotazione: quale medico occupa questo slot in questa settimana?
+            // calcIdx = ((calcNum - 1) - sett) % nMedici
+            let actualIdx = ((calcNum - 1) - sett) % nMedici
+            if (actualIdx < 0) actualIdx += nMedici
+            const med = medici[actualIdx]
+            return { col, num: med?.numero_ordine ?? null }
+          })
+        )
+        giornoRows.push({ giorno, rows: rowSlots })
+      }
+      previews.push({ sett: sett + 1, giorni: giornoRows })
+    }
+    return previews
+  }, [showPreview, medici, giorni, griglia, colonne])
 
   // ── Carica dal DB ─────────────────────────────────────────────
   useEffect(() => {
@@ -559,6 +595,14 @@ export function GestioneSchemaPage() {
               Modifiche non salvate
             </span>
           )}
+          <button
+            onClick={() => setShowPreview(v => !v)}
+            className="btn-secondary py-1 px-2 text-xs gap-1"
+            title="Genera anteprima locale della rotazione per N settimane (senza salvare)"
+            style={showPreview ? { background: '#e0e8d8', borderColor: '#9ab488' } : undefined}
+          >
+            {showPreview ? <><EyeOff size={12} /> Chiudi anteprima</> : <><Eye size={12} /> Prova Schema</>}
+          </button>
           <button onClick={azzera} className="btn-secondary py-1 px-2 text-xs gap-1">
             <RotateCcw size={12} /> Azzera
           </button>
@@ -787,6 +831,111 @@ export function GestioneSchemaPage() {
         </div>
       </div>
       </div>
+
+      {/* Anteprima rotazione — a destra del contatore */}
+      {provaPreview && (
+        <div className="shrink-0 flex flex-col overflow-hidden" style={{ width: 240 }}>
+          <div className="card flex-1 overflow-y-auto">
+            {/* Header */}
+            <div className="px-3 pt-3 pb-2 border-b border-stone-200 shrink-0 flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: '#476540' }}>
+                  Prova Schema
+                </h3>
+                <p className="text-[10px] text-stone-500 mt-0.5">
+                  {medici.length} sett. · rotazione locale
+                </p>
+              </div>
+              <button onClick={() => setShowPreview(false)}
+                className="text-stone-400 hover:text-stone-600 transition-colors ml-2 shrink-0">
+                <X size={13} />
+              </button>
+            </div>
+            {/* Week blocks — si avvolgono a capo */}
+            <div className="p-2 flex flex-wrap gap-1.5 content-start">
+              {provaPreview.length === 0 ? (
+                <p className="text-[10px] text-stone-400 italic px-1 py-2">
+                  Nessun dato nello schema.
+                </p>
+              ) : provaPreview.map(s => {
+                // Larghezza blocco: 24px etichetta giorno + nCols × 17px + 2px padding
+                const cellW = 17
+                const labelW = 24
+                const blockW = labelW + colonne.length * cellW + 2
+                return (
+                  <div key={s.sett} style={{
+                    width: blockW, flexShrink: 0,
+                    background: '#fff', border: '1px solid #e5e7eb',
+                    borderRadius: 5, overflow: 'hidden',
+                  }}>
+                    {/* Header settimana */}
+                    <div style={{
+                      background: '#374f30', color: '#fff',
+                      padding: '2px 3px', fontSize: 9, fontWeight: 700,
+                      textAlign: 'center', letterSpacing: '0.02em',
+                    }}>
+                      S.{s.sett}
+                    </div>
+                    {/* Intestazioni colonne */}
+                    <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb', background: '#f9fafb' }}>
+                      <div style={{ width: labelW, flexShrink: 0 }} />
+                      {colonne.map(col => (
+                        <div key={col} style={{
+                          width: cellW, flexShrink: 0,
+                          textAlign: 'center', fontSize: 8,
+                          color: '#6b7280', fontWeight: 600,
+                          padding: '1px 0',
+                        }}>
+                          {col.length > 2 ? col.slice(0, 2) : col}
+                        </div>
+                      ))}
+                    </div>
+                    {/* Righe: giorno × slot */}
+                    {s.giorni.flatMap(g =>
+                      g.rows.length === 0 ? [] : g.rows.map((slotRow, si) => (
+                        <div key={`${g.giorno}-${si}`} style={{
+                          display: 'flex',
+                          borderBottom: '1px solid #f3f4f6',
+                        }}>
+                          {/* Etichetta giorno (solo per il primo slot) */}
+                          <div style={{
+                            width: labelW, flexShrink: 0,
+                            fontSize: 8, fontWeight: 700,
+                            color: si === 0 ? '#374f30' : 'transparent',
+                            padding: '1px 3px',
+                            lineHeight: '15px',
+                            background: si === 0 ? '#f0f4ee' : '#fff',
+                          }}>
+                            {GIORNI_IT[g.giorno].slice(0, 3)}
+                          </div>
+                          {/* Celle medico */}
+                          {slotRow.map(({ col, num }) => {
+                            const clr = num !== null
+                              ? (colorMap[num] ?? { bg: '#f3f4f6', fg: '#6b7280' })
+                              : null
+                            return (
+                              <div key={col} style={{
+                                width: cellW, height: 15,
+                                flexShrink: 0,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                background: clr?.bg ?? '#fafafa',
+                                fontSize: 9, fontWeight: 700,
+                                color: clr?.fg ?? '#c0b8a8',
+                              }}>
+                                {num ?? '·'}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   )
