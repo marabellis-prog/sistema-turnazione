@@ -361,7 +361,7 @@ export function GestioneUtentiPage() {
         <p className="flex items-center gap-1.5"><Lock size={11} className="text-blue-400" /> Admin permanente: non eliminabile</p>
         <p className="flex items-center gap-1.5"><Shield size={11} className="text-amber-500" /> Admin: accesso completo</p>
         <p className="flex items-center gap-1.5"><User size={11} className="text-blue-500" /> User: solo visualizzazione calendario</p>
-        <p className="text-gray-300 italic">Eliminare un utente rimuove solo l'accesso, non il nominativo dai medici.</p>
+        <p className="text-stone-500 italic">Eliminare un utente rimuove solo l'accesso, non il nominativo dai medici.</p>
       </div>
     </div>
   )

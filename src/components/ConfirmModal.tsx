@@ -52,7 +52,7 @@ export function ConfirmModal({
           }
           <h3 className="font-bold text-base text-stone-800 flex-1">{title}</h3>
           <button onClick={onCancel}
-            className="text-gray-300 hover:text-stone-600 transition-colors -mt-1">
+            className="text-stone-500 hover:text-stone-600 transition-colors -mt-1">
             <X size={18} />
           </button>
         </div>

@@ -146,7 +146,7 @@ export function GestioneFeriePage() {
                   <td className="px-3 py-2 text-right">
                     <button
                       onClick={() => elimina(f)}
-                      className="text-gray-300 hover:text-red-500 p-1"
+                      className="text-stone-500 hover:text-red-500 p-1"
                     >
                       <Trash2 size={14} />
                     </button>

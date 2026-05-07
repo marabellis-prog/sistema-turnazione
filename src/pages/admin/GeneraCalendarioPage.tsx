@@ -99,7 +99,7 @@ function AntepremaSchema({
   const LABELS = ['M','P','RM','RP']
 
   if (filtered.length === 0) return (
-    <div className="flex items-center justify-center h-full text-xs" style={{ color: '#b0a898' }}>
+    <div className="flex items-center justify-center h-full text-xs" style={{ color: '#6b6b5a' }}>
       Schema {schemaNum} vuoto
     </div>
   )
@@ -170,7 +170,7 @@ function AntepremaSchema({
                           )}
                         </div>
                       ) : (
-                        <span style={{ color: '#d1d5db', fontSize: Math.max(8, fontSize - 2) }}>—</span>
+                        <span style={{ color: '#8a8070', fontSize: Math.max(8, fontSize - 2) }}>—</span>
                       )}
                     </td>
                   )
@@ -532,7 +532,7 @@ export function GeneraCalendarioPage() {
           {/* Footer cliccabile → pagina Disegna Schema */}
           <Link to="/admin/schema"
             className="block px-4 py-2 border-t text-center shrink-0 transition-colors"
-            style={{ borderColor: '#e0e8d8', color: '#9a9a8a', textDecoration: 'none' }}
+            style={{ borderColor: '#e0e8d8', color: '#6b6b5a', textDecoration: 'none' }}
             onMouseEnter={e => (e.currentTarget.style.background = '#f0ece4')}
             onMouseLeave={e => (e.currentTarget.style.background = '')}>
             <span className="text-[10px]">

@@ -60,15 +60,15 @@ function StepRow({ label, value, active }: {
       <span className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition-all"
         style={{
           background: done ? '#d5e5d0' : active ? '#e8f0e0' : '#ede8e0',
-          color:      done ? '#2b4a28' : active ? '#476540' : '#b0a898',
+          color:      done ? '#2b4a28' : active ? '#476540' : '#6b6b5a',
         }}>
         {done ? '✓' : active ? '⟳' : '○'}
       </span>
-      <span className="flex-1" style={{ color: done ? '#3a3d30' : active ? '#3a3d30' : '#9a9a8a' }}>
+      <span className="flex-1" style={{ color: done ? '#3a3d30' : active ? '#3a3d30' : '#6b6b5a' }}>
         {label}
       </span>
       <span className="text-xs font-semibold transition-all"
-        style={{ color: done ? '#476540' : '#c0bab0', minWidth: 60, textAlign: 'right' }}>
+        style={{ color: done ? '#476540' : '#7a7a6a', minWidth: 60, textAlign: 'right' }}>
         {value ?? '—'}
       </span>
     </div>
@@ -217,7 +217,7 @@ export function CalendarioPage() {
               <h2 className="font-bold text-sm leading-tight" style={{ color: '#2b3c24' }}>
                 Caricamento calendario
               </h2>
-              <p className="text-xs mt-0.5" style={{ color: '#9a9a8a' }}>
+              <p className="text-xs mt-0.5" style={{ color: '#6b6b5a' }}>
                 Il sistema sta recuperando i dati dal server
               </p>
             </div>
@@ -290,7 +290,7 @@ export function CalendarioPage() {
                       }} />
                     <span style={{
                       fontSize: 8,
-                      color: fatto ? '#476540' : inCorso ? '#476540' : '#b0a898',
+                      color: fatto ? '#476540' : inCorso ? '#476540' : '#6b6b5a',
                       fontWeight: inCorso ? 700 : 400,
                     }}>
                       {label}
@@ -315,7 +315,7 @@ export function CalendarioPage() {
 
   if (!config) {
     return (
-      <div className="flex items-center justify-center h-64 text-stone-400 text-sm">
+      <div className="flex items-center justify-center h-64 text-stone-500 text-sm">
         Nessuna configurazione. Vai in Admin → Genera Calendario.
       </div>
     )
@@ -330,7 +330,7 @@ export function CalendarioPage() {
           Calendario {config.anno_inizio}
           {config.anno_fine !== config.anno_inizio ? `–${config.anno_fine}` : ''}
         </h1>
-        <span className="text-xs" style={{ color: '#9a9a8a' }}>
+        <span className="text-xs" style={{ color: '#6b6b5a' }}>
           {medici.length} medici · Schema {config.schema_attivo} ·{' '}
           {turni.length.toLocaleString('it-IT')} turni · {mesi.length} mesi
         </span>
@@ -366,7 +366,7 @@ export function CalendarioPage() {
 
       <div className="overflow-auto flex-1">
         {turni.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-stone-400">
+          <div className="flex flex-col items-center justify-center py-20 text-stone-500">
             <p className="text-sm font-medium">Nessun turno nel calendario</p>
             <p className="text-xs mt-1">Vai in <strong>Admin → Genera Calendario</strong>.</p>
           </div>

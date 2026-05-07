@@ -92,7 +92,7 @@ function Cella({
     >
       {valore
         ? <span style={{ color: fg, fontWeight: 700, fontSize: 13 }}>{valore}</span>
-        : <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>
+        : <span style={{ color: '#8a8070', fontSize: 11 }}>—</span>
       }
     </td>
   )
@@ -531,7 +531,7 @@ export function GestioneSchemaPage() {
             </div>
           )
         })}
-        <span className="ml-auto text-[10px] text-gray-300 italic">
+        <span className="ml-auto text-[10px] text-stone-500 italic">
           doppio clic su cella per svuotare
         </span>
       </div>
@@ -664,9 +664,9 @@ export function GestioneSchemaPage() {
                       background: isRep ? REP_BG : rowBg,
                     }}>
                       <button onClick={() => rimuoviSlot(giorno, idx)}
-                        style={{ color: '#d1d5db', padding: 2 }}
+                        style={{ color: '#8a8070', padding: 2 }}
                         onMouseEnter={e => (e.currentTarget.style.color = '#f87171')}
-                        onMouseLeave={e => (e.currentTarget.style.color = '#d1d5db')}
+                        onMouseLeave={e => (e.currentTarget.style.color = '#8a8070')}
                         title="Elimina slot">
                         <Trash2 size={10} />
                       </button>
@@ -687,7 +687,7 @@ export function GestioneSchemaPage() {
           <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: '#476540' }}>
             Contatore
           </h3>
-          <p className="text-[10px] text-stone-400 mt-0.5">Celle assegnate</p>
+          <p className="text-[10px] text-stone-500 mt-0.5">Celle assegnate</p>
         </div>
         <div className="divide-y divide-stone-100">
           {medici.map((med, i) => {
@@ -707,7 +707,7 @@ export function GestioneSchemaPage() {
                 </span>
                 {/* Contatore */}
                 <span className="text-sm font-bold shrink-0 min-w-[20px] text-right"
-                  style={{ color: count > 0 ? '#374f30' : '#c0bab0' }}>
+                  style={{ color: count > 0 ? '#374f30' : '#7a7a6a' }}>
                   {count}
                 </span>
               </div>

@@ -58,7 +58,7 @@ export function LoginPage({ user, onSignIn }: Props) {
           Accedi con Google
         </button>
 
-        <p className="mt-6 text-xs" style={{ color: '#9a9a8a' }}>
+        <p className="mt-6 text-xs" style={{ color: '#6b6b5a' }}>
           Solo gli account autorizzati possono accedere.
         </p>
       </div>
