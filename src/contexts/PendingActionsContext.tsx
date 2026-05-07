@@ -48,6 +48,14 @@ interface PendingActionsCtx extends PendingActionsState {
   clearRefresh: () => void
   /** Azzera tutto (chiamato dopo generazione riuscita) */
   clearAll: () => void
+  /**
+   * Guard navigazione: se una pagina ha modifiche non salvate,
+   * registra una funzione che mostra la conferma prima di navigare.
+   * La funzione ritorna true se la navigazione può procedere, false se bloccata.
+   * null = nessun guard attivo.
+   */
+  navGuard:          ((to: string) => boolean) | null
+  registerNavGuard:  (fn: ((to: string) => boolean) | null) => void
 }
 
 // ── Persistenza localStorage ───────────────────────────────────────
@@ -104,8 +112,18 @@ export function PendingActionsProvider({ children }: { children: ReactNode }) {
     update({ needsRegen: null, needsRefresh: null })
   }, [update])
 
+  // Guard navigazione in-app (registrato da GestioneSchemaPage)
+  const [navGuard, setNavGuard] = useState<((to: string) => boolean) | null>(null)
+  const registerNavGuard = useCallback((fn: ((to: string) => boolean) | null) => {
+    setNavGuard(() => fn)   // wrapper perché setState con funzione ha semantica diversa
+  }, [])
+
   return (
-    <Ctx.Provider value={{ ...state, setNeedsRegen, setNeedsRefresh, clearRefresh, clearAll }}>
+    <Ctx.Provider value={{
+      ...state,
+      setNeedsRegen, setNeedsRefresh, clearRefresh, clearAll,
+      navGuard, registerNavGuard,
+    }}>
       {children}
     </Ctx.Provider>
   )

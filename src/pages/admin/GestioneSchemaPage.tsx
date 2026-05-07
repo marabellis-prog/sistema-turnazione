@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Save, RotateCcw, Plus, X, Trash2, Circle } from 'lucide-react'
-import { useBlocker } from 'react-router-dom'
+import { Save, RotateCcw, Plus, X, Trash2 } from 'lucide-react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
@@ -113,19 +113,35 @@ export function GestioneSchemaPage() {
   const [saving,     setSaving]     = useState(false)
   const [msg,        setMsg]        = useState('')
 
+  // ── Hook dipendenze esterne (devono essere prima degli useEffect) ──
+  const { confirm, confirmState } = useConfirm()
+  const { setNeedsRegen, registerNavGuard } = usePendingActions()
+  const navigate = useNavigate()
+
   // ── Modifiche non salvate ─────────────────────────────────────
   const [hasUnsaved, setHasUnsaved] = useState(false)
+  const [navPending, setNavPending] = useState<string | null>(null)
 
-  // Blocca navigazione in-app se ci sono modifiche non salvate
-  const blocker = useBlocker(hasUnsaved)
-
-  // Blocca chiusura/refresh tab (browser dialog nativo — non possiamo personalizzarlo)
+  // Blocca chiusura/refresh tab (dialog nativo del browser)
   useEffect(() => {
     if (!hasUnsaved) return
     const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
   }, [hasUnsaved])
+
+  // Registra/de-registra il guard nel context globale
+  useEffect(() => {
+    if (hasUnsaved) {
+      registerNavGuard((to: string) => {
+        setNavPending(to)
+        return false  // blocca — il modal gestirà la navigazione
+      })
+    } else {
+      registerNavGuard(null)
+    }
+    return () => registerNavGuard(null)   // cleanup al dismount
+  }, [hasUnsaved, registerNavGuard])
 
   // Helper: marca modifiche presenti
   const markUnsaved = () => setHasUnsaved(true)
@@ -137,8 +153,6 @@ export function GestioneSchemaPage() {
     fromSlotIdx?:  number
     fromCol?:      string
   } | null>(null)
-  const { confirm, confirmState } = useConfirm()
-  const { setNeedsRegen } = usePendingActions()
 
   // ── Queries ──────────────────────────────────────────────────
   const { data: schemi = [] } = useQuery<SchemaModello[]>({
@@ -431,16 +445,18 @@ export function GestioneSchemaPage() {
 
       {/* Modal blocco navigazione — modifiche non salvate */}
       <ConfirmModal
-        open={blocker.state === 'blocked'}
+        open={navPending !== null}
         title="Modifiche non salvate"
         message="Hai modifiche allo schema non ancora salvate. Se esci ora andranno perse."
         confirmLabel="Rimani e salvo"
         cancelLabel="Esci senza salvare"
         danger={false}
-        onConfirm={() => blocker.reset?.()}
+        onConfirm={() => setNavPending(null)}
         onCancel={() => {
+          const dest = navPending!
           setHasUnsaved(false)   // resetta: non riapparirà fino a nuove modifiche
-          blocker.proceed?.()
+          setNavPending(null)
+          navigate(dest)
         }}
       />
 
@@ -540,9 +556,9 @@ export function GestioneSchemaPage() {
           )}
           {/* Badge modifiche non salvate */}
           {hasUnsaved && !saving && (
-            <span className="flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full"
+            <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full"
               style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fbbf24' }}>
-              <Circle size={6} fill="currentColor" />
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f59e0b', display: 'inline-block', flexShrink: 0 }} />
               Modifiche non salvate
             </span>
           )}
