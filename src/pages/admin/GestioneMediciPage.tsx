@@ -4,6 +4,7 @@ import { Plus, Pencil, Save, X, Trash2, AlertTriangle, RefreshCw } from 'lucide-
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
+import { usePendingActions } from '../../contexts/PendingActionsContext'
 import type { Medico } from '../../types'
 
 // ─────────────────────────────────────────────────────────────────
@@ -31,6 +32,7 @@ const CAMPI_SCHEMA = [
 export function GestioneMediciPage() {
   const qc = useQueryClient()
   const { confirm, confirmState } = useConfirm()
+  const { setNeedsRegen } = usePendingActions()
 
   // Stato editing inline
   const [editId,      setEditId]      = useState<string | null>(null)
@@ -83,12 +85,11 @@ export function GestioneMediciPage() {
     if (error) { setErrore(error.message); return }
 
     setEditId(null)
-    // Se l'ordine è cambiato → il calendario va rigenerato
     if (editOrdine !== editOrigOrd) {
-      setAvviso(
-        `Il numero d'ordine di ${nome} è cambiato (${editOrigOrd} → ${editOrdine}). ` +
-        'Rigenera il calendario per riflettere la nuova posizione nella rotazione.'
-      )
+      // 🔴 Cambio ordine → rotazione cambiata → rigenera
+      const msg = `${nome}: numero ordine cambiato (${editOrigOrd} → ${editOrdine})`
+      setAvviso(msg + ' — rigenera il calendario.')
+      setNeedsRegen(msg)
     }
 
     // Invalida tutto ciò che dipende dai medici
@@ -129,10 +130,10 @@ export function GestioneMediciPage() {
 
       if (error) throw error
 
-      setAvviso(
-        `${m.nome} eliminato. Le sue presenze nello schema sono state azzerate. ` +
-        'Rigenera il calendario per aggiornare il calendario.'
-      )
+      // 🔴 Medico eliminato → rigenera
+      const msg = `${m.nome} eliminato — turni e schema aggiornati`
+      setAvviso(msg + ' · rigenera il calendario.')
+      setNeedsRegen(msg)
 
       // Invalida tutte le query dipendenti
       qc.invalidateQueries({ queryKey: ['medici'] })
@@ -162,7 +163,10 @@ export function GestioneMediciPage() {
     if (error) { setErrore(error.message); return }
 
     setNuovoNome('')
-    setAvviso(`${nome} aggiunto con numero d'ordine ${nextOrdine}. Rigenera il calendario per includerlo.`)
+    // 🔴 Nuovo medico → rigenera
+    const msg = `${nome} aggiunto (n°${nextOrdine})`
+    setAvviso(msg + ' — rigenera il calendario per includerlo.')
+    setNeedsRegen(msg)
     qc.invalidateQueries({ queryKey: ['medici'] })
     qc.invalidateQueries({ queryKey: ['medici-tutti'] })
   }

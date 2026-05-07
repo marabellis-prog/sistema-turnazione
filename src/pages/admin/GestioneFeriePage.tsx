@@ -5,11 +5,13 @@ import { supabase } from '../../lib/supabase'
 import { MESI_IT } from '../../lib/algorithm'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
+import { usePendingActions } from '../../contexts/PendingActionsContext'
 import type { Medico, Ferie } from '../../types'
 
 export function GestioneFeriePage() {
   const qc = useQueryClient()
   const { confirm, confirmState } = useConfirm()
+  const { setNeedsRefresh } = usePendingActions()
   const [medicoId, setMedicoId]     = useState('')
   const [dataInizio, setDataInizio] = useState('')
   const [dataFine, setDataFine]     = useState('')
@@ -76,6 +78,9 @@ export function GestioneFeriePage() {
     setMedicoId(''); setDataInizio(''); setDataFine(''); setNote('')
     qc.invalidateQueries({ queryKey: ['ferie'] })
     qc.invalidateQueries({ queryKey: ['turni'] })
+    // 🟠 Ferie inserite → aggiornamento calendario (non rigenera)
+    const medNome = medici.find(m => m.id === medicoId)?.nome ?? medicoId
+    setNeedsRefresh(`Ferie inserite per ${medNome} (${dataInizio} → ${dataFine})`)
   }
 
   async function elimina(f: Ferie & { medico: Medico }) {

@@ -4,6 +4,7 @@ import { Save, RotateCcw, Plus, X, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
+import { usePendingActions } from '../../contexts/PendingActionsContext'
 import type { SchemaModello, Medico } from '../../types'
 
 // ── Colori pastello (uno per turnista) ───────────────────────────
@@ -100,6 +101,7 @@ export function GestioneSchemaPage() {
 
   const draggingNum = useRef<number | null>(null)
   const { confirm, confirmState } = useConfirm()
+  const { setNeedsRegen } = usePendingActions()
 
   // ── Queries ──────────────────────────────────────────────────
   const { data: schemi = [] } = useQuery<SchemaModello[]>({
@@ -309,6 +311,8 @@ export function GestioneSchemaPage() {
         if (insErr) throw insErr
       }
       setMsg(`✓ Schema ${schemaNum} salvato (${rows.length} slot)`)
+      // 🔴 Schema modificato → rotazione cambiata → rigenera
+      setNeedsRegen(`Schema ${schemaNum} modificato (${rows.length} slot)`)
       qc.invalidateQueries({ queryKey: ['schemi_modello'] })
     } catch (e: unknown) {
       setMsg('Errore: ' + (e as Error).message)

@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
-import { LogOut, Calendar, Settings, Users } from 'lucide-react'
+import { LogOut, Calendar, Settings, Users, AlertTriangle, RefreshCw } from 'lucide-react'
+import { usePendingActions } from '../contexts/PendingActionsContext'
 import type { AuthUser } from '../types'
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
 
 export function NavBar({ user, onSignOut }: Props) {
   const loc = useLocation()
+  const { needsRegen, needsRefresh } = usePendingActions()
 
   const navLink = (to: string, label: string, Icon: React.ElementType) => {
     const active = loc.pathname.startsWith(to)
@@ -16,11 +18,10 @@ export function NavBar({ user, onSignOut }: Props) {
       <Link
         to={to}
         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-          ${active
-            ? 'text-white'
-            : 'text-olive-200 hover:text-white hover:bg-olive-700/50'
-          }`}
-        style={active ? { background: 'rgba(255,255,255,0.15)' } : {}}
+          ${active ? '' : 'hover:text-white'}`}
+        style={active
+          ? { background: 'rgba(255,255,255,0.15)', color: '#fff' }
+          : { color: '#9ab488' }}
       >
         <Icon size={15} />
         {label}
@@ -31,23 +32,53 @@ export function NavBar({ user, onSignOut }: Props) {
   return (
     <nav className="text-white shadow-md print:hidden"
       style={{ background: '#2b3c24' }}>
-      <div className="max-w-screen-xl mx-auto px-4 flex items-center justify-between h-12">
+      <div className="max-w-screen-xl mx-auto px-4 flex items-center gap-3 h-12">
 
-        {/* Logo */}
-        <div className="flex items-center gap-3">
-          <Calendar size={18} style={{ color: '#9ab488' }} />
-          <span className="font-bold text-sm tracking-tight text-cream-200">
+        {/* Logo + nome app */}
+        <div className="flex items-center gap-2 shrink-0">
+          <Calendar size={17} style={{ color: '#9ab488' }} />
+          <span className="font-bold text-sm tracking-tight" style={{ color: '#e0e8d8' }}>
             Sistema Turni
           </span>
         </div>
 
+        {/* ── Avviso pendente (solo admin) ──────────────────────── */}
+        {user?.ruolo === 'admin' && needsRegen && (
+          <Link
+            to="/admin/genera"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold
+                       animate-pulse transition-colors hover:opacity-90 shrink-0"
+            style={{ background: '#b91c1c', color: '#fff' }}
+            title={`Rigenerazione richiesta: ${needsRegen.reason}`}
+          >
+            <AlertTriangle size={13} />
+            Rigenera calendario
+          </Link>
+        )}
+
+        {user?.ruolo === 'admin' && !needsRegen && needsRefresh && (
+          <Link
+            to="/admin/genera"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold
+                       transition-colors hover:opacity-90 shrink-0"
+            style={{ background: '#92400e', color: '#fff' }}
+            title={`Aggiornamento consigliato: ${needsRefresh.reason}`}
+          >
+            <RefreshCw size={12} />
+            Aggiorna calendario
+          </Link>
+        )}
+
         {/* Navigazione */}
         {user && (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 ml-1">
             {navLink('/calendario', 'Calendario', Calendar)}
             {user.ruolo === 'admin' && navLink('/admin', 'Admin', Settings)}
           </div>
         )}
+
+        {/* Spacer */}
+        <div className="flex-1" />
 
         {/* Utente + logout */}
         {user && (

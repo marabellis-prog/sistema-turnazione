@@ -13,7 +13,8 @@ import { GestioneFeriePage }    from './pages/admin/GestioneFeriePage'
 import { GestioneUtentiPage }   from './pages/admin/GestioneUtentiPage'
 import { ConfigPage }           from './pages/admin/ConfigPage'
 import { GestioneSchemaPage }   from './pages/admin/GestioneSchemaPage'
-import { useAuth }           from './hooks/useAuth'
+import { useAuth }                from './hooks/useAuth'
+import { PendingActionsProvider } from './contexts/PendingActionsContext'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -115,9 +116,11 @@ function AppRoutes() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter basename="/sistema-turnazione">
-        <AppRoutes />
-      </BrowserRouter>
+      <PendingActionsProvider>
+        <BrowserRouter basename="/sistema-turnazione">
+          <AppRoutes />
+        </BrowserRouter>
+      </PendingActionsProvider>
     </QueryClientProvider>
   )
 }

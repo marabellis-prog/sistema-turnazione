@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { calcolaCalendarioCompleto, primoLunediDelPeriodo, MESI_IT } from '../../lib/algorithm'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
+import { usePendingActions } from '../../contexts/PendingActionsContext'
 import type { Configurazione, Medico, SchemaModello } from '../../types'
 
 // Colori pastello coerenti con la pagina Schema
@@ -136,6 +137,7 @@ function AntepremaSchema({
 export function GeneraCalendarioPage() {
   const qc = useQueryClient()
   const { confirm, confirmState } = useConfirm()
+  const { clearAll } = usePendingActions()
 
   // Parametri locali (inizializzati da configurazione DB)
   const [schemaNum,   setSchemaNum]   = useState(1)
@@ -268,6 +270,7 @@ export function GeneraCalendarioPage() {
       setStato('ok')
       setMessaggio(`✓ Generati ${turniGenerati.length} turni · Schema ${schemaNum} · ${periodoLabel}`)
       qc.invalidateQueries({ queryKey: ['turni'] })
+      clearAll()  // ✓ Azzera avvisi pendenti: calendario appena rigenerato
 
     } catch (e: unknown) {
       setStato('error')
