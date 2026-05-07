@@ -434,10 +434,7 @@ export function GestioneSchemaPage() {
 
   // ─────────────────────────────────────────────────────────────
   return (
-    <div className="flex gap-3 h-[calc(100vh-112px)] overflow-hidden">
-
-    {/* ═══ COLONNA SINISTRA (schema) ═════════════════════════════ */}
-    <div className="flex-1 flex flex-col overflow-hidden gap-2">
+    <div className="flex flex-col h-[calc(100vh-112px)] overflow-hidden gap-2">
 
       {/* Modal di conferma globale */}
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
@@ -604,7 +601,8 @@ export function GestioneSchemaPage() {
         </span>
       </div>
 
-      {/* ═══ GRIGLIA SCHEMA ════════════════════════════════════ */}
+      {/* ═══ GRIGLIA + CONTATORE (affiancati) ═══════════════════ */}
+      <div className="flex gap-2 flex-1 overflow-hidden">
       <div className="flex-1 overflow-auto">
         <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
           {/* Header colonne */}
@@ -746,10 +744,8 @@ export function GestioneSchemaPage() {
           </tbody>
         </table>
       </div>
-    </div>
-
-    {/* ═══ COLONNA DESTRA — contatore turnisti ══════════════════ */}
-    <div className="w-40 shrink-0 flex flex-col overflow-hidden">
+      {/* Contatore — subito a destra della tabella */}
+      <div className="w-40 shrink-0 flex flex-col overflow-hidden">
       <div className="card flex-1 overflow-y-auto">
         <div className="px-3 pt-3 pb-2 border-b border-stone-200 shrink-0">
           <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: '#476540' }}>
@@ -790,8 +786,8 @@ export function GestioneSchemaPage() {
           </div>
         </div>
       </div>
-    </div>
-
+      </div>
+      </div>
     </div>
   )
 }
