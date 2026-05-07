@@ -1,18 +1,14 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { RefreshCw, Info } from 'lucide-react'
+import { RefreshCw, Info, AlertTriangle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import {
-  calcolaCalendarioCompleto,
-  generaColonne,
-  MESI_SHORT_IT,
-} from '../lib/algorithm'
+import { generaColonne, MESI_SHORT_IT } from '../lib/algorithm'
 import type {
-  Medico, Turno, Configurazione, SchemaModello, ColonnaCal,
+  Medico, Turno, Configurazione, ColonnaCal,
   TurnoClinico, TurnoRicerca,
 } from '../types'
 
-// ─── Struttura cella display ──────────────────────────────────────
+// ─── CellDisplay ──────────────────────────────────────────────────
 interface CellDisplay {
   turno_clinico:          TurnoClinico
   turno_ricerca:          TurnoRicerca
@@ -21,7 +17,7 @@ interface CellDisplay {
   is_ferie:               boolean
 }
 
-// ─── Etichette turno — testo semplice, niente alone/sfondo ───────
+// ─── Etichette turno — testo semplice, niente alone ───────────────
 function LabelTurno({ tc, tr }: { tc: string; tr: string }) {
   return (
     <div className="flex flex-col items-center leading-none gap-px">
@@ -36,42 +32,36 @@ function LabelTurno({ tc, tr }: { tc: string; tr: string }) {
   )
 }
 
-// ─── Step di caricamento ──────────────────────────────────────────
-function LoadingStep({ label, done, active }: { label: string; done: boolean; active: boolean }) {
-  return (
-    <div className={`flex items-center gap-2 text-sm ${done ? '' : active ? '' : 'opacity-40'}`}>
-      <span className="w-5 h-5 flex items-center justify-center rounded-full text-xs font-bold shrink-0"
-        style={{
-          background: done ? '#d5e5d0' : '#f0ece4',
-          color:      done ? '#2b4a28' : '#9a9a8a',
-        }}>
-        {done ? '✓' : active ? '⟳' : '○'}
-      </span>
-      <span style={{ color: done ? '#374f30' : active ? '#3a3d30' : '#9a9a8a' }}>
-        {label}
-      </span>
-    </div>
-  )
-}
+// ════════════════════════════════════════════════════════════════════
+// STRATEGIA DI CARICAMENTO — il DB è sempre la fonte di verità
+//
+//  Il calcolo locale NON è sicuro per il display: se schema o medici
+//  cambiano dopo la generazione, il calcolo locale mostrarebbe turni
+//  diversi da quelli effettivamente assegnati. Il DB registra ciò che
+//  è stato realmente comunicato ai medici.
+//
+//  Per bypassare il limite di 1000 righe di Supabase si usa la
+//  PAGINAZIONE con .range(): 2-3 query invece di una sola.
+//  Con 11 medici × 184 giorni = 2024 righe → 3 chiamate (1000+1000+24).
+//
+//  Il contatore di progresso mostra quante righe sono state caricate
+//  in tempo reale so l'utente vede l'avanzamento preciso.
+// ════════════════════════════════════════════════════════════════════
 
-// ════════════════════════════════════════════════════════════════════
-// ARCHITETTURA: calcolo locale + fetch solo eccezioni
-//
-//  1. DB fetch: configurazione, medici, schemi (piccoli, veloci)
-//  2. Calcolo LOCALE di tutti i turni teorici (nessuna query, ~10ms)
-//  3. DB fetch: SOLO turni con modificato_manualmente=true o is_ferie=true
-//     (tipicamente 0-50 righe, indipendente dal numero totale di turni)
-//  4. Merge: le eccezioni sovrascrivono il teorico
-//
-// Questo elimina il problema del limite Supabase (1000 righe default)
-// e scala senza problemi a qualsiasi numero di medici/mesi.
-// ════════════════════════════════════════════════════════════════════
+const PAGE_SIZE = 1000
 
 export function CalendarioPage() {
   const [rigaSel,       setRigaSel]       = useState<string | null>(null)
   const [mostraLegenda, setMostraLegenda] = useState(true)
 
-  // ── Step 1: Configurazione ───────────────────────────────────────
+  // Stato paginazione manuale
+  const [turni,         setTurni]         = useState<Turno[]>([])
+  const [loadedRows,    setLoadedRows]     = useState(0)
+  const [totalRows,     setTotalRows]      = useState<number | null>(null)
+  const [loadError,     setLoadError]      = useState<string | null>(null)
+  const [loadDone,      setLoadDone]       = useState(false)
+
+  // ── Query dati statici (piccoli) ─────────────────────────────────
   const { data: config, isLoading: lCfg } = useQuery<Configurazione | null>({
     queryKey: ['configurazione'],
     queryFn: async () => {
@@ -83,7 +73,6 @@ export function CalendarioPage() {
     },
   })
 
-  // ── Step 2: Medici ───────────────────────────────────────────────
   const { data: medici = [], isLoading: lMed } = useQuery<Medico[]>({
     queryKey: ['medici'],
     queryFn: async () => {
@@ -94,76 +83,95 @@ export function CalendarioPage() {
     },
   })
 
-  // ── Step 3: Schemi ───────────────────────────────────────────────
-  const { data: schemi = [], isLoading: lSch } = useQuery<SchemaModello[]>({
-    queryKey: ['schemi_modello'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('schemi_modello').select('*')
-      if (error) throw error
-      return data
-    },
-  })
+  // ── Fetch paginato dei turni dal DB ──────────────────────────────
+  const caricaTurni = useCallback(async (cfg: Configurazione) => {
+    setTurni([])
+    setLoadedRows(0)
+    setTotalRows(null)
+    setLoadError(null)
+    setLoadDone(false)
 
-  // ── Step 4: Calcolo locale (sincrono, ~10ms) ─────────────────────
-  const turniTeorici = useMemo(() => {
-    if (!config || medici.length === 0 || schemi.length === 0) return []
-    return calcolaCalendarioCompleto(config, schemi, medici)
-  }, [config, medici, schemi])
+    const di = `${cfg.anno_inizio}-${String(cfg.mese_inizio).padStart(2,'0')}-01`
+    const df = new Date(cfg.anno_fine, cfg.mese_fine, 0).toISOString().split('T')[0]
 
-  // Stima totale (per il contatore nel loading)
-  const stimaTotale = useMemo(() => {
-    if (!config || medici.length === 0) return 0
-    const start = new Date(config.anno_inizio, config.mese_inizio - 1, 1)
-    const end   = new Date(config.anno_fine, config.mese_fine, 0)
-    return (Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1) * medici.length
-  }, [config, medici])
+    let all: Turno[] = []
+    let from = 0
+    let totale: number | null = null
 
-  // ── Step 5: Solo eccezioni dal DB ───────────────────────────────
-  const {
-    data: eccezioni = [], isLoading: lEcc,
-    isFetching, refetch,
-  } = useQuery<Turno[]>({
-    queryKey: ['turni-eccezioni', config?.id],
-    enabled:  turniTeorici.length > 0,
-    queryFn: async () => {
-      if (!config) return []
-      const di = `${config.anno_inizio}-${String(config.mese_inizio).padStart(2,'0')}-01`
-      const df = new Date(config.anno_fine, config.mese_fine, 0).toISOString().split('T')[0]
-      const { data, error } = await supabase
-        .from('turni').select('*')
-        .gte('data', di).lte('data', df)
-        .or('modificato_manualmente.eq.true,is_ferie.eq.true')
-        .limit(5000)
-      if (error) throw error
-      return data ?? []
-    },
-    staleTime: 60_000,
-  })
+    try {
+      while (true) {
+        // Prima pagina: chiedi anche il count totale
+        const query = supabase
+          .from('turni')
+          .select(from === 0 ? '*' : '*', from === 0 ? { count: 'exact' } : undefined)
+          .gte('data', di)
+          .lte('data', df)
+          .order('data')
+          .order('medico_id')
+          .range(from, from + PAGE_SIZE - 1)
 
-  // ── Costruisce mappa display (teorico + eccezioni) ───────────────
+        const res = from === 0
+          ? await supabase
+              .from('turni')
+              .select('*', { count: 'exact' })
+              .gte('data', di).lte('data', df)
+              .order('data').order('medico_id')
+              .range(0, PAGE_SIZE - 1)
+          : await supabase
+              .from('turni')
+              .select('*')
+              .gte('data', di).lte('data', df)
+              .order('data').order('medico_id')
+              .range(from, from + PAGE_SIZE - 1)
+
+        if (res.error) throw res.error
+
+        if (from === 0 && res.count !== null) {
+          totale = res.count
+          setTotalRows(totale)
+        }
+
+        const page = res.data ?? []
+        all = [...all, ...page]
+        setLoadedRows(all.length)
+
+        // Ultima pagina?
+        if (page.length < PAGE_SIZE) break
+        from += PAGE_SIZE
+      }
+
+      setTurni(all)
+      setLoadDone(true)
+
+    } catch (e: unknown) {
+      setLoadError((e as Error).message)
+      setLoadDone(true)
+    }
+  }, [])
+
+  // Avvia il caricamento quando config è disponibile
+  useEffect(() => {
+    if (config) caricaTurni(config)
+  }, [config, caricaTurni])
+
+  // ── Mappa display (medico_id → data → CellDisplay) ───────────────
   const turniMap = useMemo(() => {
     const map = new Map<string, Map<string, CellDisplay>>()
-    for (const t of turniTeorici) {
+    for (const t of turni) {
       if (!map.has(t.medico_id)) map.set(t.medico_id, new Map())
       map.get(t.medico_id)!.set(t.data, {
-        turno_clinico: t.turno_clinico, turno_ricerca: t.turno_ricerca,
-        note: null, modificato_manualmente: false, is_ferie: false,
-      })
-    }
-    for (const e of eccezioni) {
-      if (!map.has(e.medico_id)) map.set(e.medico_id, new Map())
-      map.get(e.medico_id)!.set(e.data, {
-        turno_clinico: e.turno_clinico, turno_ricerca: e.turno_ricerca,
-        note: e.note, modificato_manualmente: e.modificato_manualmente,
-        is_ferie: e.is_ferie,
+        turno_clinico:          t.turno_clinico,
+        turno_ricerca:          t.turno_ricerca,
+        note:                   t.note,
+        modificato_manualmente: t.modificato_manualmente,
+        is_ferie:               t.is_ferie,
       })
     }
     return map
-  }, [turniTeorici, eccezioni])
+  }, [turni])
 
-  // ── Colonne (giorni) e raggruppamento per mese ───────────────────
+  // ── Colonne (giorni) e raggruppamento mesi ───────────────────────
   const colonne = useMemo<ColonnaCal[]>(() => config ? generaColonne(config) : [], [config])
-
   const gruppiMese = useMemo(() => {
     const g: { mese: number; anno: number; count: number }[] = []
     colonne.forEach(col => {
@@ -174,23 +182,19 @@ export function CalendarioPage() {
     return g
   }, [colonne])
 
-  // ── Stato avanzamento loading ────────────────────────────────────
-  const sCfg  = !lCfg  && !!config
-  const sMed  = !lMed  && medici.length > 0
-  const sSch  = !lSch  && schemi.length > 0
-  const sCalc = turniTeorici.length > 0
-  const sEcc  = !lEcc
-  const done  = sCfg && sMed && sSch && sCalc && sEcc
-
-  const pct = (sCfg ? 20 : 0) + (sMed && sSch ? 20 : 0) + (sCalc ? 30 : 0) + (sEcc ? 30 : 0)
-
   // ── Schermata di caricamento ─────────────────────────────────────
-  if (!done) {
+  const isLoading = lCfg || lMed || !loadDone
+
+  if (isLoading) {
+    const pct = totalRows && totalRows > 0
+      ? Math.round((loadedRows / totalRows) * 100)
+      : loadedRows > 0 ? 50 : (lCfg || lMed ? 10 : 20)
+
     return (
       <div className="flex items-center justify-center h-[calc(100vh-48px)]"
         style={{ background: '#f4f1ea' }}>
-        <div className="rounded-2xl p-8 w-80 shadow-lg space-y-5"
-          style={{ background: '#faf8f3', border: '1px solid #d5ccb8' }}>
+        <div className="rounded-2xl p-8 w-84 shadow-lg space-y-5"
+          style={{ background: '#faf8f3', border: '1px solid #d5ccb8', minWidth: 320 }}>
 
           <div className="text-center">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 mx-auto mb-3"
@@ -200,31 +204,28 @@ export function CalendarioPage() {
             </h2>
           </div>
 
-          <div className="space-y-2.5">
-            <LoadingStep label="Configurazione" done={sCfg} active={lCfg} />
-            <LoadingStep
-              label={sMed && sSch
-                ? `Medici (${medici.length}) · Schema (${schemi.filter(s=>s.schema_num===config?.schema_attivo).length} slot)`
-                : 'Medici e schema di rotazione'}
-              done={sMed && sSch}
-              active={lMed || lSch}
-            />
-            <LoadingStep
-              label={sCalc
-                ? `Calcolati ${turniTeorici.length.toLocaleString('it-IT')} turni in locale ✓`
-                : stimaTotale > 0
-                  ? `Calcolo ~${stimaTotale.toLocaleString('it-IT')} turni in locale...`
-                  : 'Calcolo turni in locale'}
-              done={sCalc}
-              active={(sMed && sSch) && !sCalc}
-            />
-            <LoadingStep
-              label={sEcc
-                ? `Verificate modifiche manuali (${eccezioni.length})`
-                : 'Verifica modifiche manuali...'}
-              done={sEcc}
-              active={sCalc && lEcc}
-            />
+          {/* Messaggio corrente */}
+          <div className="text-sm text-center space-y-1" style={{ color: '#5a5a4a' }}>
+            {lCfg || lMed ? (
+              <p>Caricamento configurazione e medici...</p>
+            ) : totalRows === null && loadedRows === 0 ? (
+              <p>Connessione al database...</p>
+            ) : (
+              <>
+                <p className="font-semibold" style={{ color: '#374f30', fontSize: 15 }}>
+                  {loadedRows.toLocaleString('it-IT')}
+                  {totalRows !== null && ` / ${totalRows.toLocaleString('it-IT')}`}
+                  {' '}turni caricati
+                </p>
+                {totalRows !== null && (
+                  <p style={{ color: '#9a9a8a', fontSize: 12 }}>
+                    Pagina {Math.ceil(loadedRows / PAGE_SIZE) || 1} di{' '}
+                    {Math.ceil(totalRows / PAGE_SIZE)}
+                    {' '}· {medici.length} medici
+                  </p>
+                )}
+              </>
+            )}
           </div>
 
           {/* Barra progresso */}
@@ -233,19 +234,22 @@ export function CalendarioPage() {
               <span>Avanzamento</span>
               <span className="font-semibold">{pct}%</span>
             </div>
-            <div className="h-2.5 rounded-full overflow-hidden" style={{ background: '#e0e8d8' }}>
-              <div className="h-full rounded-full transition-all duration-500"
-                style={{ width: `${pct}%`, background: '#476540' }} />
+            <div className="h-3 rounded-full overflow-hidden" style={{ background: '#e0e8d8' }}>
+              <div className="h-full rounded-full transition-all duration-300"
+                style={{
+                  width: `${pct}%`,
+                  background: 'linear-gradient(90deg, #476540, #6b8254)',
+                }} />
             </div>
-            {stimaTotale > 0 && (
-              <p className="text-xs text-center pt-0.5" style={{ color: '#9a9a8a' }}>
-                {sCalc
-                  ? `${turniTeorici.length.toLocaleString('it-IT')} turni · 0 query pesanti`
-                  : `~${stimaTotale.toLocaleString('it-IT')} turni da calcolare`
-                }
-              </p>
-            )}
           </div>
+
+          {loadError && (
+            <div className="flex items-start gap-2 p-3 rounded-lg text-xs"
+              style={{ background: '#fde8e8', color: '#7a2020', border: '1px solid #f0c0c0' }}>
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+              <span>Errore: {loadError}</span>
+            </div>
+          )}
         </div>
       </div>
     )
@@ -259,7 +263,7 @@ export function CalendarioPage() {
     )
   }
 
-  // ── Tabella calendario ────────────────────────────────────────────
+  // ── Tabella ───────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-[calc(100vh-48px)]">
 
@@ -272,18 +276,16 @@ export function CalendarioPage() {
         </h1>
         <span className="text-xs" style={{ color: '#9a9a8a' }}>
           {medici.length} medici · Schema {config.schema_attivo} ·{' '}
-          {turniTeorici.length.toLocaleString('it-IT')} turni
-          {eccezioni.length > 0 && ` · ${eccezioni.length} modifiche`}
+          {turni.length.toLocaleString('it-IT')} turni
         </span>
         <div className="ml-auto flex items-center gap-2">
           <button onClick={() => setMostraLegenda(v => !v)}
             className="btn-secondary py-1 px-2 text-xs">
             <Info size={13} /> Legenda
           </button>
-          <button onClick={() => refetch()} disabled={isFetching}
+          <button onClick={() => config && caricaTurni(config)}
             className="btn-secondary py-1 px-2 text-xs">
-            <RefreshCw size={13} className={isFetching ? 'animate-spin' : ''} />
-            Aggiorna
+            <RefreshCw size={13} /> Aggiorna
           </button>
         </div>
       </div>
@@ -309,72 +311,79 @@ export function CalendarioPage() {
 
       {/* Tabella */}
       <div className="overflow-auto flex-1">
-        <table className="cal-table">
-          <thead>
-            <tr>
-              <th className="cal-td-nome-header" rowSpan={2}>Medico</th>
-              {gruppiMese.map(g => (
-                <th key={`${g.anno}-${g.mese}`} colSpan={g.count}
-                  className="cal-th text-[11px] text-white"
-                  style={{ background: '#374f30', borderColor: '#2b3c24' }}>
-                  {MESI_SHORT_IT[g.mese]}{g.anno !== config.anno_inizio ? ` ${g.anno}` : ''}
-                </th>
-              ))}
-            </tr>
-            <tr>
-              {colonne.map(col => (
-                <th key={col.data}
-                  className="cal-th text-[10px] !px-0 !py-0.5 w-8"
-                  style={col.isDomenica || col.isFestivo
-                    ? { background: '#f0ead8', color: '#6b5030' }
-                    : {}}
-                  title={col.data}>
-                  {col.giorno}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {medici.map(med => {
-              const medMap = turniMap.get(med.id)
-              const isSel  = rigaSel === med.id
-              return (
-                <tr key={med.id}
-                  onClick={() => setRigaSel(isSel ? null : med.id)}
-                  className="cursor-pointer transition-colors"
-                  style={{ background: isSel ? '#dde8d5' : '' }}
-                  onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = '#eae8e0' }}
-                  onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = '' }}
-                >
-                  <td className="cal-td-nome"
-                    style={{ background: isSel ? '#c5d8bc' : undefined }}>
-                    {med.nome}
-                  </td>
-                  {colonne.map(col => {
-                    const cell  = medMap?.get(col.data)
-                    const tc    = cell?.turno_clinico ?? ''
-                    const tr    = cell?.turno_ricerca  ?? ''
-                    const ferie = cell?.is_ferie ?? false
-                    const modif = cell?.modificato_manualmente ?? false
+        {turni.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-stone-400">
+            <p className="text-sm font-medium">Nessun turno nel calendario</p>
+            <p className="text-xs mt-1">
+              Vai in <strong>Admin → Genera Calendario</strong> per generarli.
+            </p>
+          </div>
+        ) : (
+          <table className="cal-table">
+            <thead>
+              <tr>
+                <th className="cal-td-nome-header" rowSpan={2}>Medico</th>
+                {gruppiMese.map(g => (
+                  <th key={`${g.anno}-${g.mese}`} colSpan={g.count}
+                    className="cal-th text-[11px] text-white"
+                    style={{ background: '#374f30', borderColor: '#2b3c24' }}>
+                    {MESI_SHORT_IT[g.mese]}{g.anno !== config.anno_inizio ? ` ${g.anno}` : ''}
+                  </th>
+                ))}
+              </tr>
+              <tr>
+                {colonne.map(col => (
+                  <th key={col.data}
+                    className="cal-th text-[10px] !px-0 !py-0.5 w-8"
+                    style={col.isDomenica || col.isFestivo
+                      ? { background: '#f0ead8', color: '#6b5030' } : {}}
+                    title={col.data}>
+                    {col.giorno}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {medici.map(med => {
+                const medMap = turniMap.get(med.id)
+                const isSel  = rigaSel === med.id
+                return (
+                  <tr key={med.id}
+                    onClick={() => setRigaSel(isSel ? null : med.id)}
+                    className="cursor-pointer transition-colors"
+                    style={{ background: isSel ? '#dde8d5' : '' }}
+                    onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = '#eae8e0' }}
+                    onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = '' }}>
+                    <td className="cal-td-nome"
+                      style={{ background: isSel ? '#c5d8bc' : undefined }}>
+                      {med.nome}
+                    </td>
+                    {colonne.map(col => {
+                      const cell  = medMap?.get(col.data)
+                      const tc    = cell?.turno_clinico ?? ''
+                      const tr    = cell?.turno_ricerca  ?? ''
+                      const ferie = cell?.is_ferie ?? false
+                      const modif = cell?.modificato_manualmente ?? false
 
-                    let bg = isSel ? '#e8f0e0' : '#faf8f3'
-                    if (ferie) bg = '#d5e5d0'
-                    else if (col.isDomenica || col.isFestivo) bg = '#f0ead8'
+                      let bg = isSel ? '#e8f0e0' : '#faf8f3'
+                      if (ferie) bg = '#d5e5d0'
+                      else if (col.isDomenica || col.isFestivo) bg = '#f0ead8'
 
-                    return (
-                      <td key={col.data}
-                        className={`cal-cell ${modif ? 'cal-cell-modificata' : ''}`}
-                        style={{ background: bg }}
-                        title={cell?.note || undefined}>
-                        {(tc || tr) ? <LabelTurno tc={tc} tr={tr} /> : null}
-                      </td>
-                    )
-                  })}
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+                      return (
+                        <td key={col.data}
+                          className={`cal-cell ${modif ? 'cal-cell-modificata' : ''}`}
+                          style={{ background: bg }}
+                          title={cell?.note || undefined}>
+                          {(tc || tr) ? <LabelTurno tc={tc} tr={tr} /> : null}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   )
