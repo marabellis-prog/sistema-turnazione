@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef, useLayoutEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Zap, AlertTriangle, CheckCircle, Info } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
@@ -20,15 +20,16 @@ const PASTEL: { bg: string; fg: string }[] = [
 const GIORNI_S = ['','Lun','Mar','Mer','Gio','Ven','Sab','Dom']
 const ANNI     = [2025, 2026, 2027, 2028]
 
-// ── Anteprima schema (mini tabella colorata) ─────────────────────
+// ── Anteprima schema — celle calcolate per riempire esattamente lo spazio
 function AntepremaSchema({
-  schemi, medici, schemaNum,
+  schemi, medici, schemaNum, containerRef,
 }: {
-  schemi:    SchemaModello[]
-  medici:    Medico[]
-  schemaNum: number
+  schemi:       SchemaModello[]
+  medici:       Medico[]
+  schemaNum:    number
+  containerRef: React.RefObject<HTMLDivElement>
 }) {
-  // Tutti gli hook PRIMA di qualsiasi early return (Rules of Hooks)
+  // ── Tutti gli hook prima di qualsiasi early return ────────────────
   const colorMap = useMemo(() => {
     const m: Record<number, { bg: string; fg: string }> = {}
     medici.forEach((med, i) => { m[med.numero_ordine] = PASTEL[i % PASTEL.length] })
@@ -41,95 +42,144 @@ function AntepremaSchema({
     return m
   }, [medici])
 
-  const filtered = schemi
-    .filter(s => s.schema_num === schemaNum)
-    .sort((a, b) => a.giorno_settimana - b.giorno_settimana || a.slot - b.slot)
+  const filtered = useMemo(() =>
+    schemi.filter(s => s.schema_num === schemaNum)
+      .sort((a, b) => a.giorno_settimana - b.giorno_settimana || a.slot - b.slot),
+  [schemi, schemaNum])
 
-  const perGiorno: Record<number, SchemaModello[]> = {}
-  for (let g = 1; g <= 7; g++) perGiorno[g] = []
-  filtered.forEach(r => perGiorno[r.giorno_settimana].push(r))
+  const perGiorno = useMemo(() => {
+    const pg: Record<number, SchemaModello[]> = {}
+    for (let g = 1; g <= 7; g++) pg[g] = []
+    filtered.forEach(r => pg[r.giorno_settimana].push(r))
+    return pg
+  }, [filtered])
 
-  const COLS: Array<keyof Pick<SchemaModello, 'numero_medico_mattina'|'numero_medico_pomeriggio'|'numero_medico_rm'|'numero_medico_rp'>> =
+  // Numero totale righe (1 header + tutti gli slot)
+  const totalRows = useMemo(() => {
+    let n = 1
+    for (let g = 1; g <= 7; g++) n += perGiorno[g].length
+    return n
+  }, [perGiorno])
+
+  // Dimensioni celle calcolate dal container — si adattano allo spazio
+  const [cellDims, setCellDims] = useState({ w: 54, h: 32, dayW: 50, fontSize: 11, fontSizeSub: 8 })
+
+  useLayoutEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+
+    const compute = () => {
+      const { width, height } = el.getBoundingClientRect()
+      if (width < 10 || height < 10) return
+
+      const N_COLS = 5          // 1 giorno + 4 dati
+      const DAY_RATIO = 0.18    // colonna giorno: 18% della larghezza
+
+      const dayW  = Math.floor(width * DAY_RATIO)
+      const dataW = Math.floor((width - dayW) / 4)
+      const cellH = Math.floor(height / totalRows)
+
+      // Font scale proporzionale all'altezza cella
+      const fs    = Math.max(8,  Math.min(13, Math.floor(cellH * 0.42)))
+      const fsSub = Math.max(6,  Math.min(9,  Math.floor(cellH * 0.28)))
+
+      setCellDims({ w: dataW, h: cellH, dayW, fontSize: fs, fontSizeSub: fsSub })
+    }
+
+    compute()
+    const ro = new ResizeObserver(compute)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [containerRef, totalRows])
+
+  const COLS: Array<keyof Pick<SchemaModello,
+    'numero_medico_mattina'|'numero_medico_pomeriggio'|'numero_medico_rm'|'numero_medico_rp'>> =
     ['numero_medico_mattina','numero_medico_pomeriggio','numero_medico_rm','numero_medico_rp']
   const LABELS = ['M','P','RM','RP']
 
   if (filtered.length === 0) return (
-    <div className="flex items-center justify-center h-40 text-xs" style={{ color: '#b0a898' }}>
+    <div className="flex items-center justify-center h-full text-xs" style={{ color: '#b0a898' }}>
       Schema {schemaNum} vuoto
     </div>
   )
 
+  const { w, h, dayW, fontSize, fontSizeSub } = cellDims
+
   return (
-    <div style={{ overflowX: 'auto', overflowY: 'visible' }}>
-      <table style={{ borderCollapse: 'collapse', fontSize: 11, width: '100%' }}>
-        <thead>
-          <tr>
-            <th style={{
-              background: '#374f30', color: '#e0e8d8', padding: '4px 8px',
-              border: '1px solid #2b3c24', width: 52, fontSize: 10, fontWeight: 700,
+    <table style={{ borderCollapse: 'collapse', width: '100%', height: '100%', tableLayout: 'fixed' }}>
+      <thead>
+        <tr>
+          <th style={{
+            background: '#374f30', color: '#e0e8d8',
+            border: '1px solid #2b3c24', width: dayW, height: h,
+            fontSize: Math.max(8, fontSize - 1), fontWeight: 700,
+            textAlign: 'center', verticalAlign: 'middle', padding: '1px 2px',
+          }}>
+            GG
+          </th>
+          {LABELS.map(l => (
+            <th key={l} style={{
+              background: '#374f30', color: '#e0e8d8',
+              border: '1px solid #2b3c24', width: w, height: h,
+              fontSize: Math.max(8, fontSize - 1), fontWeight: 700,
+              textAlign: 'center', verticalAlign: 'middle', padding: '1px 2px',
             }}>
-              Giorno
+              {l}
             </th>
-            {LABELS.map(l => (
-              <th key={l} style={{
-                background: '#374f30', color: '#e0e8d8', padding: '4px 6px',
-                border: '1px solid #2b3c24', width: 54, textAlign: 'center', fontSize: 10, fontWeight: 700,
-              }}>
-                {l === 'M' ? 'Mattina' : l === 'P' ? 'Pom.' : l}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {[1,2,3,4,5,6,7].map(g => {
-            const slots = perGiorno[g]
-            if (slots.length === 0) return null
-            return slots.map((s, idx) => {
-              const isRep = s.is_reperibilita
-              const rowBg = isRep ? '#fee2e2' : idx % 2 === 0 ? '#faf8f3' : '#f0ece4'
-              return (
-                <tr key={`${g}-${idx}`} style={{ background: rowBg }}>
-                  {idx === 0 && (
-                    <td rowSpan={slots.length} style={{
-                      background: '#476540', color: '#fff', fontWeight: 700, fontSize: 11,
-                      padding: '4px 6px', border: '1px solid #374f30',
-                      textAlign: 'center', verticalAlign: 'middle',
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {[1,2,3,4,5,6,7].map(g => {
+          const slots = perGiorno[g]
+          if (slots.length === 0) return null
+          return slots.map((s, idx) => {
+            const isRep = s.is_reperibilita
+            const rowBg = isRep ? '#fee2e2' : idx % 2 === 0 ? '#faf8f3' : '#f0ece4'
+            return (
+              <tr key={`${g}-${idx}`} style={{ height: h, background: rowBg }}>
+                {idx === 0 && (
+                  <td rowSpan={slots.length} style={{
+                    background: '#476540', color: '#fff', fontWeight: 700, fontSize,
+                    border: '1px solid #374f30', textAlign: 'center', verticalAlign: 'middle',
+                    padding: '1px 2px',
+                  }}>
+                    {GIORNI_S[g]}
+                  </td>
+                )}
+                {COLS.map((col, ci) => {
+                  const num = s[col] as number | null
+                  const color = num ? colorMap[num] : null
+                  return (
+                    <td key={ci} style={{
+                      width: w, height: h, textAlign: 'center', verticalAlign: 'middle',
+                      border: '1px solid #d5ccb8',
+                      background: isRep ? '#fee2e2' : (num && color ? color.bg : rowBg),
+                      padding: '1px',
                     }}>
-                      {GIORNI_S[g]}
-                    </td>
-                  )}
-                  {COLS.map((col, ci) => {
-                    const num = s[col] as number | null
-                    const color = num ? colorMap[num] : null
-                    return (
-                      <td key={ci} style={{
-                        width: 54, height: 36, textAlign: 'center', verticalAlign: 'middle',
-                        border: '1px solid #d5ccb8',
-                        background: isRep ? '#fee2e2' : (num && color ? color.bg : rowBg),
-                        padding: '2px 3px',
-                      }}>
-                        {num ? (
-                          <div style={{ lineHeight: 1.1 }}>
-                            <div style={{ fontSize: 13, fontWeight: 700, color: color?.fg ?? '#555' }}>
-                              {num}
-                            </div>
-                            <div style={{ fontSize: 8, color: color?.fg ?? '#888', opacity: 0.75 }}>
+                      {num ? (
+                        <div style={{ lineHeight: 1.1 }}>
+                          <div style={{ fontSize, fontWeight: 700, color: color?.fg ?? '#555' }}>
+                            {num}
+                          </div>
+                          {fontSizeSub >= 7 && (
+                            <div style={{ fontSize: fontSizeSub, color: color?.fg ?? '#888', opacity: 0.7 }}>
                               {nomeMap[num] ?? ''}
                             </div>
-                          </div>
-                        ) : (
-                          <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>
-                        )}
-                      </td>
-                    )
-                  })}
-                </tr>
-              )
-            })
-          })}
-        </tbody>
-      </table>
-    </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span style={{ color: '#d1d5db', fontSize: Math.max(8, fontSize - 2) }}>—</span>
+                      )}
+                    </td>
+                  )
+                })}
+              </tr>
+            )
+          })
+        })}
+      </tbody>
+    </table>
   )
 }
 
@@ -138,6 +188,7 @@ export function GeneraCalendarioPage() {
   const qc = useQueryClient()
   const { confirm, confirmState } = useConfirm()
   const { clearAll } = usePendingActions()
+  const tableRef = useRef<HTMLDivElement>(null)
 
   // Parametri locali (inizializzati da configurazione DB)
   const [schemaNum,   setSchemaNum]   = useState(1)
@@ -445,12 +496,13 @@ export function GeneraCalendarioPage() {
       </div>
 
       {/* ═══ COLONNA DESTRA — anteprima schema ══════════════════ */}
-      <div className="w-80 shrink-0 min-w-0">
-        <div className="card sticky top-0 flex flex-col"
-          style={{ maxHeight: 'calc(100vh - 80px)' }}>
+      {/* Colonna destra — altezza fissa = viewport - navbar - padding admin */}
+      <div className="w-80 shrink-0 min-w-0"
+        style={{ height: 'calc(100vh - 96px)', position: 'sticky', top: 0 }}>
+        <div className="card flex flex-col" style={{ height: '100%' }}>
 
           {/* Header fisso */}
-          <div className="p-4 pb-2 shrink-0">
+          <div className="px-4 pt-4 pb-2 shrink-0">
             <h3 className="text-sm font-bold mb-1" style={{ color: '#2b3c24' }}>
               Anteprima Schema {schemaNum}
             </h3>
@@ -458,26 +510,26 @@ export function GeneraCalendarioPage() {
               <span className="flex items-center gap-1">
                 <span className="w-3 h-3 rounded inline-block"
                   style={{ background: '#fee2e2', border: '1px solid #f0c0c0' }} />
-                Reperibilità
+                REP
               </span>
               <span>Num. = posizione rotazione</span>
             </div>
           </div>
 
-          {/* Tabella scrollabile — non esce mai dalla pagina */}
-          <div className="flex-1 overflow-auto px-4 pb-3">
+          {/* Area tabella — prende tutto lo spazio rimasto, ref al genitore */}
+          <div ref={tableRef} className="flex-1 px-3 pb-3" style={{ minHeight: 0 }}>
             <AntepremaSchema
               schemi={schemi}
               medici={medici}
               schemaNum={schemaNum}
+              containerRef={tableRef}
             />
           </div>
 
-          {/* Footer fisso */}
-          <div className="px-4 py-2 border-t shrink-0"
-            style={{ borderColor: '#e0e8d8' }}>
+          {/* Footer */}
+          <div className="px-4 py-2 border-t shrink-0" style={{ borderColor: '#e0e8d8' }}>
             <p className="text-[10px] text-center" style={{ color: '#9a9a8a' }}>
-              Vai su <strong>Schema Turni</strong> per modificarlo
+              Modifica in <strong>Schema Turni</strong>
             </p>
           </div>
         </div>
