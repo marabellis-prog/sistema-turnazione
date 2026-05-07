@@ -56,13 +56,13 @@ function AntepremaSchema({
       <table style={{ borderCollapse: 'collapse', fontSize: 10 }}>
         <thead>
           <tr>
-            <th style={{ background: '#1e3a8a', color: '#fff', padding: '2px 4px',
-                         border: '1px solid #1e40af', width: 28, fontSize: 9 }}>
+            <th style={{ background: '#374f30', color: '#e0e8d8', padding: '2px 4px',
+                         border: '1px solid #2b3c24', width: 28, fontSize: 9 }}>
               GG
             </th>
             {LABELS.map(l => (
-              <th key={l} style={{ background: '#1e3a8a', color: '#fff', padding: '2px 3px',
-                                   border: '1px solid #1e40af', width: 26, textAlign: 'center', fontSize: 9 }}>
+              <th key={l} style={{ background: '#374f30', color: '#e0e8d8', padding: '2px 3px',
+                                   border: '1px solid #2b3c24', width: 26, textAlign: 'center', fontSize: 9 }}>
                 {l}
               </th>
             ))}
@@ -79,8 +79,8 @@ function AntepremaSchema({
                 <tr key={`${g}-${idx}`} style={{ background: rowBg }}>
                   {idx === 0 && (
                     <td rowSpan={slots.length} style={{
-                      background: '#1d4ed8', color: '#fff', fontWeight: 700, fontSize: 9,
-                      padding: '1px 3px', border: '1px solid #1e40af', textAlign: 'center',
+                      background: '#476540', color: '#e0e8d8', fontWeight: 700, fontSize: 9,
+                      padding: '1px 3px', border: '1px solid #374f30', textAlign: 'center',
                       verticalAlign: 'middle',
                     }}>
                       {GIORNI_S[g]}
@@ -279,8 +279,9 @@ export function GeneraCalendarioPage() {
                 onClick={() => setSchemaNum(n)}
                 className={`flex-1 py-2 rounded-lg border text-sm font-semibold transition-colors
                   ${schemaNum === n
-                    ? 'bg-blue-700 text-white border-blue-700 shadow'
-                    : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+                    ? 'text-white shadow'
+                    : 'text-stone-600 border-stone-300 hover:bg-cream-200'}`}
+                style={schemaNum === n ? { background: '#476540', borderColor: '#374f30' } : { background: '#faf8f3' }}
               >
                 Schema {n}
                 <span className="block text-[10px] font-normal opacity-70 mt-0.5">
@@ -325,7 +326,7 @@ export function GeneraCalendarioPage() {
         {/* ── Riepilogo dinamico ── */}
         <div className="card p-4">
           <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
-            <Info size={14} className="text-blue-500" />
+            <Info size={14} className="text-olive-600" />
             Riepilogo
           </h3>
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">

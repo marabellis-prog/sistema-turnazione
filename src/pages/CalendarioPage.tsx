@@ -69,7 +69,7 @@ function LoadingStep({ label, done, active }: { label: string; done: boolean; ac
 
 export function CalendarioPage() {
   const [rigaSel,       setRigaSel]       = useState<string | null>(null)
-  const [mostraLegenda, setMostraLegenda] = useState(false)
+  const [mostraLegenda, setMostraLegenda] = useState(true)
 
   // ── Step 1: Configurazione ───────────────────────────────────────
   const { data: config, isLoading: lCfg } = useQuery<Configurazione | null>({
