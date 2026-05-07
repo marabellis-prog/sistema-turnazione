@@ -339,15 +339,15 @@ export function GeneraCalendarioPage() {
       {/* ═══ COLONNA SINISTRA ═══════════════════════════════════ */}
       <div className="flex-1 space-y-5">
         <div>
-          <h2 className="text-xl font-bold text-gray-800 mb-0.5">Genera Calendario</h2>
-          <p className="text-sm text-gray-500">
+          <h2 className="text-xl font-bold text-stone-800 mb-0.5">Genera Calendario</h2>
+          <p className="text-sm text-stone-600">
             Scegli schema e periodo, poi genera tutti i turni teorici.
           </p>
         </div>
 
         {/* ── Selettore schema ── */}
         <div className="card p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-gray-700">Schema di rotazione</h3>
+          <h3 className="text-sm font-semibold text-stone-700">Schema di rotazione</h3>
           <div className="flex gap-2">
             {[1,2,3].map(n => (
               <button
@@ -370,7 +370,7 @@ export function GeneraCalendarioPage() {
 
         {/* ── Selettore periodo ── */}
         <div className="card p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-gray-700">Periodo</h3>
+          <h3 className="text-sm font-semibold text-stone-700">Periodo</h3>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label text-xs">Mese inizio</label>
@@ -401,31 +401,31 @@ export function GeneraCalendarioPage() {
 
         {/* ── Riepilogo dinamico ── */}
         <div className="card p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
+          <h3 className="text-sm font-semibold text-stone-700 mb-3 flex items-center gap-1.5">
             <Info size={14} className="text-olive-600" />
             Riepilogo
           </h3>
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-            <span className="text-gray-500">Schema attivo:</span>
-            <span className="font-semibold text-gray-800">Schema {schemaNum}</span>
+            <span className="text-stone-600">Schema attivo:</span>
+            <span className="font-semibold text-stone-800">Schema {schemaNum}</span>
 
-            <span className="text-gray-500">Periodo:</span>
-            <span className="font-semibold text-gray-800">{periodoLabel}</span>
+            <span className="text-stone-600">Periodo:</span>
+            <span className="font-semibold text-stone-800">{periodoLabel}</span>
 
-            <span className="text-gray-500">Medici attivi:</span>
-            <span className={`font-semibold ${medici.length === 0 ? 'text-red-600' : 'text-gray-800'}`}>
+            <span className="text-stone-600">Medici attivi:</span>
+            <span className={`font-semibold ${medici.length === 0 ? 'text-red-600' : 'text-stone-800'}`}>
               {medici.length}
               {medici.length === 0 && ' ⚠️'}
             </span>
 
-            <span className="text-gray-500">Slot schema:</span>
-            <span className={`font-semibold ${slotSchema === 0 ? 'text-red-600' : 'text-gray-800'}`}>
+            <span className="text-stone-600">Slot schema:</span>
+            <span className={`font-semibold ${slotSchema === 0 ? 'text-red-600' : 'text-stone-800'}`}>
               {slotSchema} righe
               {slotSchema === 0 && ' ⚠️ schema vuoto'}
             </span>
 
-            <span className="text-gray-500">Turni stimati:</span>
-            <span className="font-semibold text-gray-800">
+            <span className="text-stone-600">Turni stimati:</span>
+            <span className="font-semibold text-stone-800">
               ~{stimaTurni.toLocaleString('it-IT')}
             </span>
           </div>
@@ -447,7 +447,7 @@ export function GeneraCalendarioPage() {
         {/* ── Checkbox + bottone ── */}
         {stato === 'idle' && (
           <>
-            <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer select-none">
+            <label className="flex items-start gap-2 text-sm text-stone-700 cursor-pointer select-none">
               <input type="checkbox" checked={conferma}
                 onChange={e => setConferma(e.target.checked)}
                 className="rounded mt-0.5 shrink-0" />
@@ -470,8 +470,10 @@ export function GeneraCalendarioPage() {
 
         {/* ── Loading ── */}
         {stato === 'loading' && (
-          <div className="flex items-center gap-3 p-4 bg-blue-50 border border-blue-200 rounded-xl text-blue-700">
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-700 shrink-0" />
+          <div className="flex items-center gap-3 p-4 rounded-xl"
+            style={{ background: '#e8f0e0', border: '1px solid #b0c8a0', color: '#2b4a28' }}>
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 shrink-0"
+              style={{ borderColor: '#476540' }} />
             <span className="text-sm">{messaggio}</span>
           </div>
         )}

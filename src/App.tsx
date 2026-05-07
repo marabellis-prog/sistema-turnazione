@@ -84,7 +84,7 @@ function AppRoutes() {
           <Route path="schema"  element={<GestioneSchemaPage />} />
           {/* turni: placeholder, sviluppato nella prossima iterazione */}
           <Route path="turni"   element={
-            <div className="text-gray-500 text-sm">
+            <div className="text-stone-600 text-sm">
               Modifica turni – in sviluppo nella prossima versione.
             </div>
           } />
@@ -97,7 +97,7 @@ function AppRoutes() {
             loading
               ? (
                 <div className="flex min-h-screen items-center justify-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-olive-600" />
                 </div>
               )
               : user

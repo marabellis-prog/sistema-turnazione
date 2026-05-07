@@ -178,8 +178,8 @@ export function GestioneMediciPage() {
         onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
 
       <div>
-        <h2 className="text-xl font-bold text-gray-800">Gestione Medici</h2>
-        <p className="text-sm text-gray-500 mt-0.5">
+        <h2 className="text-xl font-bold text-stone-800">Gestione Medici</h2>
+        <p className="text-sm text-stone-600 mt-0.5">
           L'ordine (n°) determina la posizione nella rotazione.
           Dopo modifiche o eliminazioni <strong>rigenera il calendario</strong>.
         </p>
@@ -209,22 +209,22 @@ export function GestioneMediciPage() {
       {/* Lista medici */}
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
+          <thead className="bg-stone-50 border-b border-stone-200">
             <tr>
-              <th className="px-3 py-2 text-left font-semibold text-gray-500 w-12">N°</th>
-              <th className="px-3 py-2 text-left font-semibold text-gray-500">Nome</th>
-              <th className="px-3 py-2 text-center font-semibold text-gray-500 w-14">REP</th>
+              <th className="px-3 py-2 text-left font-semibold text-stone-600 w-12">N°</th>
+              <th className="px-3 py-2 text-left font-semibold text-stone-600">Nome</th>
+              <th className="px-3 py-2 text-center font-semibold text-stone-600 w-14">REP</th>
               <th className="px-3 py-2 w-20" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {isLoading && (
-              <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">Caricamento...</td></tr>
+              <tr><td colSpan={4} className="px-3 py-4 text-center text-stone-500">Caricamento...</td></tr>
             )}
 
             {medici.map(m => editId === m.id ? (
               /* ── Riga in editing ── */
-              <tr key={m.id} className="bg-blue-50">
+              <tr key={m.id} className="bg-olive-50">
                 <td className="px-2 py-1.5">
                   <input
                     type="number" min={1} max={99}
@@ -262,11 +262,11 @@ export function GestioneMediciPage() {
               </tr>
             ) : (
               /* ── Riga normale ── */
-              <tr key={m.id} className="hover:bg-gray-50 group">
-                <td className="px-3 py-2 text-gray-400 font-mono font-semibold">
+              <tr key={m.id} className="hover:bg-stone-50 group">
+                <td className="px-3 py-2 text-stone-500 font-mono font-semibold">
                   {m.numero_ordine}
                 </td>
-                <td className="px-3 py-2 font-semibold text-gray-800 uppercase">
+                <td className="px-3 py-2 font-semibold text-stone-800 uppercase">
                   {m.nome}
                 </td>
                 <td className="px-3 py-2 text-center">
@@ -277,12 +277,12 @@ export function GestioneMediciPage() {
                 <td className="px-3 py-2">
                   <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={() => startEdit(m)}
-                      className="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                      className="p-1.5 rounded text-stone-500 hover:text-olive-700 hover:bg-olive-50 transition-colors"
                       title="Modifica">
                       <Pencil size={14} />
                     </button>
                     <button onClick={() => eliminaMedico(m)} disabled={saving}
-                      className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      className="p-1.5 rounded text-stone-500 hover:text-red-600 hover:bg-red-50 transition-colors"
                       title="Elimina">
                       <Trash2 size={14} />
                     </button>
@@ -296,7 +296,7 @@ export function GestioneMediciPage() {
 
       {/* Aggiungi nuovo medico */}
       <div className="card p-4">
-        <h3 className="font-semibold text-gray-700 mb-3 text-sm">Aggiungi medico</h3>
+        <h3 className="font-semibold text-stone-700 mb-3 text-sm">Aggiungi medico</h3>
         <div className="flex gap-2">
           <input
             value={nuovoNome}
@@ -309,14 +309,14 @@ export function GestioneMediciPage() {
             <Plus size={15} /> Aggiungi
           </button>
         </div>
-        <p className="text-xs text-gray-400 mt-2">
+        <p className="text-xs text-stone-500 mt-2">
           Viene aggiunto come ultimo in ordine (n° {medici.length > 0 ? Math.max(...medici.map(m => m.numero_ordine)) + 1 : 1}).
           Modifica il n° per riposizionarlo nella rotazione.
         </p>
       </div>
 
       {/* Legenda */}
-      <div className="text-xs text-gray-400 space-y-1 px-1">
+      <div className="text-xs text-stone-500 space-y-1 px-1">
         <p className="flex items-center gap-1.5">
           <RefreshCw size={11} className="text-amber-500" />
           Dopo ogni modifica/eliminazione: <strong>Admin → Genera Calendario</strong> per aggiornare i turni

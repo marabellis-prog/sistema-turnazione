@@ -50,9 +50,9 @@ export function ConfirmModal({
             ? <Trash2  size={20} className="shrink-0" />
             : <AlertTriangle size={20} className="shrink-0" />
           }
-          <h3 className="font-bold text-base text-gray-800 flex-1">{title}</h3>
+          <h3 className="font-bold text-base text-stone-800 flex-1">{title}</h3>
           <button onClick={onCancel}
-            className="text-gray-300 hover:text-gray-500 transition-colors -mt-1">
+            className="text-gray-300 hover:text-stone-600 transition-colors -mt-1">
             <X size={18} />
           </button>
         </div>
@@ -74,8 +74,11 @@ export function ConfirmModal({
               shadow transition-colors focus:outline-none focus:ring-2
               ${danger
                 ? 'bg-red-600 hover:bg-red-700 focus:ring-red-400'
-                : 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-400'
+                : 'focus:ring-olive-300'
               }`}
+            style={!danger ? { background: '#476540' } : undefined}
+            onMouseEnter={e => { if (!danger) (e.currentTarget as HTMLElement).style.background = '#374f30' }}
+            onMouseLeave={e => { if (!danger) (e.currentTarget as HTMLElement).style.background = '#476540' }}
             autoFocus
           >
             {confirmLabel}

@@ -113,8 +113,8 @@ export function GestioneFeriePage() {
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
         onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
       <div>
-        <h2 className="text-xl font-bold text-gray-800">Gestione Ferie</h2>
-        <p className="text-sm text-gray-500">
+        <h2 className="text-xl font-bold text-stone-800">Gestione Ferie</h2>
+        <p className="text-sm text-stone-600">
           Le celle del calendario vengono colorate di verde nelle date di ferie.
         </p>
       </div>
@@ -127,7 +127,7 @@ export function GestioneFeriePage() {
       {ferie.length > 0 && (
         <div className="card overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="bg-stone-50 border-b border-stone-200">
               <tr>
                 <th className="px-3 py-2 text-left font-semibold text-gray-600">Medico</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-600">Da</th>
@@ -138,11 +138,11 @@ export function GestioneFeriePage() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {ferie.map(f => (
-                <tr key={f.id} className="hover:bg-gray-50">
+                <tr key={f.id} className="hover:bg-stone-50">
                   <td className="px-3 py-2 font-medium">{f.medico.nome}</td>
                   <td className="px-3 py-2 text-gray-600">{formatDataIt(f.data_inizio)}</td>
                   <td className="px-3 py-2 text-gray-600">{formatDataIt(f.data_fine)}</td>
-                  <td className="px-3 py-2 text-gray-400 text-xs">{f.note || '—'}</td>
+                  <td className="px-3 py-2 text-stone-500 text-xs">{f.note || '—'}</td>
                   <td className="px-3 py-2 text-right">
                     <button
                       onClick={() => elimina(f)}
@@ -160,7 +160,7 @@ export function GestioneFeriePage() {
 
       {/* Form inserimento */}
       <div className="card p-4 space-y-3">
-        <h3 className="font-semibold text-gray-700">Inserisci periodo ferie</h3>
+        <h3 className="font-semibold text-stone-700">Inserisci periodo ferie</h3>
 
         <div>
           <label className="label">Medico *</label>

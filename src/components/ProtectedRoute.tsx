@@ -13,8 +13,8 @@ export function ProtectedRoute({ user, loading, requireAdmin = false, children }
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-3" />
-          <p className="text-gray-500 text-sm">Caricamento...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-olive-600 mx-auto mb-3" />
+          <p className="text-stone-600 text-sm">Caricamento...</p>
         </div>
       </div>
     )

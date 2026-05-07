@@ -332,14 +332,16 @@ export function GestioneSchemaPage() {
 
       {/* ═══ CONFIG BAR ════════════════════════════════════════ */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 shrink-0
-                      bg-white border border-gray-200 rounded-lg px-3 py-2">
+                      bg-white border border-stone-200 rounded-lg px-3 py-2">
         {/* Schema */}
         <div className="flex items-center gap-1">
-          <span className="text-xs text-gray-500 font-medium">Schema:</span>
+          <span className="text-xs font-medium" style={{ color: '#5a5a4a' }}>Schema:</span>
           {[1,2,3].map(n => (
             <button key={n} onClick={() => { setSchemaNum(n); setGriglia({}) }}
-              className={`w-6 h-6 rounded text-xs font-bold border
-                ${schemaNum === n ? 'font-semibold text-white' : 'bg-cream-100 text-stone-600 border-stone-300 hover:bg-cream-200'}`}>
+              className="w-6 h-6 rounded text-xs font-bold border transition-colors"
+              style={schemaNum === n
+                ? { background: '#476540', color: '#fff', borderColor: '#374f30' }
+                : { background: '#faf8f3', color: '#3a3d30', borderColor: '#c0b8a8' }}>
               {n}
             </button>
           ))}
@@ -347,7 +349,7 @@ export function GestioneSchemaPage() {
 
         {/* Tipo */}
         <div className="flex items-center gap-1">
-          <span className="text-xs text-gray-500 font-medium">Tipo:</span>
+          <span className="text-xs font-medium" style={{ color: '#5a5a4a' }}>Tipo:</span>
           {(['weekly','custom'] as const).map(t => (
             <button key={t} onClick={() => {
               setTipoSchema(t)
@@ -360,8 +362,10 @@ export function GestioneSchemaPage() {
                 })
               }
             }}
-              className={`px-2 py-0.5 rounded text-xs font-medium border
-                ${tipoSchema === t ? 'font-semibold text-white' : 'bg-cream-100 text-stone-600 border-stone-300 hover:bg-cream-200'}`}>
+              className="px-2 py-0.5 rounded text-xs font-medium border transition-colors"
+              style={tipoSchema === t
+                ? { background: '#476540', color: '#fff', borderColor: '#374f30' }
+                : { background: '#faf8f3', color: '#3a3d30', borderColor: '#c0b8a8' }}>
               {t === 'weekly' ? '7 giorni' : 'Personalizzato'}
             </button>
           ))}
@@ -369,12 +373,12 @@ export function GestioneSchemaPage() {
 
         {/* Colonne */}
         <div className="flex items-center gap-1 flex-wrap">
-          <span className="text-xs text-gray-500 font-medium">Colonne:</span>
+          <span className="text-xs text-stone-600 font-medium">Colonne:</span>
           {colonne.map(col => (
-            <span key={col} className="inline-flex items-center gap-0.5 bg-gray-100 text-gray-700
-                           text-xs px-1.5 py-0.5 rounded-full border border-gray-200">
+            <span key={col} className="inline-flex items-center gap-0.5 bg-stone-100 text-stone-700
+                           text-xs px-1.5 py-0.5 rounded-full border border-stone-200">
               {col}
-              <button onClick={() => rimuoviColonna(col)} className="text-gray-400 hover:text-red-500 ml-0.5 leading-none">
+              <button onClick={() => rimuoviColonna(col)} className="text-stone-500 hover:text-red-500 ml-0.5 leading-none">
                 <X size={9} />
               </button>
             </span>
@@ -389,7 +393,7 @@ export function GestioneSchemaPage() {
                 <button key={c} onClick={() => aggiungiColonna(c)}
                   className="bg-olive-100 text-olive-700 text-xs px-1 py-0.5 rounded hover:bg-olive-200">{c}</button>
               ))}
-              <button onClick={() => setAddColOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={12} /></button>
+              <button onClick={() => setAddColOpen(false)} className="text-stone-500 hover:text-gray-600"><X size={12} /></button>
             </div>
           ) : (
             <button onClick={() => setAddColOpen(true)}
@@ -402,11 +406,11 @@ export function GestioneSchemaPage() {
         {/* Aggiungi giorno (solo custom) */}
         {tipoSchema === 'custom' && (
           <div className="flex items-center gap-1">
-            <span className="text-xs text-gray-500">+Giorno:</span>
+            <span className="text-xs text-stone-600">+Giorno:</span>
             {[1,2,3,4,5,6,7].filter(g => !giorni.includes(g)).map(g => (
               <button key={g} onClick={() => aggiungiGiorno(g)}
-                className="text-xs bg-gray-100 hover:bg-olive-100 text-stone-600
-                           hover:text-olive-700 px-1.5 py-0.5 rounded border border-gray-200">
+                className="text-xs bg-stone-100 hover:bg-olive-100 text-stone-600
+                           hover:text-olive-700 px-1.5 py-0.5 rounded border border-stone-200">
                 {GIORNI_IT[g].slice(0,3)}
               </button>
             ))}
@@ -431,8 +435,8 @@ export function GestioneSchemaPage() {
 
       {/* ═══ STRIP TURNISTI (vicino alla tabella) ══════════════ */}
       <div className="flex flex-wrap items-center gap-1.5 shrink-0
-                      bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5">
-        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mr-1">
+                      bg-stone-50 border border-stone-200 rounded-lg px-3 py-1.5">
+        <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider mr-1">
           Turnisti →
         </span>
         {medici.map((med, i) => {

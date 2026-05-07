@@ -146,8 +146,8 @@ export function GestioneUtentiPage() {
         onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
 
       <div>
-        <h2 className="text-xl font-bold text-gray-800">Utenti Autorizzati</h2>
-        <p className="text-sm text-gray-500 mt-0.5">
+        <h2 className="text-xl font-bold text-stone-800">Utenti Autorizzati</h2>
+        <p className="text-sm text-stone-600 mt-0.5">
           Solo gli account Google in questa lista possono accedere all'app.
         </p>
       </div>
@@ -160,21 +160,21 @@ export function GestioneUtentiPage() {
 
       {/* ══ ACCOUNT ATTIVI ═════════════════════════════════════ */}
       <div className="card overflow-hidden">
-        <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200">
-          <h3 className="font-semibold text-gray-700 text-sm">Account attivi</h3>
+        <div className="px-4 py-2.5 bg-stone-50 border-b border-stone-200">
+          <h3 className="font-semibold text-stone-700 text-sm">Account attivi</h3>
         </div>
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-100">
+          <thead className="bg-stone-50 border-b border-stone-200">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Email</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Nome</th>
-              <th className="px-3 py-2 text-center text-xs font-semibold text-gray-500 w-24">Ruolo</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-stone-600">Email</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-stone-600">Nome</th>
+              <th className="px-3 py-2 text-center text-xs font-semibold text-stone-600 w-24">Ruolo</th>
               <th className="px-3 py-2 w-20" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {loadingUtenti && (
-              <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">Caricamento...</td></tr>
+              <tr><td colSpan={4} className="px-3 py-4 text-center text-stone-500">Caricamento...</td></tr>
             )}
 
             {utenti.map(u => {
@@ -228,9 +228,9 @@ export function GestioneUtentiPage() {
 
               /* ── riga normale ── */
               return (
-                <tr key={u.id} className={`hover:bg-gray-50 group ${isPerm ? 'bg-blue-50/30' : ''}`}>
+                <tr key={u.id} className={`hover:bg-stone-50 group ${isPerm ? 'bg-blue-50/30' : ''}`}>
                   <td className="px-3 py-2 font-mono text-xs text-gray-600">{u.email}</td>
-                  <td className="px-3 py-2 font-medium text-gray-800 uppercase">
+                  <td className="px-3 py-2 font-medium text-stone-800 uppercase">
                     {u.nome || '—'}
                   </td>
                   <td className="px-3 py-2 text-center">
@@ -251,12 +251,12 @@ export function GestioneUtentiPage() {
                     ) : (
                       <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                         <button onClick={() => startEdit(u)}
-                          className="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          className="p-1.5 rounded text-stone-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
                           title="Modifica">
                           <Pencil size={13} />
                         </button>
                         <button onClick={() => elimina(u)}
-                          className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                          className="p-1.5 rounded text-stone-500 hover:text-red-600 hover:bg-red-50 transition-colors"
                           title="Rimuovi accesso">
                           <Trash2 size={13} />
                         </button>
@@ -268,7 +268,7 @@ export function GestioneUtentiPage() {
             })}
 
             {utenti.length === 0 && !loadingUtenti && (
-              <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400 text-sm">Nessun utente</td></tr>
+              <tr><td colSpan={4} className="px-3 py-4 text-center text-stone-500 text-sm">Nessun utente</td></tr>
             )}
           </tbody>
         </table>
@@ -288,12 +288,12 @@ export function GestioneUtentiPage() {
           </div>
           <div className="divide-y divide-gray-100">
             {mediciSenzaAccount.map(m => (
-              <div key={m.id} className="flex items-center gap-2 px-4 py-2.5 hover:bg-gray-50">
+              <div key={m.id} className="flex items-center gap-2 px-4 py-2.5 hover:bg-stone-50">
                 <span className="w-7 h-7 rounded-full bg-gray-200 text-gray-600 text-xs
                                  font-bold flex items-center justify-center shrink-0">
                   {m.numero_ordine}
                 </span>
-                <span className="font-semibold text-gray-800 uppercase text-sm w-28 shrink-0">
+                <span className="font-semibold text-stone-800 uppercase text-sm w-28 shrink-0">
                   {m.nome}
                 </span>
                 <input
@@ -327,8 +327,8 @@ export function GestioneUtentiPage() {
 
       {/* ══ AGGIUNGI MANUALMENTE ══════════════════════════════ */}
       <div className="card p-4 space-y-3">
-        <h3 className="font-semibold text-gray-700 text-sm">Aggiungi account manualmente</h3>
-        <p className="text-xs text-gray-400">Per account non presenti tra i medici (sostituti, osservatori, ecc.)</p>
+        <h3 className="font-semibold text-stone-700 text-sm">Aggiungi account manualmente</h3>
+        <p className="text-xs text-stone-500">Per account non presenti tra i medici (sostituti, osservatori, ecc.)</p>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="label text-xs">Email Google *</label>
@@ -357,7 +357,7 @@ export function GestioneUtentiPage() {
       </div>
 
       {/* Legenda */}
-      <div className="text-xs text-gray-400 space-y-1 px-1">
+      <div className="text-xs text-stone-500 space-y-1 px-1">
         <p className="flex items-center gap-1.5"><Lock size={11} className="text-blue-400" /> Admin permanente: non eliminabile</p>
         <p className="flex items-center gap-1.5"><Shield size={11} className="text-amber-500" /> Admin: accesso completo</p>
         <p className="flex items-center gap-1.5"><User size={11} className="text-blue-500" /> User: solo visualizzazione calendario</p>
