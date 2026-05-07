@@ -189,7 +189,7 @@ export function CalendarioPage() {
           <span className="flex items-center gap-1"><span className="badge-rp">RP</span> Ricerca pomeriggio</span>
           <span className="flex items-center gap-1 bg-amber-50 px-1 rounded border border-amber-200">🟡 Dom / Festivo</span>
           <span className="flex items-center gap-1 bg-emerald-50 px-1 rounded border border-emerald-200">🟢 Ferie</span>
-          <span className="flex items-center gap-1 outline outline-2 outline-blue-400 px-1 rounded">🔵 Modificato</span>
+          <span className="flex items-center gap-1 outline outline-2 outline-olive-400 px-1 rounded">🟢 Modificato</span>
         </div>
       )}
 
@@ -205,7 +205,8 @@ export function CalendarioPage() {
                 <th
                   key={`${g.anno}-${g.mese}`}
                   colSpan={g.count}
-                  className="cal-th bg-blue-700 text-white border-blue-800 text-[11px]"
+                  className="cal-th text-[11px] text-white"
+                  style={{ background: '#374f30', borderColor: '#2b3c24' }}
                 >
                   {MESI_SHORT_IT[g.mese]} {g.anno !== config.anno_inizio ? g.anno : ''}
                 </th>
@@ -238,12 +239,12 @@ export function CalendarioPage() {
                 <tr
                   key={med.id}
                   onClick={() => setRigaSelezionata(isSelected ? null : med.id)}
-                  className={`cursor-pointer hover:bg-blue-50/50 transition-colors
+                  className={`cursor-pointer hover:bg-olive-50/50 transition-colors
                     ${isSelected ? 'cal-row-selected' : ''}
                   `}
                 >
                   {/* Nome medico (sticky) */}
-                  <td className={`cal-td-nome ${isSelected ? 'bg-blue-100' : ''}`}>
+                  <td className={`cal-td-nome ${isSelected ? 'bg-olive-100' : ''}`}>
                     {med.nome}
                   </td>
 
@@ -261,7 +262,7 @@ export function CalendarioPage() {
                       isFerie                            ? 'cal-cell-ferie'   :
                       col.isDomenica || col.isFestivo    ? 'cal-cell-festivo'  : '',
                       modif                              ? 'cal-cell-modificata' : '',
-                      isSelected                         ? 'bg-blue-50'       : '',
+                      isSelected                         ? 'bg-olive-50'      : '',
                     ].filter(Boolean).join(' ')
 
                     return (

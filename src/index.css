@@ -12,24 +12,30 @@
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     -webkit-text-size-adjust: 100%;
   }
-  * {
-    box-sizing: border-box;
+  * { box-sizing: border-box; }
+
+  body {
+    background-color: #f4f1ea;  /* crema calda */
+    color: #3a3d30;
   }
 }
 
 @layer components {
-  /* Tabella calendario */
+
+  /* ── Tabella calendario ──────────────────────────────── */
   .cal-table {
     @apply border-collapse text-xs;
     table-layout: fixed;
   }
 
   .cal-th {
-    @apply border border-gray-300 bg-gray-100 px-1 py-0.5 text-center font-semibold whitespace-nowrap;
+    @apply border border-stone-300 bg-stone-100 px-1 py-0.5 text-center
+           font-semibold whitespace-nowrap text-stone-600;
   }
 
   .cal-td-nome {
-    @apply border border-gray-300 bg-white px-2 py-1 font-semibold whitespace-nowrap;
+    @apply border border-stone-300 bg-cream-100 px-2 py-1 font-semibold
+           whitespace-nowrap text-stone-700;
     position: sticky;
     left: 0;
     z-index: 10;
@@ -37,7 +43,7 @@
   }
 
   .cal-td-nome-header {
-    @apply border border-gray-300 bg-gray-100 px-2 py-1 font-bold;
+    @apply border border-stone-300 bg-stone-100 px-2 py-1 font-bold text-stone-700;
     position: sticky;
     left: 0;
     z-index: 20;
@@ -45,79 +51,119 @@
   }
 
   .cal-cell {
-    @apply border border-gray-200 text-center align-middle cursor-default;
+    @apply border border-stone-200 text-center align-middle;
     width: 32px;
     min-width: 32px;
     height: 36px;
     padding: 1px;
+    background: #faf8f3;
   }
 
-  /* Celle festivo / domenica */
-  .cal-cell-festivo {
-    @apply bg-amber-50;
-  }
-
-  /* Celle ferie */
-  .cal-cell-ferie {
-    @apply bg-emerald-50;
-  }
-
-  /* Celle modificate manualmente */
+  .cal-cell-festivo   { background: #f0ead8 !important; }
+  .cal-cell-ferie     { background: #d5e5d0 !important; }
   .cal-cell-modificata {
-    @apply outline outline-2 outline-blue-400 outline-offset-[-2px];
+    outline: 2px solid #9ab488;
+    outline-offset: -2px;
   }
 
-  /* Riga selezionata */
-  .cal-row-selected td {
-    @apply bg-blue-50 !important;
+  .cal-row-selected td { background: #eae8e0 !important; }
+
+  /* ── Badge turni — pastello muto, niente glow ──────── */
+  .badge-m   {
+    display: inline-block;
+    border-radius: 3px;
+    padding: 0 3px;
+    font-size: 10px;
+    font-weight: 600;
+    background: #dde8d5;
+    color: #2e4a28;
+  }
+  .badge-p   {
+    display: inline-block;
+    border-radius: 3px;
+    padding: 0 3px;
+    font-size: 10px;
+    font-weight: 600;
+    background: #d5e0e8;
+    color: #253a4a;
+  }
+  .badge-l   {
+    display: inline-block;
+    border-radius: 3px;
+    padding: 0 3px;
+    font-size: 10px;
+    font-weight: 700;
+    background: #ece5d5;
+    color: #4a3a1a;
+  }
+  .badge-rep {
+    display: inline-block;
+    border-radius: 3px;
+    padding: 0 3px;
+    font-size: 10px;
+    font-weight: 700;
+    background: #e8d5d5;
+    color: #5a2a2a;
+  }
+  .badge-rm  {
+    display: inline-block;
+    border-radius: 3px;
+    padding: 0 2px;
+    font-size: 9px;
+    font-weight: 600;
+    background: #ddd8ea;
+    color: #3a2858;
+  }
+  .badge-rp  {
+    display: inline-block;
+    border-radius: 3px;
+    padding: 0 2px;
+    font-size: 9px;
+    font-weight: 600;
+    background: #ead8e2;
+    color: #582840;
   }
 
-  /* Etichette turno */
-  .badge-m   { @apply inline-block rounded px-0.5 text-blue-800   bg-blue-100   font-medium text-[10px]; }
-  .badge-p   { @apply inline-block rounded px-0.5 text-green-800  bg-green-100  font-medium text-[10px]; }
-  .badge-l   { @apply inline-block rounded px-0.5 text-amber-900  bg-amber-100  font-bold   text-[10px]; }
-  .badge-rep { @apply inline-block rounded px-0.5 text-red-800    bg-red-100    font-bold   text-[10px]; }
-  .badge-rm  { @apply inline-block rounded px-0.5 text-violet-800 bg-violet-100 font-medium text-[9px];  }
-  .badge-rp  { @apply inline-block rounded px-0.5 text-pink-800   bg-pink-100   font-medium text-[9px];  }
-
-  /* Pulsante primario */
+  /* ── Pulsanti ────────────────────────────────────────── */
   .btn-primary {
-    @apply inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2
-           text-sm font-medium text-white shadow hover:bg-blue-700
-           focus:outline-none focus:ring-2 focus:ring-blue-500
+    @apply inline-flex items-center gap-2 rounded-lg px-4 py-2
+           text-sm font-medium text-white shadow
+           focus:outline-none focus:ring-2
            disabled:opacity-50 disabled:cursor-not-allowed transition-colors;
+    background-color: #476540;
+    color: #fff;
   }
+  .btn-primary:hover:not(:disabled) { background-color: #374f30; }
+  .btn-primary:focus { --tw-ring-color: #9ab488; }
 
-  /* Pulsante secondario */
   .btn-secondary {
-    @apply inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2
-           text-sm font-medium text-gray-700 border border-gray-300 shadow-sm
-           hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500
+    @apply inline-flex items-center gap-2 rounded-lg bg-cream-100 px-4 py-2
+           text-sm font-medium text-stone-700 border border-stone-300 shadow-sm
+           hover:bg-cream-200 focus:outline-none focus:ring-2
            disabled:opacity-50 disabled:cursor-not-allowed transition-colors;
   }
 
-  /* Pulsante danger */
   .btn-danger {
-    @apply inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2
-           text-sm font-medium text-white shadow hover:bg-red-700
-           focus:outline-none focus:ring-2 focus:ring-red-500
+    @apply inline-flex items-center gap-2 rounded-lg bg-red-700 px-4 py-2
+           text-sm font-medium text-white shadow hover:bg-red-800
+           focus:outline-none focus:ring-2 focus:ring-red-400
            disabled:opacity-50 disabled:cursor-not-allowed transition-colors;
   }
 
-  /* Input */
+  /* ── Form ────────────────────────────────────────────── */
   .input {
-    @apply block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm
-           shadow-sm placeholder-gray-400
-           focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500;
+    @apply block w-full rounded-lg border border-stone-300 bg-cream-50 px-3 py-2
+           text-sm shadow-sm placeholder-stone-400 text-stone-800
+           focus:border-olive-400 focus:outline-none focus:ring-1 focus:ring-olive-300;
   }
 
-  /* Label form */
   .label {
-    @apply block text-sm font-medium text-gray-700 mb-1;
+    @apply block text-sm font-medium text-stone-600 mb-1;
   }
 
-  /* Card */
+  /* ── Card ────────────────────────────────────────────── */
   .card {
-    @apply rounded-xl border border-gray-200 bg-white shadow-sm;
+    @apply rounded-xl border border-stone-200 shadow-sm;
+    background: #faf8f3;
   }
 }

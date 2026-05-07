@@ -15,8 +15,10 @@ export function AdminLayout() {
   return (
     <div className="flex h-[calc(100vh-48px)]">
       {/* Sidebar */}
-      <aside className="w-48 shrink-0 bg-gray-900 text-gray-300 flex flex-col py-4 overflow-y-auto print:hidden">
-        <p className="px-4 text-[10px] uppercase tracking-widest text-gray-500 mb-3 font-semibold">
+      <aside className="w-48 shrink-0 flex flex-col py-4 overflow-y-auto print:hidden"
+        style={{ background: '#1c2818', color: '#c0d0b0' }}>
+        <p className="px-4 text-[10px] uppercase tracking-widest mb-3 font-semibold"
+          style={{ color: '#577a45' }}>
           Pannello Admin
         </p>
         {links.map(({ to, label, Icon }) => (
@@ -26,9 +28,13 @@ export function AdminLayout() {
             className={({ isActive }) =>
               `flex items-center gap-2 px-4 py-2.5 text-sm transition-colors
                ${isActive
-                 ? 'bg-blue-700 text-white font-semibold'
-                 : 'hover:bg-gray-700 hover:text-white'
+                 ? 'font-semibold'
+                 : 'hover:text-white'
                }`
+            }
+            style={({ isActive }) => isActive
+              ? { background: '#374f30', color: '#fff' }
+              : { color: '#9ab488' }
             }
           >
             <Icon size={14} />
@@ -38,7 +44,7 @@ export function AdminLayout() {
       </aside>
 
       {/* Contenuto */}
-      <main className="flex-1 overflow-auto bg-gray-50 p-6">
+      <main className="flex-1 overflow-auto p-6" style={{ background: '#f4f1ea' }}>
         <Outlet />
       </main>
     </div>

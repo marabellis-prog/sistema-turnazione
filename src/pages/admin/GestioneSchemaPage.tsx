@@ -13,7 +13,7 @@ const PASTEL: { bg: string; fg: string }[] = [
   { bg: '#fef9c3', fg: '#713f12' },
   { bg: '#bbf7d0', fg: '#14532d' },
   { bg: '#a5f3fc', fg: '#164e63' },
-  { bg: '#bfdbfe', fg: '#1e3a8a' },
+  { bg: '#bfdbfe', fg: '#2b3c24' },
   { bg: '#ddd6fe', fg: '#4c1d95' },
   { bg: '#f5d0fe', fg: '#701a75' },
   { bg: '#fbcfe8', fg: '#831843' },
@@ -335,7 +335,7 @@ export function GestioneSchemaPage() {
           {[1,2,3].map(n => (
             <button key={n} onClick={() => { setSchemaNum(n); setGriglia({}) }}
               className={`w-6 h-6 rounded text-xs font-bold border
-                ${schemaNum === n ? 'bg-blue-700 text-white border-blue-700' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+                ${schemaNum === n ? 'font-semibold text-white' : 'bg-cream-100 text-stone-600 border-stone-300 hover:bg-cream-200'}`}>
               {n}
             </button>
           ))}
@@ -357,7 +357,7 @@ export function GestioneSchemaPage() {
               }
             }}
               className={`px-2 py-0.5 rounded text-xs font-medium border
-                ${tipoSchema === t ? 'bg-blue-700 text-white border-blue-700' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+                ${tipoSchema === t ? 'font-semibold text-white' : 'bg-cream-100 text-stone-600 border-stone-300 hover:bg-cream-200'}`}>
               {t === 'weekly' ? '7 giorni' : 'Personalizzato'}
             </button>
           ))}
@@ -380,16 +380,16 @@ export function GestioneSchemaPage() {
               <input value={nuovaCol} onChange={e => setNuovaCol(e.target.value.toUpperCase())}
                 onKeyDown={e => e.key === 'Enter' && aggiungiColonna(nuovaCol)}
                 placeholder="es. RM" autoFocus
-                className="border border-blue-400 rounded px-1 py-0.5 text-xs w-16 focus:outline-none" />
+                className="border border-olive-400 rounded px-1 py-0.5 text-xs w-16 focus:outline-none" />
               {COLONNE_PRESET.filter(c => !colonne.includes(c)).map(c => (
                 <button key={c} onClick={() => aggiungiColonna(c)}
-                  className="bg-blue-100 text-blue-700 text-xs px-1 py-0.5 rounded hover:bg-blue-200">{c}</button>
+                  className="bg-olive-100 text-olive-700 text-xs px-1 py-0.5 rounded hover:bg-olive-200">{c}</button>
               ))}
               <button onClick={() => setAddColOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={12} /></button>
             </div>
           ) : (
             <button onClick={() => setAddColOpen(true)}
-              className="text-blue-500 hover:text-blue-700 flex items-center gap-0.5 text-xs">
+              className="text-olive-600 hover:text-olive-800 flex items-center gap-0.5 text-xs">
               <Plus size={11} /> aggiungi
             </button>
           )}
@@ -401,8 +401,8 @@ export function GestioneSchemaPage() {
             <span className="text-xs text-gray-500">+Giorno:</span>
             {[1,2,3,4,5,6,7].filter(g => !giorni.includes(g)).map(g => (
               <button key={g} onClick={() => aggiungiGiorno(g)}
-                className="text-xs bg-gray-100 hover:bg-blue-100 text-gray-600
-                           hover:text-blue-700 px-1.5 py-0.5 rounded border border-gray-200">
+                className="text-xs bg-gray-100 hover:bg-olive-100 text-stone-600
+                           hover:text-olive-700 px-1.5 py-0.5 rounded border border-gray-200">
                 {GIORNI_IT[g].slice(0,3)}
               </button>
             ))}
@@ -464,7 +464,7 @@ export function GestioneSchemaPage() {
           <thead>
             <tr>
               <th style={{
-                background: '#1e3a8a', color: '#fff', fontSize: 11, fontWeight: 700,
+                background: '#2b3c24', color: '#fff', fontSize: 11, fontWeight: 700,
                 padding: '4px 8px', textAlign: 'left', width: 86,
                 border: '1px solid #1e40af', position: 'sticky', top: 0, zIndex: 10,
               }}>
@@ -472,7 +472,7 @@ export function GestioneSchemaPage() {
               </th>
               {colonne.map(col => (
                 <th key={col} style={{
-                  background: '#1e3a8a', color: '#fff', fontSize: 11, fontWeight: 700,
+                  background: '#2b3c24', color: '#fff', fontSize: 11, fontWeight: 700,
                   padding: '4px 2px', textAlign: 'center', width: 46,
                   border: '1px solid #1e40af', position: 'sticky', top: 0, zIndex: 10,
                 }}>
@@ -480,14 +480,14 @@ export function GestioneSchemaPage() {
                 </th>
               ))}
               <th style={{
-                background: '#1e3a8a', color: '#fca5a5', fontSize: 10, fontWeight: 700,
+                background: '#2b3c24', color: '#fca5a5', fontSize: 10, fontWeight: 700,
                 padding: '4px 2px', textAlign: 'center', width: 34,
                 border: '1px solid #1e40af', position: 'sticky', top: 0, zIndex: 10,
               }}>
                 REP
               </th>
               <th style={{
-                background: '#1e3a8a', width: 22,
+                background: '#2b3c24', width: 22,
                 border: '1px solid #1e40af', position: 'sticky', top: 0, zIndex: 10,
               }} />
             </tr>
@@ -499,7 +499,7 @@ export function GestioneSchemaPage() {
               if (slots.length === 0) return (
                 <tr key={`g${giorno}-e`}>
                   <td style={{
-                    background: '#1d4ed8', color: '#fff', fontWeight: 700, fontSize: 11,
+                    background: '#374f30', color: '#fff', fontWeight: 700, fontSize: 11,
                     padding: '3px 6px', border: '1px solid #1e40af', textAlign: 'center',
                   }}>
                     {GIORNI_IT[giorno].slice(0,3).toUpperCase()}
@@ -508,7 +508,7 @@ export function GestioneSchemaPage() {
                     border: '1px solid #e5e7eb', padding: '3px 8px', color: '#9ca3af',
                   }}>
                     <button onClick={() => aggiungiSlot(giorno)}
-                      className="flex items-center gap-1 text-blue-400 hover:text-blue-600 text-xs">
+                      className="flex items-center gap-1 text-olive-400 hover:text-olive-600 text-xs">
                       <Plus size={11} /> Aggiungi slot
                     </button>
                   </td>
@@ -525,7 +525,7 @@ export function GestioneSchemaPage() {
                     {/* Cella giorno (rowspan) */}
                     {idx === 0 && (
                       <td rowSpan={slots.length} style={{
-                        background: '#1d4ed8', color: '#fff', fontWeight: 700, fontSize: 11,
+                        background: '#374f30', color: '#fff', fontWeight: 700, fontSize: 11,
                         padding: '3px 5px', border: '1px solid #1e40af',
                         textAlign: 'center', verticalAlign: 'middle',
                       }}>
