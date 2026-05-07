@@ -673,8 +673,10 @@ export function GestioneSchemaPage() {
         </span>
       </div>
 
-      {/* ═══ GRIGLIA + CONTATORE (affiancati) ═══════════════════ */}
-      <div className={`flex gap-2 overflow-hidden ${showPreview ? 'shrink-0' : 'flex-1'}`}>
+      {/* ═══ GRIGLIA + CONTATORE + ANTEPRIMA ════════════════════ */}
+      {/* Wrapper che distribuisce l'altezza rimanente */}
+      <div className="flex-1 min-h-0 flex flex-col gap-2">
+      <div className={`flex gap-2 overflow-hidden ${showPreview ? 'shrink-0 max-h-56' : 'flex-1 min-h-0'}`}>
       <div className="card shrink-0 overflow-auto self-stretch">
         <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
           {/* Header colonne */}
@@ -864,7 +866,7 @@ export function GestioneSchemaPage() {
 
       {/* ═══ ANTEPRIMA CALENDARIO ORIZZONTALE ══════════════════ */}
       {showPreview && previewCells && (
-        <div className="card flex-1 overflow-hidden flex flex-col" ref={previewContainerRef}>
+        <div className="card flex-1 min-h-0 overflow-hidden flex flex-col" ref={previewContainerRef}>
           {/* Header */}
           <div className="px-3 pt-2 pb-1.5 border-b border-stone-200 shrink-0 flex items-center justify-between">
             <div>
@@ -883,7 +885,7 @@ export function GestioneSchemaPage() {
           </div>
 
           {/* Corpo scrollabile */}
-          <div className="overflow-y-auto flex-1 p-2 flex flex-col gap-3">
+          <div className="overflow-y-auto flex-1 min-h-0 p-2 flex flex-col gap-3">
             {previewCells.length === 0 ? (
               <p className="text-xs text-stone-400 italic p-2">Nessun medico attivo.</p>
             ) : (() => {
@@ -982,6 +984,7 @@ export function GestioneSchemaPage() {
           </div>
         </div>
       )}
+      </div>{/* /wrapper schema+preview */}
     </div>
   )
 }
