@@ -647,7 +647,7 @@ export function GestioneSchemaPage() {
 
       {/* ═══ GRIGLIA + CONTATORE (affiancati) ═══════════════════ */}
       <div className="flex gap-2 flex-1 overflow-hidden">
-      <div className="flex-1 overflow-auto">
+      <div className="card shrink-0 overflow-auto self-stretch">
         <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
           {/* Header colonne */}
           <thead>
