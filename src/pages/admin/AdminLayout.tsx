@@ -5,7 +5,7 @@ const links = [
   { to: '/admin/genera',  label: 'Genera Calendario', Icon: Zap },
   { to: '/admin/turni',   label: 'Modifica Turni',    Icon: Calendar },
   { to: '/admin/ferie',   label: 'Gestione Ferie',    Icon: Calendar },
-  { to: '/admin/schema',  label: 'Schema Turni',      Icon: Table2 },
+  { to: '/admin/schema',  label: 'Disegna Schema',     Icon: Table2 },
   { to: '/admin/medici',  label: 'Medici',            Icon: Users },
   { to: '/admin/utenti',  label: 'Utenti',            Icon: UserCheck },
   { to: '/admin/config',  label: 'Configurazione',    Icon: Settings },

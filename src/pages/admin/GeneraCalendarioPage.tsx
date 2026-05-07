@@ -529,7 +529,7 @@ export function GeneraCalendarioPage() {
           {/* Footer */}
           <div className="px-4 py-2 border-t shrink-0" style={{ borderColor: '#e0e8d8' }}>
             <p className="text-[10px] text-center" style={{ color: '#9a9a8a' }}>
-              Modifica in <strong>Schema Turni</strong>
+              Modifica in <strong>Disegna Schema</strong>
             </p>
           </div>
         </div>
