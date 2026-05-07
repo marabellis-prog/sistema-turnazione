@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Save, X, Trash2, AlertTriangle, RefreshCw } from 'lucide-react'
+import { Plus, Pencil, Save, X, Trash2, AlertTriangle, RefreshCw, GripVertical } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
@@ -34,24 +34,32 @@ export function GestioneMediciPage() {
   const { confirm, confirmState } = useConfirm()
   const { setNeedsRegen } = usePendingActions()
 
-  // Stato editing inline
-  const [editId,      setEditId]      = useState<string | null>(null)
-  const [editNome,    setEditNome]    = useState('')
-  const [editOrdine,  setEditOrdine]  = useState(0)
-  const [editOrigOrd, setEditOrigOrd] = useState(0)  // per rilevare cambio ordine
-  const [editRep,     setEditRep]     = useState(false)
+  // ── Stato editing inline (solo nome + REP, NON ordine) ───────
+  const [editId,   setEditId]   = useState<string | null>(null)
+  const [editNome, setEditNome] = useState('')
+  const [editRep,  setEditRep]  = useState(false)
 
-  // Stato aggiungi
-  const [nuovoNome,   setNuovoNome]   = useState('')
+  // ── Ordine locale (drag & drop, non ancora salvato) ──────────
+  const [localMedici,      setLocalMedici]      = useState<Medico[]>([])
+  const [hasOrderChanges,  setHasOrderChanges]  = useState(false)
+  const [savingOrder,      setSavingOrder]       = useState(false)
 
-  // Feedback
-  const [errore,      setErrore]      = useState('')
-  const [avviso,      setAvviso]      = useState('')  // rigenera calendario
-  const [saving,      setSaving]      = useState(false)
+  // ── Drag state ───────────────────────────────────────────────
+  const dragFromIdx = useRef<number | null>(null)
+  const [draggingIdx, setDraggingIdx] = useState<number | null>(null)
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
+
+  // ── Stato aggiungi ───────────────────────────────────────────
+  const [nuovoNome, setNuovoNome] = useState('')
+
+  // ── Feedback ─────────────────────────────────────────────────
+  const [errore,  setErrore]  = useState('')
+  const [avviso,  setAvviso]  = useState('')
+  const [saving,  setSaving]  = useState(false)
 
   // ── Query ────────────────────────────────────────────────────
   const { data: medici = [], isLoading } = useQuery<Medico[]>({
-    queryKey: ['medici-tutti'],                // usa key separata per vedere anche inattivi
+    queryKey: ['medici-tutti'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('medici').select('*').order('numero_ordine')
@@ -60,17 +68,92 @@ export function GestioneMediciPage() {
     },
   })
 
-  // ── Avvia editing ────────────────────────────────────────────
+  // Sincronizza l'ordine locale con il DB — solo se non ci sono modifiche pendenti
+  useEffect(() => {
+    if (!hasOrderChanges) setLocalMedici(medici)
+  }, [medici, hasOrderChanges])
+
+  // ── Drag & Drop handlers ─────────────────────────────────────
+  function handleDragStart(idx: number) {
+    if (editId) return   // non avviare drag durante editing
+    dragFromIdx.current = idx
+    setDraggingIdx(idx)
+  }
+
+  function handleDragOver(e: React.DragEvent, idx: number) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverIdx(idx)
+  }
+
+  function handleDragLeave() {
+    setDragOverIdx(null)
+  }
+
+  function handleDrop(toIdx: number) {
+    const fromIdx = dragFromIdx.current
+    setDragOverIdx(null)
+    setDraggingIdx(null)
+    dragFromIdx.current = null
+    if (fromIdx === null || fromIdx === toIdx) return
+
+    const next = [...localMedici]
+    const [moved] = next.splice(fromIdx, 1)
+    next.splice(toIdx, 0, moved)
+    setLocalMedici(next)
+    setHasOrderChanges(true)
+  }
+
+  function handleDragEnd() {
+    setDragOverIdx(null)
+    setDraggingIdx(null)
+    dragFromIdx.current = null
+  }
+
+  // ── Salva nuovo ordine nel DB ─────────────────────────────────
+  async function salvaOrdine() {
+    setSavingOrder(true); setErrore('')
+    try {
+      // Fase 1: valori temporanei alti per evitare conflitti di unicità
+      for (let i = 0; i < localMedici.length; i++) {
+        const { error } = await supabase
+          .from('medici').update({ numero_ordine: 1000 + i }).eq('id', localMedici[i].id)
+        if (error) throw error
+      }
+      // Fase 2: valori finali sequenziali 1, 2, 3 …
+      for (let i = 0; i < localMedici.length; i++) {
+        const { error } = await supabase
+          .from('medici').update({ numero_ordine: i + 1 }).eq('id', localMedici[i].id)
+        if (error) throw error
+      }
+      setHasOrderChanges(false)
+      const msg = 'Ordine medici modificato tramite drag & drop'
+      setNeedsRegen(msg)
+      setAvviso(msg + ' — rigenera il calendario.')
+      qc.invalidateQueries({ queryKey: ['medici'] })
+      qc.invalidateQueries({ queryKey: ['medici-tutti'] })
+    } catch (e: unknown) {
+      setErrore((e as Error).message)
+    } finally {
+      setSavingOrder(false)
+    }
+  }
+
+  // ── Annulla riordino ─────────────────────────────────────────
+  function annullaOrdine() {
+    setLocalMedici(medici)
+    setHasOrderChanges(false)
+  }
+
+  // ── Avvia editing (solo nome + REP) ──────────────────────────
   function startEdit(m: Medico) {
     setEditId(m.id)
     setEditNome(m.nome)
-    setEditOrdine(m.numero_ordine)
-    setEditOrigOrd(m.numero_ordine)
     setEditRep(m.is_reperibilita)
     setErrore('')
   }
 
-  // ── Salva modifica ───────────────────────────────────────────
+  // ── Salva modifica nome/REP ───────────────────────────────────
   async function saveEdit() {
     const nome = editNome.trim().toUpperCase()
     if (!nome) { setErrore('Il nome non può essere vuoto.'); return }
@@ -78,21 +161,17 @@ export function GestioneMediciPage() {
 
     const { error } = await supabase
       .from('medici')
-      .update({ nome, numero_ordine: editOrdine, is_reperibilita: editRep })
+      .update({ nome, is_reperibilita: editRep })
       .eq('id', editId!)
 
     setSaving(false)
     if (error) { setErrore(error.message); return }
 
     setEditId(null)
-    if (editOrdine !== editOrigOrd) {
-      // 🔴 Cambio ordine → rotazione cambiata → rigenera
-      const msg = `${nome}: numero ordine cambiato (${editOrigOrd} → ${editOrdine})`
-      setAvviso(msg + ' — rigenera il calendario.')
-      setNeedsRegen(msg)
-    }
-
-    // Invalida tutto ciò che dipende dai medici
+    // Aggiorna anche il nome in localMedici per coerenza visiva
+    setLocalMedici(prev => prev.map(m =>
+      m.id === editId ? { ...m, nome, is_reperibilita: editRep } : m
+    ))
     qc.invalidateQueries({ queryKey: ['medici'] })
     qc.invalidateQueries({ queryKey: ['medici-tutti'] })
   }
@@ -114,33 +193,21 @@ export function GestioneMediciPage() {
 
     setSaving(true)
     try {
-      // 1. Azzera il numero del medico in tutti gli slot dello schema
-      //    (schemi_modello usa numeri interi, non FK → nessun cascade automatico)
       for (const campo of CAMPI_SCHEMA) {
-        await supabase
-          .from('schemi_modello')
-          .update({ [campo]: null })
-          .eq(campo, m.numero_ordine)
+        await supabase.from('schemi_modello')
+          .update({ [campo]: null }).eq(campo, m.numero_ordine)
       }
-
-      // 2. Elimina il medico
-      //    → cascade automatico su: turni, ferie (ON DELETE CASCADE nel DB)
-      const { error } = await supabase
-        .from('medici').delete().eq('id', m.id)
-
+      const { error } = await supabase.from('medici').delete().eq('id', m.id)
       if (error) throw error
 
-      // 🔴 Medico eliminato → rigenera
       const msg = `${m.nome} eliminato — turni e schema aggiornati`
       setAvviso(msg + ' · rigenera il calendario.')
       setNeedsRegen(msg)
-
-      // Invalida tutte le query dipendenti
+      setHasOrderChanges(false)   // il DB sarà riallineato
       qc.invalidateQueries({ queryKey: ['medici'] })
       qc.invalidateQueries({ queryKey: ['medici-tutti'] })
       qc.invalidateQueries({ queryKey: ['schemi_modello'] })
       qc.invalidateQueries({ queryKey: ['turni'] })
-
     } catch (e: unknown) {
       setErrore((e as Error).message)
     } finally {
@@ -152,8 +219,8 @@ export function GestioneMediciPage() {
   async function aggiungi() {
     const nome = nuovoNome.trim().toUpperCase()
     if (!nome) return
-    const nextOrdine = medici.length > 0
-      ? Math.max(...medici.map(m => m.numero_ordine)) + 1
+    const nextOrdine = localMedici.length > 0
+      ? Math.max(...localMedici.map(m => m.numero_ordine)) + 1
       : 1
 
     const { error } = await supabase.from('medici').insert({
@@ -163,7 +230,6 @@ export function GestioneMediciPage() {
     if (error) { setErrore(error.message); return }
 
     setNuovoNome('')
-    // 🔴 Nuovo medico → rigenera
     const msg = `${nome} aggiunto (n°${nextOrdine})`
     setAvviso(msg + ' — rigenera il calendario per includerlo.')
     setNeedsRegen(msg)
@@ -177,12 +243,33 @@ export function GestioneMediciPage() {
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
         onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
 
-      <div>
-        <h2 className="text-xl font-bold text-stone-800">Gestione Medici</h2>
-        <p className="text-sm text-stone-600 mt-0.5">
-          L'ordine (n°) determina la posizione nella rotazione.
-          Dopo modifiche o eliminazioni <strong>rigenera il calendario</strong>.
-        </p>
+      {/* Titolo + pulsante salva ordine */}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-stone-800">Gestione Medici</h2>
+          <p className="text-sm text-stone-600 mt-0.5">
+            Trascina le righe per riordinare la rotazione.
+            Dopo modifiche o eliminazioni <strong>rigenera il calendario</strong>.
+          </p>
+        </div>
+        {hasOrderChanges && (
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={annullaOrdine}
+              className="btn-secondary py-1.5 px-3 text-sm gap-1.5"
+              title="Annulla riordino">
+              <X size={13} /> Annulla
+            </button>
+            <button
+              onClick={salvaOrdine}
+              disabled={savingOrder}
+              className="btn-primary py-1.5 px-3 text-sm gap-1.5"
+              title="Salva il nuovo ordine nel DB">
+              <Save size={13} />
+              {savingOrder ? 'Salvataggio…' : 'Salva modifiche'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Errore */}
@@ -196,13 +283,20 @@ export function GestioneMediciPage() {
       {avviso && (
         <div className="flex gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
           <AlertTriangle size={16} className="shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p>{avviso}</p>
-          </div>
+          <div className="flex-1"><p>{avviso}</p></div>
           <button onClick={() => setAvviso('')}
             className="text-amber-500 hover:text-amber-700 shrink-0">
             <X size={14} />
           </button>
+        </div>
+      )}
+
+      {/* Indicatore ordine modificato non salvato */}
+      {hasOrderChanges && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium"
+          style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fbbf24' }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f59e0b', display: 'inline-block', flexShrink: 0 }} />
+          Ordine modificato — clicca "Salva modifiche" per applicarlo al calendario
         </div>
       )}
 
@@ -211,7 +305,8 @@ export function GestioneMediciPage() {
         <table className="w-full text-sm">
           <thead className="bg-stone-50 border-b border-stone-200">
             <tr>
-              <th className="px-3 py-2 text-left font-semibold text-stone-600 w-12">N°</th>
+              <th className="w-8" />          {/* drag handle */}
+              <th className="px-3 py-2 text-left font-semibold text-stone-600 w-10">N°</th>
               <th className="px-3 py-2 text-left font-semibold text-stone-600">Nome</th>
               <th className="px-3 py-2 text-center font-semibold text-stone-600 w-14">REP</th>
               <th className="px-3 py-2 w-20" />
@@ -219,19 +314,24 @@ export function GestioneMediciPage() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {isLoading && (
-              <tr><td colSpan={4} className="px-3 py-4 text-center text-stone-500">Caricamento...</td></tr>
+              <tr>
+                <td colSpan={5} className="px-3 py-4 text-center text-stone-500">
+                  Caricamento…
+                </td>
+              </tr>
             )}
 
-            {medici.map(m => editId === m.id ? (
-              /* ── Riga in editing ── */
+            {localMedici.map((m, idx) => editId === m.id ? (
+
+              /* ── Riga in editing (solo nome + REP) ── */
               <tr key={m.id} className="bg-olive-50">
-                <td className="px-2 py-1.5">
-                  <input
-                    type="number" min={1} max={99}
-                    value={editOrdine}
-                    onChange={e => setEditOrdine(+e.target.value)}
-                    className="input w-14 py-0.5 text-sm text-center"
-                  />
+                {/* Handle disabilitato durante edit */}
+                <td className="pl-2 text-stone-300">
+                  <GripVertical size={14} />
+                </td>
+                {/* N° readonly */}
+                <td className="px-3 py-1.5 text-stone-400 font-mono font-semibold text-sm">
+                  {idx + 1}
                 </td>
                 <td className="px-2 py-1.5">
                   <input
@@ -260,25 +360,56 @@ export function GestioneMediciPage() {
                   </div>
                 </td>
               </tr>
+
             ) : (
-              /* ── Riga normale ── */
-              <tr key={m.id} className="hover:bg-stone-50 group">
-                <td className="px-3 py-2 text-stone-500 font-mono font-semibold">
-                  {m.numero_ordine}
+
+              /* ── Riga normale — draggable ── */
+              <tr
+                key={m.id}
+                draggable
+                onDragStart={() => handleDragStart(idx)}
+                onDragOver={e => handleDragOver(e, idx)}
+                onDragLeave={handleDragLeave}
+                onDrop={() => handleDrop(idx)}
+                onDragEnd={handleDragEnd}
+                className="group transition-colors"
+                style={{
+                  background:    dragOverIdx === idx  ? '#e0ead8'
+                               : draggingIdx === idx  ? '#f9fafb'
+                               : undefined,
+                  opacity:       draggingIdx === idx ? 0.45 : 1,
+                  outline:       dragOverIdx === idx ? '2px solid #9ab488' : undefined,
+                  outlineOffset: dragOverIdx === idx ? '-2px' : undefined,
+                }}
+              >
+                {/* Drag handle */}
+                <td className="pl-2 text-stone-400 group-hover:text-stone-600 transition-colors"
+                  style={{ cursor: 'grab' }}
+                  title="Trascina per riordinare">
+                  <GripVertical size={14} />
                 </td>
+
+                {/* N° (mostra posizione corrente, anche se non ancora salvata) */}
+                <td className="px-3 py-2 font-mono font-semibold"
+                  style={{ color: hasOrderChanges ? '#92400e' : '#6b7280' }}>
+                  {idx + 1}
+                </td>
+
                 <td className="px-3 py-2 font-semibold text-stone-800 uppercase">
                   {m.nome}
                 </td>
+
                 <td className="px-3 py-2 text-center">
                   {m.is_reperibilita && (
                     <span className="badge-rep text-[10px]">REP</span>
                   )}
                 </td>
+
                 <td className="px-3 py-2">
                   <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={() => startEdit(m)}
                       className="p-1.5 rounded text-stone-500 hover:text-olive-700 hover:bg-olive-50 transition-colors"
-                      title="Modifica">
+                      title="Modifica nome / reperibilità">
                       <Pencil size={14} />
                     </button>
                     <button onClick={() => eliminaMedico(m)} disabled={saving}
@@ -302,7 +433,7 @@ export function GestioneMediciPage() {
             value={nuovoNome}
             onChange={e => setNuovoNome(e.target.value.toUpperCase())}
             onKeyDown={e => e.key === 'Enter' && aggiungi()}
-            placeholder="COGNOME NOME..."
+            placeholder="COGNOME NOME…"
             className="input flex-1 text-sm uppercase"
           />
           <button onClick={aggiungi} disabled={!nuovoNome.trim()} className="btn-primary text-sm">
@@ -310,16 +441,23 @@ export function GestioneMediciPage() {
           </button>
         </div>
         <p className="text-xs text-stone-500 mt-2">
-          Viene aggiunto come ultimo in ordine (n° {medici.length > 0 ? Math.max(...medici.map(m => m.numero_ordine)) + 1 : 1}).
-          Modifica il n° per riposizionarlo nella rotazione.
+          Viene aggiunto come ultimo in ordine (n°&nbsp;
+          {localMedici.length > 0
+            ? Math.max(...localMedici.map(m => m.numero_ordine)) + 1
+            : 1}).
+          Usa il drag &amp; drop per riposizionarlo nella rotazione.
         </p>
       </div>
 
       {/* Legenda */}
       <div className="text-xs text-stone-500 space-y-1 px-1">
         <p className="flex items-center gap-1.5">
+          <GripVertical size={11} className="text-stone-400" />
+          Trascina le righe per cambiare l'ordine, poi clicca <strong>Salva modifiche</strong>
+        </p>
+        <p className="flex items-center gap-1.5">
           <RefreshCw size={11} className="text-amber-500" />
-          Dopo ogni modifica/eliminazione: <strong>Admin → Genera Calendario</strong> per aggiornare i turni
+          Dopo ogni modifica/eliminazione: <strong>Admin → Genera Calendario</strong>
         </p>
         <p className="flex items-center gap-1.5">
           <Trash2 size={11} className="text-red-400" />
