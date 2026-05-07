@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Save, RotateCcw, Plus, X, Trash2 } from 'lucide-react'
+import { Save, RotateCcw, Plus, X, Trash2, Circle } from 'lucide-react'
+import { useBlocker } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
@@ -112,7 +113,24 @@ export function GestioneSchemaPage() {
   const [saving,     setSaving]     = useState(false)
   const [msg,        setMsg]        = useState('')
 
-  // Sorgente del drag: può venire dalla strip (solo num) o da una cella (num + posizione)
+  // ── Modifiche non salvate ─────────────────────────────────────
+  const [hasUnsaved, setHasUnsaved] = useState(false)
+
+  // Blocca navigazione in-app se ci sono modifiche non salvate
+  const blocker = useBlocker(hasUnsaved)
+
+  // Blocca chiusura/refresh tab (browser dialog nativo — non possiamo personalizzarlo)
+  useEffect(() => {
+    if (!hasUnsaved) return
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [hasUnsaved])
+
+  // Helper: marca modifiche presenti
+  const markUnsaved = () => setHasUnsaved(true)
+
+  // ── Sorgente del drag ─────────────────────────────────────────
   const dragSource = useRef<{
     num:           number
     fromGiorno?:   number
@@ -201,21 +219,25 @@ export function GestioneSchemaPage() {
     const sorted = [...giorniUsati].sort((a,b) => a - b)
     setGiorni(sorted)
     if (sorted.length < 7) setTipoSchema('custom')
+    setHasUnsaved(false)  // ← caricamento da DB: nessuna modifica pendente
   }, [schemi, schemaNum])
 
   // ── Azioni ───────────────────────────────────────────────────
   function aggiungiGiorno(g: number) {
     if (giorni.includes(g)) return
+    markUnsaved()
     const nuovi = [...giorni, g].sort((a,b) => a - b)
     setGiorni(nuovi)
     setGriglia(prev => ({ ...prev, [g]: [emptySlot(0, colonne)] }))
   }
   function rimuoviGiorno(g: number) {
+    markUnsaved()
     setGiorni(prev => prev.filter(d => d !== g))
     setGriglia(prev => { const n = { ...prev }; delete n[g]; return n })
   }
 
   function aggiungiSlot(giorno: number) {
+    markUnsaved()
     setGriglia(prev => {
       const rows = prev[giorno] ?? []
       const next = rows.length > 0 ? Math.max(...rows.map(r => r.slot)) + 1 : 0
@@ -235,6 +257,7 @@ export function GestioneSchemaPage() {
       })
       if (!ok) return
     }
+    markUnsaved()
     setGriglia(prev => {
       const rows = [...(prev[giorno] ?? [])]
       rows.splice(idx, 1)
@@ -245,6 +268,7 @@ export function GestioneSchemaPage() {
   function aggiungiColonna(nome: string) {
     const n = nome.trim().toUpperCase()
     if (!n || colonne.includes(n)) return
+    markUnsaved()
     setColonne(prev => [...prev, n])
     setGriglia(prev => {
       const g: Record<number, SlotRow[]> = {}
@@ -264,6 +288,7 @@ export function GestioneSchemaPage() {
       danger:       true,
     })
     if (!ok) return
+    markUnsaved()
     setColonne(prev => prev.filter(c => c !== col))
     setGriglia(prev => {
       const g: Record<number, SlotRow[]> = {}
@@ -277,7 +302,7 @@ export function GestioneSchemaPage() {
   function handleDrop(toGiorno: number, toIdx: number, toCol: string) {
     const src = dragSource.current
     if (!src) return
-
+    markUnsaved()
     setGriglia(prev => {
       // Helper: copia profonda di una riga
       const cloneRow = (r: SlotRow) => ({ ...r, vals: { ...r.vals } })
@@ -319,6 +344,7 @@ export function GestioneSchemaPage() {
   }
 
   function clearCella(giorno: number, idx: number, col: string) {
+    markUnsaved()
     setGriglia(prev => {
       const rows = [...(prev[giorno] ?? [])]
       rows[idx] = { ...rows[idx], vals: { ...rows[idx].vals, [col]: null } }
@@ -327,6 +353,7 @@ export function GestioneSchemaPage() {
   }
 
   function toggleRep(giorno: number, idx: number) {
+    markUnsaved()
     setGriglia(prev => {
       const rows = [...(prev[giorno] ?? [])]
       rows[idx] = { ...rows[idx], REP: !rows[idx].REP }
@@ -342,6 +369,7 @@ export function GestioneSchemaPage() {
       danger:       true,
     })
     if (!ok) return
+    markUnsaved()
     setGriglia(prev => {
       const g: Record<number, SlotRow[]> = {}
       Object.entries(prev).forEach(([d, rows]) => {
@@ -378,6 +406,7 @@ export function GestioneSchemaPage() {
         if (insErr) throw insErr
       }
       setMsg(`✓ Schema ${schemaNum} salvato (${rows.length} slot)`)
+      setHasUnsaved(false)  // ← salvato: nessuna modifica pendente
       // 🔴 Schema modificato → rotazione cambiata → rigenera
       setNeedsRegen(`Schema ${schemaNum} modificato (${rows.length} slot)`)
       qc.invalidateQueries({ queryKey: ['schemi_modello'] })
@@ -399,6 +428,21 @@ export function GestioneSchemaPage() {
       {/* Modal di conferma globale */}
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
         onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
+
+      {/* Modal blocco navigazione — modifiche non salvate */}
+      <ConfirmModal
+        open={blocker.state === 'blocked'}
+        title="Modifiche non salvate"
+        message="Hai modifiche allo schema non ancora salvate. Se esci ora andranno perse."
+        confirmLabel="Rimani e salvo"
+        cancelLabel="Esci senza salvare"
+        danger={false}
+        onConfirm={() => blocker.reset?.()}
+        onCancel={() => {
+          setHasUnsaved(false)   // resetta: non riapparirà fino a nuove modifiche
+          blocker.proceed?.()
+        }}
+      />
 
       {/* ═══ CONFIG BAR ════════════════════════════════════════ */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 shrink-0
@@ -493,6 +537,14 @@ export function GestioneSchemaPage() {
             <span className={`text-xs px-2 py-0.5 rounded ${
               msg.startsWith('✓') ? 'text-green-700 bg-green-50' : 'text-red-700 bg-red-50'
             }`}>{msg}</span>
+          )}
+          {/* Badge modifiche non salvate */}
+          {hasUnsaved && !saving && (
+            <span className="flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full"
+              style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fbbf24' }}>
+              <Circle size={6} fill="currentColor" />
+              Modifiche non salvate
+            </span>
           )}
           <button onClick={azzera} className="btn-secondary py-1 px-2 text-xs gap-1">
             <RotateCcw size={12} /> Azzera

@@ -5,6 +5,7 @@ export interface ConfirmOptions {
   title:         string
   message:       string
   confirmLabel?: string
+  cancelLabel?:  string   // label personalizzata per il tasto "Annulla"
   danger?:       boolean  // true = pulsante rosso
 }
 
@@ -17,6 +18,7 @@ interface Props extends ConfirmOptions {
 export function ConfirmModal({
   open, title, message,
   confirmLabel = 'Conferma',
+  cancelLabel  = 'Annulla',
   danger = false,
   onConfirm, onCancel,
 }: Props) {
@@ -66,7 +68,7 @@ export function ConfirmModal({
             onClick={onCancel}
             className="btn-secondary py-1.5 px-4 text-sm"
           >
-            Annulla
+            {cancelLabel}
           </button>
           <button
             onClick={onConfirm}
