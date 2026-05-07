@@ -673,11 +673,10 @@ export function GestioneSchemaPage() {
         </span>
       </div>
 
-      {/* ═══ GRIGLIA + CONTATORE + ANTEPRIMA ════════════════════ */}
-      {/* Wrapper che distribuisce l'altezza rimanente */}
-      <div className="flex-1 min-h-0 flex flex-col gap-2">
-      <div className={`flex gap-2 overflow-hidden ${showPreview ? 'shrink-0 max-h-56' : 'flex-1 min-h-0'}`}>
-      <div className="card shrink-0 overflow-auto self-stretch">
+      {/* ═══ GRIGLIA + CONTATORE (+ ANTEPRIMA a destra) ═════════ */}
+      {/* flex-wrap: se l'anteprima non entra (< 400px) va a capo */}
+      <div className="flex-1 min-h-0 flex flex-wrap gap-2 items-start overflow-y-auto">
+      <div className="card shrink-0 overflow-auto">
         <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
           {/* Header colonne */}
           <thead>
@@ -818,9 +817,8 @@ export function GestioneSchemaPage() {
           </tbody>
         </table>
       </div>
-      {/* Contatore — subito a destra della tabella */}
-      <div className="w-40 shrink-0 flex flex-col overflow-hidden">
-      <div className="card flex-1 overflow-y-auto">
+      {/* Contatore — a destra della tabella */}
+      <div className="card w-40 shrink-0">
         <div className="px-3 pt-3 pb-2 border-b border-stone-200 shrink-0">
           <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: '#476540' }}>
             Contatore
@@ -860,13 +858,12 @@ export function GestioneSchemaPage() {
           </div>
         </div>
       </div>
-      </div>
 
-      </div>
-
-      {/* ═══ ANTEPRIMA CALENDARIO ORIZZONTALE ══════════════════ */}
+      {/* ═══ ANTEPRIMA CALENDARIO — a destra del contatore ══════ */}
       {showPreview && previewCells && (
-        <div className="card flex-1 min-h-0 overflow-hidden flex flex-col" ref={previewContainerRef}>
+        <div className="card overflow-hidden flex flex-col"
+             style={{ flex: '1 1 400px', minWidth: 400 }}
+             ref={previewContainerRef}>
           {/* Header */}
           <div className="px-3 pt-2 pb-1.5 border-b border-stone-200 shrink-0 flex items-center justify-between">
             <div>
@@ -885,7 +882,7 @@ export function GestioneSchemaPage() {
           </div>
 
           {/* Corpo scrollabile */}
-          <div className="overflow-y-auto flex-1 min-h-0 p-2 flex flex-col gap-3">
+          <div className="p-2 flex flex-col gap-3">
             {previewCells.length === 0 ? (
               <p className="text-xs text-stone-400 italic p-2">Nessun medico attivo.</p>
             ) : (() => {
@@ -984,7 +981,7 @@ export function GestioneSchemaPage() {
           </div>
         </div>
       )}
-      </div>{/* /wrapper schema+preview */}
+      </div>{/* /flex-wrap container */}
     </div>
   )
 }
