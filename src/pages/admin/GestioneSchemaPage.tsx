@@ -28,17 +28,25 @@ const GIORNI_IT  = ['','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','
 const COLONNE_PRESET = ['M', 'P', 'RM', 'RP']
 const REP_BG = '#fee2e2'
 
+// ── Costanti layout anteprima calendario ─────────────────────────
+const PV_LABEL_W = 56   // px — colonna nome medico
+const PV_CELL_W  = 24   // px — cella giorno
+// Colori celle anteprima (rispecchiano i badge dell'app)
+const PV_CELL_COLORS: Record<string, { bg: string; fg: string }> = {
+  M:   { bg: '#dde8d5', fg: '#2e4a28' },
+  P:   { bg: '#d5e0e8', fg: '#253a4a' },
+  L:   { bg: '#ece5d5', fg: '#4a3a1a' },
+  REP: { bg: '#e8d5d5', fg: '#5a2a2a' },
+  RM:  { bg: '#ddd8ea', fg: '#3a2858' },
+  RP:  { bg: '#ead8e2', fg: '#582840' },
+}
+
 interface SlotRow {
   id:   string | null
   slot: number
   vals: Record<string, number | null>
   REP:  boolean
 }
-
-// ── Tipi per l'anteprima rotazione ──────────────────────────────
-interface SlotCellaPreview { col: string; num: number | null }
-interface GiornoPreview    { giorno: number; rows: SlotCellaPreview[][] }
-interface SettimanaPreview { sett: number; giorni: GiornoPreview[] }
 
 function emptySlot(slot: number, colonne: string[]): SlotRow {
   const vals: Record<string, number | null> = {}
@@ -149,8 +157,23 @@ export function GestioneSchemaPage() {
     return () => registerNavGuard(null)   // cleanup al dismount
   }, [hasUnsaved, registerNavGuard])
 
+  // Misura la larghezza del contenitore anteprima per calcolare daysPerRow
+  useEffect(() => {
+    if (!showPreview) return
+    const el = previewContainerRef.current
+    if (!el) return
+    setPreviewWidth(el.clientWidth)
+    const ro = new ResizeObserver(([e]) => setPreviewWidth(e.contentRect.width))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [showPreview])
+
   // Helper: marca modifiche presenti
   const markUnsaved = () => setHasUnsaved(true)
+
+  // ── Anteprima: larghezza container (ResizeObserver) ──────────
+  const [previewWidth, setPreviewWidth] = useState(800)
+  const previewContainerRef = useRef<HTMLDivElement>(null)
 
   // ── Sorgente del drag ─────────────────────────────────────────
   const dragSource = useRef<{
@@ -201,35 +224,40 @@ export function GestioneSchemaPage() {
     return counts
   }, [griglia, medici])
 
-  // ── Anteprima rotazione (calcolata localmente, nessun DB) ────────
-  const provaPreview = useMemo<SettimanaPreview[] | null>(() => {
+  // ── Anteprima rotazione: celle[medicoIdx][dayIdx] ────────────
+  // Genera N*7 giorni (N = n. medici) come calendario orizzontale.
+  // Calcola il turno_clinico di ogni medico per ogni giorno 1…N*7.
+  const previewCells = useMemo<(string | null)[][] | null>(() => {
     if (!showPreview) return null
     const nMedici = medici.length
-    if (nMedici === 0 || giorni.length === 0) return []
+    if (nMedici === 0) return []
 
-    const previews: SettimanaPreview[] = []
-    for (let sett = 0; sett < nMedici; sett++) {
-      const giornoRows: GiornoPreview[] = []
-      for (const giorno of giorni) {
-        const slots = griglia[giorno] ?? []
-        const rowSlots: SlotCellaPreview[][] = slots.map(row =>
-          colonne.map(col => {
-            const calcNum = row.vals[col]
-            if (calcNum === null) return { col, num: null }
-            // Inversione rotazione: quale medico occupa questo slot in questa settimana?
-            // calcIdx = ((calcNum - 1) - sett) % nMedici
-            let actualIdx = ((calcNum - 1) - sett) % nMedici
-            if (actualIdx < 0) actualIdx += nMedici
-            const med = medici[actualIdx]
-            return { col, num: med?.numero_ordine ?? null }
-          })
-        )
-        giornoRows.push({ giorno, rows: rowSlots })
-      }
-      previews.push({ sett: sett + 1, giorni: giornoRows })
-    }
-    return previews
-  }, [showPreview, medici, giorni, griglia, colonne])
+    const totalDays = nMedici * 7
+
+    return medici.map((_, mi) =>
+      Array.from({ length: totalDays }, (_, di) => {
+        const day      = di + 1
+        const dayOfWk  = ((day - 1) % 7) + 1   // 1=Lun … 7=Dom
+        const week     = Math.floor((day - 1) / 7)  // settimana 0-based
+        // Numero-schema assegnato a questo medico questa settimana
+        const calcNum  = ((mi + week) % nMedici) + 1
+
+        if (!giorni.includes(dayOfWk)) return null   // giorno non nello schema
+
+        const slots = griglia[dayOfWk] ?? []
+        let turno = ''
+        for (const slot of slots) {
+          const inM  = slot.vals['M']  === calcNum
+          const inP  = slot.vals['P']  === calcNum
+          if (slot.REP && inM) { turno = 'REP'; break }
+          if (inM && inP)      { turno = 'L';   break }
+          if (inM)             { turno = 'M';   break }
+          if (inP)             { turno = 'P';   break }
+        }
+        return turno   // '' = giorno in schema ma medico non assegnato
+      })
+    )
+  }, [showPreview, medici, giorni, griglia])
 
   // ── Carica dal DB ─────────────────────────────────────────────
   useEffect(() => {
@@ -646,7 +674,7 @@ export function GestioneSchemaPage() {
       </div>
 
       {/* ═══ GRIGLIA + CONTATORE (affiancati) ═══════════════════ */}
-      <div className="flex gap-2 flex-1 overflow-hidden">
+      <div className={`flex gap-2 overflow-hidden ${showPreview ? 'shrink-0' : 'flex-1'}`}>
       <div className="card shrink-0 overflow-auto self-stretch">
         <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
           {/* Header colonne */}
@@ -832,111 +860,128 @@ export function GestioneSchemaPage() {
       </div>
       </div>
 
-      {/* Anteprima rotazione — a destra del contatore */}
-      {provaPreview && (
-        <div className="shrink-0 flex flex-col overflow-hidden" style={{ width: 240 }}>
-          <div className="card flex-1 overflow-y-auto">
-            {/* Header */}
-            <div className="px-3 pt-3 pb-2 border-b border-stone-200 shrink-0 flex items-center justify-between">
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: '#476540' }}>
-                  Prova Schema
-                </h3>
-                <p className="text-[10px] text-stone-500 mt-0.5">
-                  {medici.length} sett. · rotazione locale
-                </p>
-              </div>
-              <button onClick={() => setShowPreview(false)}
-                className="text-stone-400 hover:text-stone-600 transition-colors ml-2 shrink-0">
-                <X size={13} />
-              </button>
+      </div>
+
+      {/* ═══ ANTEPRIMA CALENDARIO ORIZZONTALE ══════════════════ */}
+      {showPreview && previewCells && (
+        <div className="card flex-1 overflow-hidden flex flex-col" ref={previewContainerRef}>
+          {/* Header */}
+          <div className="px-3 pt-2 pb-1.5 border-b border-stone-200 shrink-0 flex items-center justify-between">
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: '#476540' }}>
+                Prova Schema — rotazione completa
+              </h3>
+              <p className="text-[10px] text-stone-500 mt-0.5">
+                {medici.length} medici · {medici.length * 7} giorni totali
+                {previewWidth > 0 && ` · ${Math.max(1, Math.floor((previewWidth - PV_LABEL_W - 8) / (7 * PV_CELL_W))) * 7} giorni per riga`}
+              </p>
             </div>
-            {/* Week blocks — si avvolgono a capo */}
-            <div className="p-2 flex flex-wrap gap-1.5 content-start">
-              {provaPreview.length === 0 ? (
-                <p className="text-[10px] text-stone-400 italic px-1 py-2">
-                  Nessun dato nello schema.
-                </p>
-              ) : provaPreview.map(s => {
-                // Larghezza blocco: 24px etichetta giorno + nCols × 17px + 2px padding
-                const cellW = 17
-                const labelW = 24
-                const blockW = labelW + colonne.length * cellW + 2
+            <button onClick={() => setShowPreview(false)}
+              className="text-stone-400 hover:text-stone-600 transition-colors ml-4 shrink-0">
+              <X size={13} />
+            </button>
+          </div>
+
+          {/* Corpo scrollabile */}
+          <div className="overflow-y-auto flex-1 p-2 flex flex-col gap-3">
+            {previewCells.length === 0 ? (
+              <p className="text-xs text-stone-400 italic p-2">Nessun medico attivo.</p>
+            ) : (() => {
+              const nMedici  = medici.length
+              const totalDays = nMedici * 7
+              // Quante settimane intere entrano in larghezza?
+              const weeksPerRow = Math.max(1, Math.floor((previewWidth - PV_LABEL_W - 8) / (7 * PV_CELL_W)))
+              const daysPerRow  = weeksPerRow * 7
+              const numChunks   = Math.ceil(totalDays / daysPerRow)
+
+              return Array.from({ length: numChunks }, (_, ci) => {
+                const startDay = ci * daysPerRow + 1
+                const endDay   = Math.min(startDay + daysPerRow - 1, totalDays)
+                const days     = Array.from({ length: endDay - startDay + 1 }, (_, i) => startDay + i)
+
                 return (
-                  <div key={s.sett} style={{
-                    width: blockW, flexShrink: 0,
-                    background: '#fff', border: '1px solid #e5e7eb',
-                    borderRadius: 5, overflow: 'hidden',
+                  <div key={ci} style={{
+                    border: '1px solid #e5e7eb', borderRadius: 6, overflow: 'hidden',
+                    width: 'fit-content',
                   }}>
-                    {/* Header settimana */}
-                    <div style={{
-                      background: '#374f30', color: '#fff',
-                      padding: '2px 3px', fontSize: 9, fontWeight: 700,
-                      textAlign: 'center', letterSpacing: '0.02em',
-                    }}>
-                      S.{s.sett}
-                    </div>
-                    {/* Intestazioni colonne */}
-                    <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb', background: '#f9fafb' }}>
-                      <div style={{ width: labelW, flexShrink: 0 }} />
-                      {colonne.map(col => (
-                        <div key={col} style={{
-                          width: cellW, flexShrink: 0,
-                          textAlign: 'center', fontSize: 8,
-                          color: '#6b7280', fontWeight: 600,
-                          padding: '1px 0',
-                        }}>
-                          {col.length > 2 ? col.slice(0, 2) : col}
-                        </div>
-                      ))}
-                    </div>
-                    {/* Righe: giorno × slot */}
-                    {s.giorni.flatMap(g =>
-                      g.rows.length === 0 ? [] : g.rows.map((slotRow, si) => (
-                        <div key={`${g.giorno}-${si}`} style={{
-                          display: 'flex',
-                          borderBottom: '1px solid #f3f4f6',
-                        }}>
-                          {/* Etichetta giorno (solo per il primo slot) */}
-                          <div style={{
-                            width: labelW, flexShrink: 0,
-                            fontSize: 8, fontWeight: 700,
-                            color: si === 0 ? '#374f30' : 'transparent',
-                            padding: '1px 3px',
-                            lineHeight: '15px',
-                            background: si === 0 ? '#f0f4ee' : '#fff',
+                    {/* Riga numeri giorno */}
+                    <div className="flex" style={{ borderBottom: '1px solid #d1d5db' }}>
+                      <div style={{
+                        width: PV_LABEL_W, flexShrink: 0,
+                        background: '#2b3c24',
+                      }} />
+                      {days.map(day => {
+                        const isWe = ((day - 1) % 7) >= 5  // Sab/Dom
+                        return (
+                          <div key={day} style={{
+                            width: PV_CELL_W, flexShrink: 0,
+                            textAlign: 'center', fontSize: 9, fontWeight: 700,
+                            padding: '2px 0',
+                            background: isWe ? '#fee2e2' : '#f0f4ee',
+                            color:      isWe ? '#9f1239' : '#2b3c24',
+                            borderLeft: '1px solid #e5e7eb',
                           }}>
-                            {GIORNI_IT[g.giorno].slice(0, 3)}
+                            {day}
                           </div>
-                          {/* Celle medico */}
-                          {slotRow.map(({ col, num }) => {
-                            const clr = num !== null
-                              ? (colorMap[num] ?? { bg: '#f3f4f6', fg: '#6b7280' })
-                              : null
+                        )
+                      })}
+                    </div>
+
+                    {/* Righe medici */}
+                    {medici.map((med, mi) => {
+                      const color = PASTEL[mi % PASTEL.length]
+                      return (
+                        <div key={med.id} className="flex" style={{ borderBottom: '1px solid #f0f0f0' }}>
+                          {/* Nome medico */}
+                          <div style={{
+                            width: PV_LABEL_W, flexShrink: 0,
+                            padding: '1px 4px', fontSize: 9, fontWeight: 700,
+                            background: color.bg, color: color.fg,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            borderRight: '1px solid #e5e7eb',
+                            display: 'flex', alignItems: 'center', gap: 3,
+                          }}>
+                            <span style={{
+                              display: 'inline-block', width: 14, height: 14, borderRadius: 3,
+                              background: 'rgba(0,0,0,0.12)', textAlign: 'center',
+                              lineHeight: '14px', fontSize: 8, fontWeight: 900, flexShrink: 0,
+                            }}>{med.numero_ordine}</span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {med.nome.split(' ').slice(-1)[0]}
+                            </span>
+                          </div>
+
+                          {/* Celle turno */}
+                          {days.map(day => {
+                            const cell  = previewCells[mi]?.[day - 1] ?? null
+                            const isWe  = ((day - 1) % 7) >= 5
+                            const clr   = cell && cell !== '' ? PV_CELL_COLORS[cell] : null
+                            const bg    = clr?.bg ?? (isWe ? '#fdf9f9' : '#fff')
+                            const fg    = clr?.fg ?? (cell === null ? '#d1d5db' : '#9ca3af')
+                            const text  = cell === null ? '' : cell === '' ? '' : cell
+
                             return (
-                              <div key={col} style={{
-                                width: cellW, height: 15,
-                                flexShrink: 0,
+                              <div key={day} title={`Giorno ${day} — ${med.nome}: ${cell || '—'}`} style={{
+                                width: PV_CELL_W, flexShrink: 0, height: 20,
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                background: clr?.bg ?? '#fafafa',
+                                background: bg, color: fg,
                                 fontSize: 9, fontWeight: 700,
-                                color: clr?.fg ?? '#c0b8a8',
+                                borderLeft: '1px solid #f0f0f0',
                               }}>
-                                {num ?? '·'}
+                                {text}
                               </div>
                             )
                           })}
                         </div>
-                      ))
-                    )}
+                      )
+                    })}
                   </div>
                 )
-              })}
-            </div>
+              })
+            })()}
           </div>
         </div>
       )}
-      </div>
     </div>
   )
 }
