@@ -127,7 +127,7 @@ export function NavBar({ user, onSignOut }: Props) {
         <span className="hidden sm:block text-[10px] font-mono shrink-0"
           style={{ color: '#c0d0b0' }}
           title={`Commit ${__APP_VERSION__} — build del ${__BUILD_DATE__}`}>
-          #{__APP_VERSION__} · {__BUILD_DATE__}
+          v{__APP_VERSION__} · {__BUILD_DATE__}
         </span>
       </div>
     </nav>
