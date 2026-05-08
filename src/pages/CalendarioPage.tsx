@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { RefreshCw, RotateCw, Plane, BarChart3, X } from 'lucide-react'
+import { RefreshCw, Info, RotateCw, Plane, BarChart3, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { generaColonne, MESI_IT } from '../lib/algorithm'
 import { CalendarLoadingScreen } from '../components/CalendarLoadingScreen'
@@ -121,6 +121,11 @@ function stimaRighe(cfg: Configurazione, nMedici: number): number {
 
 export function CalendarioPage() {
   const [rigaSel, setRigaSel] = useState<string | null>(null)
+  // Legenda: aperta di default su desktop (≥ 640px), chiusa su mobile.
+  // Toggle dal bottone "Legenda" nella toolbar.
+  const [mostraLegenda, setMostraLegenda] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 640px)').matches
+  )
 
   // Rilevamento orientamento per il suggerimento landscape su mobile
   const [isPortrait, setIsPortrait] = useState(
@@ -577,6 +582,12 @@ export function CalendarioPage() {
               <RotateCw size={12} /> Orizzontale
             </span>
           )}
+          {/* Toggle legenda — di default aperta su desktop, chiusa su mobile */}
+          <button onClick={() => setMostraLegenda(v => !v)}
+            className="btn-secondary py-1 px-2 text-xs"
+            style={mostraLegenda ? { background: '#e0e8d8', borderColor: '#9ab488' } : {}}>
+            <Info size={13} /> Legenda
+          </button>
           {/* Riepilogo turni — visibile SOLO ai medici turnisti loggati.
               Apre un modal con il conteggio M/P/L/S/D/Totale del medico. */}
           {mioMedico && (
@@ -620,6 +631,14 @@ export function CalendarioPage() {
         </div>
       </div>
 
+      {/* Legenda — sopra la tabella, togglabile dal bottone Legenda.
+          Default: aperta su desktop, chiusa su mobile. */}
+      {mostraLegenda && (
+        <div className="px-3 py-2 shrink-0 border-b" style={{ borderColor: '#d5ccb8' }}>
+          <LegendaCalendario variant="pubblica" />
+        </div>
+      )}
+
       <div className="overflow-auto flex-1">
         {turni.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-stone-500">
@@ -633,10 +652,6 @@ export function CalendarioPage() {
             {/* ─── TABELLA RICERCA (RM/RP) ─── */}
             <div style={{ height: 8 }} />
             {renderTabella('ricerca')}
-            {/* ─── LEGENDA — sempre visibile sotto le tabelle ─── */}
-            <div className="px-3 py-2">
-              <LegendaCalendario variant="pubblica" />
-            </div>
           </>
         )}
       </div>
