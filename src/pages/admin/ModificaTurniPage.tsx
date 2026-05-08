@@ -60,30 +60,34 @@ function dayLetter(dateStr: string): string {
   return DAY_LETTERS[new Date(y, m - 1, d).getDay()]
 }
 
-/** Etichetta del turno clinico (M / P / L / REP) con eventuali tag (sub)/(med) */
+/** Etichetta TC (M / P / L / REP). Se isSub/isMed, avvolge il testo in un
+ *  cerchietto pastello (rosso = sub, azzurro = med, gradient = entrambi). */
 function LabelClinico({ tc, isSub, isMed }: { tc: string; isSub?: boolean; isMed?: boolean }) {
-  if (!tc && !isSub && !isMed) return null
+  if (!tc) return null
+  const fontSize = tc === 'REP' ? 10 : 12
+  const color    = tc === 'REP' ? '#b91c1c' : (CELL_COLORS[tc]?.fg ?? '#3a3d30')
+
+  let bg: string | undefined
+  if (isSub && isMed) bg = 'linear-gradient(135deg,#fecaca 0%,#fecaca 50%,#bae6fd 50%,#bae6fd 100%)'
+  else if (isSub)     bg = '#fecaca'
+  else if (isMed)     bg = '#bae6fd'
+
+  const baseProps = {
+    className: 'pointer-events-none select-none',
+    style: {
+      fontSize, fontWeight: bg ? 800 : 700, color,
+      letterSpacing: tc === 'REP' ? '-0.3px' : undefined,
+    } as React.CSSProperties,
+  }
+
+  if (!bg) return <span {...baseProps}>{tc}</span>
   return (
-    <div className="flex flex-col items-center leading-none gap-px pointer-events-none select-none">
-      {tc && (
-        <span style={{
-          fontSize:      tc === 'REP' ? 11 : 13,
-          fontWeight:    700,
-          color:         tc === 'REP' ? '#b91c1c' : (CELL_COLORS[tc]?.fg ?? '#3a3d30'),
-          letterSpacing: tc === 'REP' ? '-0.3px' : undefined,
-        }}>{tc}</span>
-      )}
-      {isSub && (
-        <span style={{ fontSize: 8, fontWeight: 800, color: '#dc2626', letterSpacing: '-0.2px' }}>
-          (sub)
-        </span>
-      )}
-      {isMed && (
-        <span style={{ fontSize: 8, fontWeight: 800, color: '#0284c7', letterSpacing: '-0.2px' }}>
-          (med)
-        </span>
-      )}
-    </div>
+    <span {...baseProps} style={{
+      ...baseProps.style,
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      width: 22, height: 22, borderRadius: '50%',
+      background: bg, lineHeight: 1,
+    }}>{tc}</span>
   )
 }
 
@@ -292,7 +296,7 @@ function EditableCell({
             padding: 0,
           }}
         />
-      ) : hasValue || (tipo === 'clinica' && (isSub || isMed)) ? (
+      ) : hasValue ? (
         tipo === 'clinica'
           ? <LabelClinico tc={tc} isSub={isSub} isMed={isMed} />
           : <LabelRicerca tr={tr} />

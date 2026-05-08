@@ -34,35 +34,36 @@ const CELL_COLORS: Record<string, { bg: string; fg: string }> = {
   RP:  { bg: '#ead8e2', fg: '#582840' },
 }
 
-/** Etichetta del turno clinico (M / P / L / REP) — più grande perché unico nella sua tabella.
- *  Mostra anche eventuali tag (sub) rosso o (med) azzurro sotto il TC. */
+/** Etichetta del turno clinico (M / P / L / REP) — più grande perché unico
+ *  nella sua tabella. Se isSub o isMed, il testo è avvolto in un cerchio
+ *  pastello colorato (rosso = sub, azzurro = med, gradient = entrambi). */
 function LabelClinico({ tc, isSub, isMed }: { tc: string; isSub?: boolean; isMed?: boolean }) {
-  if (!tc && !isSub && !isMed) return null
+  if (!tc) return null
+  const fontSize = tc === 'REP' ? 10 : 12
+  const color    = tc === 'REP' ? '#b91c1c'
+                 : tc === 'M'   ? '#2e4a28'
+                 : tc === 'P'   ? '#253a4a'
+                 : tc === 'L'   ? '#4a3a1a'
+                 : '#3a3d30'
+
+  // Sfondo del cerchietto: rosso/azzurro pastello, gradient se entrambi
+  let bg: string | undefined
+  if (isSub && isMed) bg = 'linear-gradient(135deg,#fecaca 0%,#fecaca 50%,#bae6fd 50%,#bae6fd 100%)'
+  else if (isSub)     bg = '#fecaca'
+  else if (isMed)     bg = '#bae6fd'
+
+  if (!bg) {
+    return <span style={{ fontSize, fontWeight: 700, color, letterSpacing: tc === 'REP' ? '-0.3px' : undefined }}>{tc}</span>
+  }
   return (
-    <div className="flex flex-col items-center leading-none gap-px">
-      {tc && (
-        <span style={{
-          fontSize:      tc === 'REP' ? 11 : 13,
-          fontWeight:    700,
-          color:         tc === 'REP' ? '#b91c1c'
-                       : tc === 'M'   ? '#2e4a28'
-                       : tc === 'P'   ? '#253a4a'
-                       : tc === 'L'   ? '#4a3a1a'
-                       : '#3a3d30',
-          letterSpacing: tc === 'REP' ? '-0.3px' : undefined,
-        }}>{tc}</span>
-      )}
-      {isSub && (
-        <span style={{ fontSize: 8, fontWeight: 800, color: '#dc2626', letterSpacing: '-0.2px' }}>
-          (sub)
-        </span>
-      )}
-      {isMed && (
-        <span style={{ fontSize: 8, fontWeight: 800, color: '#0284c7', letterSpacing: '-0.2px' }}>
-          (med)
-        </span>
-      )}
-    </div>
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      width: 22, height: 22, borderRadius: '50%',
+      background: bg,
+      fontSize, fontWeight: 800, color,
+      letterSpacing: tc === 'REP' ? '-0.3px' : undefined,
+      lineHeight: 1,
+    }}>{tc}</span>
   )
 }
 
@@ -488,9 +489,7 @@ export function CalendarioPage() {
                       }}
                       title={cell?.note || undefined}>
                       {tipo === 'clinica'
-                        ? (tc || cell?.is_sub || cell?.is_med
-                            ? <LabelClinico tc={tc} isSub={cell?.is_sub} isMed={cell?.is_med} />
-                            : null)
+                        ? (tc ? <LabelClinico tc={tc} isSub={cell?.is_sub} isMed={cell?.is_med} /> : null)
                         : (tr ? <LabelRicerca tr={tr} /> : null)}
                     </td>
                   )
