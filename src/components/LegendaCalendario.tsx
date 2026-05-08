@@ -52,24 +52,24 @@ export function LegendaCalendario({ variant = 'pubblica', className, style }: Pr
       {/* Separatore */}
       <span style={{ width: 1, height: 14, background: '#c0b8a8', display: 'inline-block', margin: '0 2px' }} />
 
-      {/* SUB — cerchietto rosso pastello */}
+      {/* SUB — cerchietto rosso pastello con S dentro */}
       <span className="flex items-center gap-1">
         <span style={{
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           width: 22, height: 22, borderRadius: '50%',
-          background: '#fecaca',
-          fontSize: 12, fontWeight: 800, color: '#2e4a28',
-        }}>M</span>
+          background: '#fecaca', border: '1.5px solid #dc2626',
+          fontSize: 12, fontWeight: 800, color: '#9f1239', lineHeight: 1,
+        }}>S</span>
         <span style={{ color: '#5a5a4a' }}>Sub-intensiva</span>
       </span>
 
-      {/* MED — cerchietto azzurro pastello */}
+      {/* MED — cerchietto azzurro pastello con M dentro */}
       <span className="flex items-center gap-1">
         <span style={{
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           width: 22, height: 22, borderRadius: '50%',
-          background: '#bae6fd',
-          fontSize: 12, fontWeight: 800, color: '#2e4a28',
+          background: '#bae6fd', border: '1.5px solid #0284c7',
+          fontSize: 12, fontWeight: 800, color: '#0c4a6e', lineHeight: 1,
         }}>M</span>
         <span style={{ color: '#5a5a4a' }}>Medicina</span>
       </span>
