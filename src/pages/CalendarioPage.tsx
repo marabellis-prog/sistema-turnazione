@@ -27,28 +27,33 @@ const CELL_COLORS: Record<string, { bg: string; fg: string }> = {
   RP:  { bg: '#ead8e2', fg: '#582840' },
 }
 
-function LabelTurno({ tc, tr }: { tc: string; tr: string }) {
+/** Etichetta del turno clinico (M / P / L / REP) — più grande perché unico nella sua tabella */
+function LabelClinico({ tc }: { tc: string }) {
+  if (!tc) return null
+  return (
+    <span style={{
+      fontSize:      tc === 'REP' ? 11 : 13,
+      fontWeight:    700,
+      color:         tc === 'REP' ? '#b91c1c'
+                   : tc === 'M'   ? '#2e4a28'
+                   : tc === 'P'   ? '#253a4a'
+                   : tc === 'L'   ? '#4a3a1a'
+                   : '#3a3d30',
+      letterSpacing: tc === 'REP' ? '-0.3px' : undefined,
+    }}>{tc}</span>
+  )
+}
+
+/** Etichetta del turno ricerca (RM / RP / RM+RP) */
+function LabelRicerca({ tr }: { tr: string }) {
+  if (!tr) return null
   return (
     <div className="flex flex-col items-center leading-none gap-px">
-      {tc && (
-        <span style={{
-          fontSize:      tc === 'REP' ? 9 : 11,
-          fontWeight:    700,
-          // REP: rosso brillante — altri: colori muted dal tema
-          color:         tc === 'REP' ? '#b91c1c'
-                       : tc === 'M'   ? '#2e4a28'
-                       : tc === 'P'   ? '#253a4a'
-                       : tc === 'L'   ? '#4a3a1a'
-                       : '#3a3d30',
-          letterSpacing: tc === 'REP' ? '-0.3px' : undefined,
-        }}>
-          {tc}
-        </span>
-      )}
-      {tr && tr.split('+').map(p => (
-        <span key={p} style={{ fontSize: 8, fontWeight: 600, color: CELL_COLORS[p]?.fg ?? '#3a2858' }}>
-          {p}
-        </span>
+      {tr.split('+').map(p => (
+        <span key={p} style={{
+          fontSize: 10, fontWeight: 700,
+          color: CELL_COLORS[p]?.fg ?? '#3a2858',
+        }}>{p}</span>
       ))}
     </div>
   )
@@ -282,6 +287,138 @@ export function CalendarioPage() {
     )
   }
 
+  // ── Render di una tabella (clinica o ricerca) ─────────────────────
+  // Stessa struttura: header mesi + giorni, riga per medico, una cella
+  // per giorno. Differenza:
+  //   - 'clinica' → rende il TC (M/P/L/REP)
+  //   - 'ricerca' → rende il TR (RM/RP/RM+RP)
+  // Lo scroll orizzontale è condiviso (stesso container .overflow-auto),
+  // gli sticky header funzionano naturalmente: la clinica è sticky finché
+  // sei nella sua area; quando scrolli sotto, la ricerca prende il top.
+  const renderTabella = (tipo: 'clinica' | 'ricerca') => {
+    const headerBg     = tipo === 'clinica' ? '#374f30' : '#4c1d95'
+    const headerBorder = tipo === 'clinica' ? '#2b3c24' : '#3b1d72'
+    const headerLabel  = tipo === 'clinica' ? 'Clinica' : 'Ricerca'
+    return (
+      <table className="cal-table">
+        <thead>
+          <tr>
+            <th className="cal-td-nome-header" rowSpan={2}
+              style={{ background: headerBg, borderColor: headerBorder }}>
+              Medico — {headerLabel}
+            </th>
+            {gruppiMese.map(g => (
+              <th key={`${g.anno}-${g.mese}`} colSpan={g.count}
+                className="cal-th text-[11px] text-white"
+                style={{
+                  background: headerBg, borderColor: headerBorder, letterSpacing: '0.04em',
+                  position: 'sticky', top: 0, zIndex: 30,
+                }}>
+                {MESI_IT[g.mese].toUpperCase()} {g.anno}
+              </th>
+            ))}
+          </tr>
+          <tr>
+            {colonne.map(col => {
+              const isLastOfMonth = lastDaysOfMonth.has(col.data)
+              const letter = dayLetter(col.data)
+              const isRedDay = letter === 'D' || col.isFestivo
+              return (
+                <th key={col.data}
+                  className="cal-th !px-0 !py-0.5 w-8"
+                  style={{
+                    position: 'sticky', top: 22, zIndex: 20,
+                    ...(isRedDay ? { background: '#fde0e0' } : {}),
+                    ...(isLastOfMonth ? { borderRight: '2px solid #7a9a6a' } : {}),
+                  }}
+                  title={col.data}>
+                  <div style={{ lineHeight: 1, padding: '1px 0' }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: isRedDay ? '#9a2020' : undefined }}>
+                      {col.giorno}
+                    </div>
+                    <div style={{ fontSize: 8, fontWeight: 600, marginTop: 1, color: isRedDay ? '#9a2020' : '#9ca3af' }}>
+                      {letter}
+                    </div>
+                  </div>
+                </th>
+              )
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {medici.map(med => {
+            const medMap = turniMap.get(med.id)
+            const isSel  = rigaSel === med.id
+            return (
+              <tr key={med.id}
+                onClick={() => setRigaSel(isSel ? null : med.id)}
+                className="cursor-pointer transition-colors"
+                style={{ background: isSel ? 'rgba(253,224,71,0.8)' : '' }}
+                onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = '#eae8e0' }}
+                onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = '' }}>
+                <td className="cal-td-nome"
+                  style={{ background: isSel ? 'rgba(253,224,71,0.85)' : undefined }}>
+                  {med.nome}
+                </td>
+                {colonne.map(col => {
+                  const cell  = medMap?.get(col.data)
+                  const tc    = cell?.turno_clinico ?? ''
+                  const tr    = cell?.turno_ricerca  ?? ''
+                  const modif = cell?.modificato_manualmente ?? false
+
+                  // Ferie: stato per medico+giorno (vale per entrambe le tabelle)
+                  const inRange = (m: Map<string, [string, string][]>) =>
+                    m.get(med.id)?.some(([s, e]) => col.data >= s && col.data <= e) ?? false
+                  const isFerieApproved = (cell?.is_ferie ?? false) || inRange(ferieRanges.approved)
+                  const isFeriePending  = !isFerieApproved && inRange(ferieRanges.pending)
+
+                  // Colore base: se c'è un valore PER QUESTA TABELLA usa il bg del tipo,
+                  // altrimenti neutro/festivo
+                  const valore = tipo === 'clinica' ? tc : tr
+                  // Per ricerca con RM+RP usiamo il bg del primo (mix non gestito)
+                  const valKey = tipo === 'ricerca' ? valore.split('+')[0] : valore
+
+                  let bgBase: string
+                  if (isFerieApproved) {
+                    bgBase = '#d5e5d0'
+                  } else if (isFeriePending) {
+                    bgBase = 'repeating-linear-gradient(-45deg, #d5e5d0 0, #d5e5d0 3px, #a8c4a0 3px, #a8c4a0 6px)'
+                  } else if (col.isDomenica || col.isFestivo) {
+                    bgBase = '#fde0e0'
+                  } else if (valKey && CELL_COLORS[valKey]) {
+                    bgBase = CELL_COLORS[valKey].bg
+                  } else if (tc || tr) {
+                    bgBase = '#e8e3d8'   // ha qualcosa nell'altra tabella → grigio neutro
+                  } else {
+                    bgBase = '#faf8f3'
+                  }
+
+                  const YELLOW_OVL = 'linear-gradient(rgba(253,224,71,0.8),rgba(253,224,71,0.8))'
+                  const bg = isSel ? `${YELLOW_OVL}, ${bgBase}` : bgBase
+
+                  return (
+                    <td key={col.data}
+                      className={`cal-cell ${modif ? 'cal-cell-modificata' : ''}`}
+                      style={{
+                        background:  bg,
+                        borderColor: '#8a9882',
+                        ...(lastDaysOfMonth.has(col.data) ? { borderRight: '2px solid #7a9a6a' } : {}),
+                      }}
+                      title={cell?.note || undefined}>
+                      {tipo === 'clinica'
+                        ? (tc ? <LabelClinico tc={tc} /> : null)
+                        : (tr ? <LabelRicerca tr={tr} /> : null)}
+                    </td>
+                  )
+                })}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    )
+  }
+
   // ── Tabella calendario ────────────────────────────────────────────
   return (
     <div className="flex flex-col h-[calc(100vh-48px)]">
@@ -400,126 +537,13 @@ export function CalendarioPage() {
             <p className="text-xs mt-1">Vai in <strong>Admin → Genera Calendario</strong>.</p>
           </div>
         ) : (
-          <table className="cal-table">
-            <thead>
-              <tr>
-                <th className="cal-td-nome-header" rowSpan={2}>Medico</th>
-                {gruppiMese.map(g => (
-                  <th key={`${g.anno}-${g.mese}`} colSpan={g.count}
-                    className="cal-th text-[11px] text-white"
-                    style={{
-                      background: '#374f30', borderColor: '#2b3c24', letterSpacing: '0.04em',
-                      position: 'sticky', top: 0, zIndex: 30,
-                    }}>
-                    {MESI_IT[g.mese].toUpperCase()} {g.anno}
-                  </th>
-                ))}
-              </tr>
-              <tr>
-                {colonne.map(col => {
-                  const isLastOfMonth = lastDaysOfMonth.has(col.data)
-                  const letter = dayLetter(col.data)
-                  // 'D' (domenica) sempre rosso; festivi anche
-                  const isRedDay = letter === 'D' || col.isFestivo
-                  return (
-                    <th key={col.data}
-                      className="cal-th !px-0 !py-0.5 w-8"
-                      style={{
-                        position: 'sticky', top: 22, zIndex: 20,
-                        ...(isRedDay ? { background: '#fde0e0' } : {}),
-                        ...(isLastOfMonth ? { borderRight: '2px solid #7a9a6a' } : {}),
-                      }}
-                      title={col.data}>
-                      <div style={{ lineHeight: 1, padding: '1px 0' }}>
-                        <div style={{
-                          fontSize:   10,
-                          fontWeight: 700,
-                          color:      isRedDay ? '#9a2020' : undefined,
-                        }}>
-                          {col.giorno}
-                        </div>
-                        <div style={{
-                          fontSize:   8,
-                          fontWeight: 600,
-                          marginTop:  1,
-                          color:      isRedDay ? '#9a2020' : '#9ca3af',
-                        }}>
-                          {letter}
-                        </div>
-                      </div>
-                    </th>
-                  )
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {medici.map(med => {
-                const medMap = turniMap.get(med.id)
-                const isSel  = rigaSel === med.id
-                return (
-                  <tr key={med.id}
-                    onClick={() => setRigaSel(isSel ? null : med.id)}
-                    className="cursor-pointer transition-colors"
-                    style={{ background: isSel ? 'rgba(253,224,71,0.8)' : '' }}
-                    onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = '#eae8e0' }}
-                    onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = '' }}>
-                    <td className="cal-td-nome"
-                      style={{ background: isSel ? 'rgba(253,224,71,0.85)' : undefined }}>
-                      {med.nome}
-                    </td>
-                    {colonne.map(col => {
-                      const cell  = medMap?.get(col.data)
-                      const tc    = cell?.turno_clinico ?? ''
-                      const tr    = cell?.turno_ricerca  ?? ''
-                      const modif = cell?.modificato_manualmente ?? false
-
-                      // Verifica se il giorno è in un range di ferie approvate o in attesa
-                      const inRange = (m: Map<string, [string, string][]>) =>
-                        m.get(med.id)?.some(([s, e]) => col.data >= s && col.data <= e) ?? false
-                      const isFerieApproved = (cell?.is_ferie ?? false) || inRange(ferieRanges.approved)
-                      const isFeriePending  = !isFerieApproved && inRange(ferieRanges.pending)
-
-                      // Colore base della cella (senza selezione)
-                      let bgBase: string
-                      if (isFerieApproved) {
-                        bgBase = '#d5e5d0'   // verde pieno: ferie approvate
-                      } else if (isFeriePending) {
-                        // Verde a righe diagonali: ferie in attesa di approvazione
-                        bgBase = 'repeating-linear-gradient(-45deg, #d5e5d0 0, #d5e5d0 3px, #a8c4a0 3px, #a8c4a0 6px)'
-                      } else if (col.isDomenica || col.isFestivo) {
-                        bgBase = '#fde0e0'   // rosa-rosso
-                      } else if (tc || tr) {
-                        bgBase = '#e8e3d8'
-                      } else {
-                        bgBase = '#faf8f3'
-                      }
-
-                      // Se selezionata: overlay giallo 80% sopra il colore base.
-                      // Si usa linear-gradient() perché rgba() da sola non è
-                      // un background-image valido in un multi-layer background.
-                      const YELLOW_OVL = 'linear-gradient(rgba(253,224,71,0.8),rgba(253,224,71,0.8))'
-                      const bg = isSel
-                        ? `${YELLOW_OVL}, ${bgBase}`
-                        : bgBase
-
-                      return (
-                        <td key={col.data}
-                          className={`cal-cell ${modif ? 'cal-cell-modificata' : ''}`}
-                          style={{
-                            background: bg,
-                            borderColor: '#8a9882',
-                            ...(lastDaysOfMonth.has(col.data) ? { borderRight: '2px solid #7a9a6a' } : {}),
-                          }}
-                          title={cell?.note || undefined}>
-                          {(tc || tr) ? <LabelTurno tc={tc} tr={tr} /> : null}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <>
+            {/* ─── TABELLA CLINICA (M/P/L/REP) ─── */}
+            {renderTabella('clinica')}
+            {/* ─── TABELLA RICERCA (RM/RP) ─── */}
+            <div style={{ height: 8 }} />
+            {renderTabella('ricerca')}
+          </>
         )}
       </div>
     </div>

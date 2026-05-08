@@ -57,20 +57,27 @@ function dayLetter(dateStr: string): string {
   return DAY_LETTERS[new Date(y, m - 1, d).getDay()]
 }
 
-function LabelTurno({ tc, tr }: { tc: string; tr: string }) {
+/** Etichetta del turno clinico (M / P / L / REP) */
+function LabelClinico({ tc }: { tc: string }) {
+  if (!tc) return null
+  return (
+    <span className="pointer-events-none select-none" style={{
+      fontSize:      tc === 'REP' ? 11 : 13,
+      fontWeight:    700,
+      color:         tc === 'REP' ? '#b91c1c' : (CELL_COLORS[tc]?.fg ?? '#3a3d30'),
+      letterSpacing: tc === 'REP' ? '-0.3px' : undefined,
+    }}>{tc}</span>
+  )
+}
+
+/** Etichetta del turno ricerca (RM / RP / RM+RP) */
+function LabelRicerca({ tr }: { tr: string }) {
+  if (!tr) return null
   return (
     <div className="flex flex-col items-center leading-none gap-px pointer-events-none select-none">
-      {tc && (
-        <span style={{
-          fontSize:      tc === 'REP' ? 9 : 11,
-          fontWeight:    700,
-          color:         tc === 'REP' ? '#b91c1c' : (CELL_COLORS[tc]?.fg ?? '#3a3d30'),
-          letterSpacing: tc === 'REP' ? '-0.3px' : undefined,
-        }}>{tc}</span>
-      )}
-      {tr && tr.split('+').map(p => (
+      {tr.split('+').map(p => (
         <span key={p} style={{
-          fontSize: 8, fontWeight: 600,
+          fontSize: 9, fontWeight: 700,
           color: CELL_COLORS[p]?.fg ?? '#3a2858',
         }}>{p}</span>
       ))}
@@ -82,30 +89,34 @@ function LabelTurno({ tc, tr }: { tc: string; tr: string }) {
 // Parsing input cella
 // ════════════════════════════════════════════════════════════════════
 
+type TipoTabella = 'clinica' | 'ricerca'
+
 /**
- * Parsa la stringa scritta dall'utente in (turno_clinico, turno_ricerca).
- * Accetta separatori vari: spazio, virgola, "+", ";".
- * Esempi: "m rm" → (M, RM), "REP" → (REP, ''), "RM+RP" → ('', RM+RP),
- *         "p rm rp" → (P, RM+RP), "" → ('', '')
+ * Parsa la stringa scritta dall'utente, filtrando per tipo di tabella.
+ * - Clinica: riconosce solo M / P / L / REP (TC)
+ * - Ricerca: riconosce solo RM / RP / RM+RP (TR)
+ *
+ * Accetta separatori vari: spazio, virgola, "+", ";". Uppercase auto.
  */
-function parseCell(input: string): { tc: TurnoClinico; tr: TurnoRicerca } {
+function parseClinico(input: string): TurnoClinico {
   const tokens = input.toUpperCase().split(/[\s,+;]+/).filter(Boolean)
-  let tc: TurnoClinico = ''
-  const trSet = new Set<'RM' | 'RP'>()
   for (const t of tokens) {
-    if (t === 'M' || t === 'P' || t === 'L' || t === 'REP') tc = t
-    else if (t === 'RM') trSet.add('RM')
-    else if (t === 'RP') trSet.add('RP')
+    if (t === 'M' || t === 'P' || t === 'L' || t === 'REP') return t
   }
-  let tr: TurnoRicerca = ''
-  if (trSet.has('RM') && trSet.has('RP')) tr = 'RM+RP'
-  else if (trSet.has('RM')) tr = 'RM'
-  else if (trSet.has('RP')) tr = 'RP'
-  return { tc, tr }
+  return ''
 }
 
-function turnoToString(tc: TurnoClinico, tr: TurnoRicerca): string {
-  return [tc, tr].filter(Boolean).join(' ')
+function parseRicerca(input: string): TurnoRicerca {
+  const tokens = input.toUpperCase().split(/[\s,+;]+/).filter(Boolean)
+  const set = new Set<'RM' | 'RP'>()
+  for (const t of tokens) {
+    if (t === 'RM') set.add('RM')
+    else if (t === 'RP') set.add('RP')
+  }
+  if (set.has('RM') && set.has('RP')) return 'RM+RP'
+  if (set.has('RM')) return 'RM'
+  if (set.has('RP')) return 'RP'
+  return ''
 }
 
 /**
@@ -135,15 +146,20 @@ function calcolaMesi(cfg: Configurazione): { di: string; df: string }[] {
 // ════════════════════════════════════════════════════════════════════
 
 interface EditableCellProps {
-  tc:         TurnoClinico
-  tr:         TurnoRicerca
-  isModified: boolean   // diverso dal teorico → bordo azzurro
-  isFerie:    boolean
-  isRedDay:   boolean   // domenica/festivo
-  onChange:   (tc: TurnoClinico, tr: TurnoRicerca) => void
+  tipo:        TipoTabella   // 'clinica' = edita TC, 'ricerca' = edita TR
+  tc:          TurnoClinico  // sempre passati per il bg/check; quello "non gestito" dal tipo è readonly
+  tr:          TurnoRicerca
+  isModified:  boolean       // valore corrente diverso dall'originale (per il tipo della tabella)
+  isFerie:     boolean
+  isRedDay:    boolean       // domenica/festivo
+  onChangeClinico:  (tc: TurnoClinico) => void
+  onChangeRicerca:  (tr: TurnoRicerca) => void
 }
 
-function EditableCell({ tc, tr, isModified, isFerie, isRedDay, onChange }: EditableCellProps) {
+function EditableCell({
+  tipo, tc, tr, isModified, isFerie, isRedDay,
+  onChangeClinico, onChangeRicerca,
+}: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   const [draft,   setDraft]   = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -156,25 +172,43 @@ function EditableCell({ tc, tr, isModified, isFerie, isRedDay, onChange }: Edita
   }, [editing])
 
   const startEdit = () => {
-    setDraft(turnoToString(tc, tr))
+    setDraft(tipo === 'clinica' ? tc : tr)
     setEditing(true)
   }
 
   const commit = () => {
-    const parsed = parseCell(draft)
-    if (parsed.tc !== tc || parsed.tr !== tr) onChange(parsed.tc, parsed.tr)
+    if (tipo === 'clinica') {
+      const next = parseClinico(draft)
+      if (next !== tc) onChangeClinico(next)
+    } else {
+      const next = parseRicerca(draft)
+      if (next !== tr) onChangeRicerca(next)
+    }
     setEditing(false)
   }
 
-  // Background della cella basato sul TC corrente; se vuoto → fondo neutro
-  // (rosa per domeniche/festivi). Le ferie hanno gradiente verde.
-  const bg = isFerie
-    ? 'repeating-linear-gradient(-45deg, #d5e5d0 0, #d5e5d0 3px, #a8c4a0 3px, #a8c4a0 6px)'
-    : (CELL_COLORS[tc]?.bg ?? (isRedDay ? '#fde0e0' : '#fefefe'))
+  // Background della cella:
+  // - clinica: colore basato su TC (verde M, blu P, beige L, rosso REP)
+  // - ricerca: colore basato su TR (viola RM, magenta RP, mix)
+  // Ferie e festivi hanno priorità sul background neutro.
+  let bg: string
+  if (isFerie) {
+    bg = 'repeating-linear-gradient(-45deg, #d5e5d0 0, #d5e5d0 3px, #a8c4a0 3px, #a8c4a0 6px)'
+  } else if (tipo === 'clinica') {
+    bg = CELL_COLORS[tc]?.bg ?? (isRedDay ? '#fde0e0' : '#fefefe')
+  } else {
+    // ricerca: prendi il primo TR per il colore (RM > RP arbitrariamente)
+    const first = tr.split('+')[0]
+    bg = CELL_COLORS[first]?.bg ?? (isRedDay ? '#fde0e0' : '#fefefe')
+  }
 
   const modifiedShadow = isModified
     ? 'inset 0 0 0 2px #38bdf8, 0 0 4px 0 rgba(56,189,248,0.4)'
     : undefined
+
+  // Mostro solo il valore pertinente al tipo; il complementare resta "in background"
+  const displayValue = tipo === 'clinica' ? tc : tr
+  const hasValue     = !!displayValue
 
   return (
     <td
@@ -201,8 +235,9 @@ function EditableCell({ tc, tr, isModified, isFerie, isRedDay, onChange }: Edita
             if (e.key === 'Enter') { e.preventDefault(); commit() }
             else if (e.key === 'Escape') { e.preventDefault(); setEditing(false) }
           }}
-          maxLength={9}
+          maxLength={6}
           spellCheck={false}
+          placeholder={tipo === 'clinica' ? 'M/P/L/REP' : 'RM/RP'}
           style={{
             width: '100%', height: '100%',
             border: 'none', outline: 'none',
@@ -213,9 +248,11 @@ function EditableCell({ tc, tr, isModified, isFerie, isRedDay, onChange }: Edita
             padding: 0,
           }}
         />
-      ) : (
-        (tc || tr) ? <LabelTurno tc={tc} tr={tr} /> : null
-      )}
+      ) : hasValue ? (
+        tipo === 'clinica'
+          ? <LabelClinico tc={tc} />
+          : <LabelRicerca tr={tr} />
+      ) : null}
     </td>
   )
 }
@@ -349,13 +386,14 @@ export function ModificaTurniPage() {
   }, [turniByKey])
 
   // ── Update cella (delta vs DB) ─────────────────────────────────────
+  // Modifica un singolo "lato" della cella (TC o TR) preservando l'altro.
+  // Se il nuovo (tc, tr) coincide col DB, rimuoviamo l'entry dal Map.
   const updateCella = useCallback((medicoId: string, data: string, tc: TurnoClinico, tr: TurnoRicerca) => {
     const key = `${medicoId}|${data}`
     const dbT = turniByKey.get(key)
     const dbCur = dbT ? { tc: dbT.turno_clinico, tr: dbT.turno_ricerca } : { tc: '' as TurnoClinico, tr: '' as TurnoRicerca }
     setModifiche(prev => {
       const next = new Map(prev)
-      // Se il nuovo valore è uguale al DB → niente delta, rimuovi dalla mappa
       if (tc === dbCur.tc && tr === dbCur.tr) next.delete(key)
       else next.set(key, { tc, tr })
       return next
@@ -418,25 +456,36 @@ export function ModificaTurniPage() {
     }
   }
 
-  // ── Render di una singola cella della tabella ──────────────────────
-  const renderCella = (medicoId: string, col: ColonnaCal) => {
+  // ── Render di una singola cella ───────────────────────────────────
+  // Il "tipo" determina quale parte della cella visualizzare/editare:
+  //   - 'clinica'  → mostra/edita TC, lascia TR invariato
+  //   - 'ricerca'  → mostra/edita TR, lascia TC invariato
+  // Il bordo azzurro "modificato" è indipendente per tipo: riferito
+  // solo al lato gestito da quella tabella.
+  const renderCella = (medicoId: string, col: ColonnaCal, tipo: TipoTabella) => {
     const cur  = getCella(medicoId, col.data)
     const orig = getOriginale(medicoId, col.data)
-    const isMod = cur.tc !== orig.tc || cur.tr !== orig.tr
+    const isMod = tipo === 'clinica'
+      ? cur.tc !== orig.tc
+      : cur.tr !== orig.tr
     return (
       <EditableCell
-        key={`${medicoId}|${col.data}`}
+        key={`${medicoId}|${col.data}|${tipo}`}
+        tipo={tipo}
         tc={cur.tc} tr={cur.tr}
         isModified={isMod}
         isFerie={isFerieCella(medicoId, col.data)}
         isRedDay={col.isDomenica || col.isFestivo}
-        onChange={(tc, tr) => updateCella(medicoId, col.data, tc, tr)}
+        onChangeClinico={tcNew => updateCella(medicoId, col.data, tcNew, cur.tr)}
+        onChangeRicerca={trNew => updateCella(medicoId, col.data, cur.tc, trNew)}
       />
     )
   }
 
-  // ── Render di una tabella per un set di colonne (mese o periodo) ───
-  function TabellaPeriodo({ cols }: { cols: ColonnaCal[] }) {
+  // ── Tabella generica (clinica o ricerca) per un set di colonne ────
+  function TabellaPeriodo({ cols, tipo }: { cols: ColonnaCal[]; tipo: TipoTabella }) {
+    const headerBg = tipo === 'clinica' ? '#374f30' : '#4c1d95'
+    const headerBorder = tipo === 'clinica' ? '#2b3c24' : '#3b1d72'
     return (
       <table className="border-collapse" style={{ tableLayout: 'fixed', borderSpacing: 0 }}>
         <thead>
@@ -444,11 +493,13 @@ export function ModificaTurniPage() {
             <th style={{
               width: 140, minWidth: 140,
               position: 'sticky', left: 0, zIndex: 2,
-              background: '#374f30', color: '#fff',
+              background: headerBg, color: '#fff',
               fontSize: 11, fontWeight: 700, padding: '6px 8px',
-              border: '1px solid #2b3c24', letterSpacing: '0.04em',
+              border: `1px solid ${headerBorder}`, letterSpacing: '0.04em',
               textAlign: 'left',
-            }}>Medico</th>
+            }}>
+              Medico — {tipo === 'clinica' ? 'Clinica' : 'Ricerca'}
+            </th>
             {cols.map(c => {
               const isRedDay = c.isDomenica || c.isFestivo
               return (
@@ -481,11 +532,25 @@ export function ModificaTurniPage() {
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 fontWeight: 500, color: '#3a3d30',
               }}>{m.nome}</td>
-              {cols.map(c => renderCella(m.id, c))}
+              {cols.map(c => renderCella(m.id, c, tipo))}
             </tr>
           ))}
         </tbody>
       </table>
+    )
+  }
+
+  /** Coppia di tabelle (clinica + ricerca) per uno stesso periodo */
+  function CoppiaTabelle({ cols }: { cols: ColonnaCal[] }) {
+    return (
+      <div className="space-y-2">
+        <div className="overflow-auto rounded-lg border border-stone-300 bg-white">
+          <TabellaPeriodo cols={cols} tipo="clinica" />
+        </div>
+        <div className="overflow-auto rounded-lg border bg-white" style={{ borderColor: '#a78bdb' }}>
+          <TabellaPeriodo cols={cols} tipo="ricerca" />
+        </div>
+      </div>
     )
   }
 
@@ -510,8 +575,8 @@ export function ModificaTurniPage() {
             Modifica Turni
           </h2>
           <p className="text-sm text-stone-600 mt-0.5">
-            Clicca una cella per modificarla. Scrivi il turno (es. <code>M</code>, <code>REP</code>, <code>M RM</code>, <code>RM+RP</code>).
-            Le celle con bordo azzurro sono diverse dallo schema originale.
+            Due tabelle: <strong>clinica</strong> (M / P / L / REP) sopra, <strong>ricerca</strong> (RM / RP) sotto.
+            Clicca una cella per modificarla. Bordo azzurro = diversa dallo schema originale.
           </p>
         </div>
 
@@ -583,13 +648,11 @@ export function ModificaTurniPage() {
 
       {/* Tabelle */}
       {!loading && config && view === 'lineare' && (
-        <div className="overflow-auto rounded-lg border border-stone-300 bg-white" style={{ maxHeight: 'calc(100vh - 220px)' }}>
-          <TabellaPeriodo cols={colonne} />
-        </div>
+        <CoppiaTabelle cols={colonne} />
       )}
 
       {!loading && config && view === 'mensile' && (
-        <div className="space-y-5">
+        <div className="space-y-6">
           {colonnePerMese.map(({ anno, mese, colonne: cs }) => (
             <div key={`${anno}-${mese}`}>
               <h3 className="text-sm font-bold mb-1.5 flex items-center gap-2"
@@ -600,9 +663,7 @@ export function ModificaTurniPage() {
                   ({cs.length} giorni)
                 </span>
               </h3>
-              <div className="overflow-auto rounded-lg border border-stone-300 bg-white">
-                <TabellaPeriodo cols={cs} />
-              </div>
+              <CoppiaTabelle cols={cs} />
             </div>
           ))}
         </div>
