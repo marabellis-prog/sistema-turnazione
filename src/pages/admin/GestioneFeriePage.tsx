@@ -48,11 +48,17 @@ export function GestioneFeriePage() {
       if (error) throw error
       return data ?? []
     },
-    // Polling di fallback: ogni 15s rifetcha le ferie. Quando il realtime
-    // funziona è sostanzialmente irrilevante (gli aggiornamenti sono già
-    // istantanei via WebSocket); ma se il listener non riceve eventi (es.
-    // tabella non aggiunta a supabase_realtime publication), questo poll
-    // garantisce comunque che l'admin veda le richieste entro 15s.
+    // staleTime: 0 + refetchOnMount sempre = ogni volta che l'admin entra
+    // in questa pagina (es. veniva da Genera Calendario), React Query
+    // rifetcha SUBITO le ferie. Senza, il queryClient globale ha staleTime
+    // 5min → la cache vecchia veniva servita e le richieste arrivate
+    // nel frattempo restavano invisibili fino al timeout.
+    staleTime:      0,
+    refetchOnMount: 'always',
+    // Polling di fallback ogni 15s. Se il Supabase Realtime è correttamente
+    // configurato (ALTER PUBLICATION supabase_realtime ADD TABLE ferie)
+    // gli aggiornamenti sono già istantanei via WebSocket; questo poll è
+    // una rete di sicurezza per garantire visibilità entro 15s al massimo.
     refetchInterval: 15_000,
     refetchIntervalInBackground: false, // sospende quando la tab è nascosta
   })
