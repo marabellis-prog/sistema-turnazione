@@ -9,6 +9,40 @@
     <!-- Favicon browser desktop -->
     <link rel="icon" type="image/svg+xml" href="/sistema-turnazione/favicon.svg" />
 
+    <!-- ── Auto-aggiornamento: rileva nuovi deploy e ricarica ───────
+         Ad ogni caricamento scarica version.json (mai in cache).
+         Se il timestamp è diverso dall'ultimo noto → svuota i cache
+         del Service Worker e ricarica la pagina.
+    ──────────────────────────────────────────────────────────────── -->
+    <script>
+      ;(function () {
+        var KEY  = 'app_version'
+        var BASE = '/sistema-turnazione'
+        fetch(BASE + '/version.json?nc=' + Date.now(), { cache: 'no-store' })
+          .then(function (r) { return r.json() })
+          .then(function (v) {
+            var ts   = String(v.ts)
+            var prev = localStorage.getItem(KEY)
+            localStorage.setItem(KEY, ts)
+            if (prev && prev !== ts) {
+              // Nuovo deploy: svuota tutti i cache SW poi ricarica
+              var doReload = function () { location.reload() }
+              if (window.caches) {
+                caches.keys()
+                  .then(function (keys) {
+                    return Promise.all(keys.map(function (k) { return caches.delete(k) }))
+                  })
+                  .then(doReload)
+                  .catch(doReload)
+              } else {
+                doReload()
+              }
+            }
+          })
+          .catch(function () { /* offline o 404: ignora */ })
+      })()
+    </script>
+
     <!-- iOS / iPadOS — "Aggiungi a schermata Home" -->
     <link rel="apple-touch-icon" sizes="180x180" href="/sistema-turnazione/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />

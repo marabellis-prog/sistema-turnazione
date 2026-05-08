@@ -1,47 +1,37 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { writeFileSync } from 'fs'
 
 export default defineConfig({
   base: '/sistema-turnazione/',
   plugins: [
     react(),
 
-    VitePWA({
-      // 'autoUpdate' = quando il browser rileva un nuovo SW lo installa
-      // e ricarica la pagina silenziosamente, senza chiedere nulla all'utente.
-      registerType: 'autoUpdate',
+    // ── Plugin: genera dist/version.json con il timestamp del build ──
+    // Lo script in index.html lo confronta con l'ultimo valore noto in
+    // localStorage e ricarica la pagina se il deploy è cambiato.
+    {
+      name: 'version-json',
+      writeBundle() {
+        writeFileSync('dist/version.json', JSON.stringify({ ts: Date.now() }))
+      },
+    },
 
-      // Usiamo il manifest.json già esistente in public/
-      manifest: false,
+    VitePWA({
+      registerType: 'autoUpdate',
+      manifest: false,   // usiamo public/manifest.json
 
       workbox: {
-        // Precache tutti i file generati da Vite (JS/CSS con hash + HTML)
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,json,webmanifest}'],
+        // ⚠️ HTML escluso dal precache: viene sempre scaricato dalla rete
+        // così non viene mai servita una versione stale di index.html.
+        // JS/CSS/assets con hash Vite: precachati (hash cambia → aggiornati automaticamente)
+        globPatterns: ['**/*.{js,css,ico,png,svg,webmanifest}'],
 
-        // SPA fallback: tutte le rotte non trovate → index.html (React Router)
-        navigateFallback: '/sistema-turnazione/index.html',
-
-        // Cancella automaticamente i cache delle versioni precedenti
+        // Niente navigateFallback: GitHub Pages usa 404.html per l'SPA routing
         cleanupOutdatedCaches: true,
-
-        // Nuovo SW prende il controllo subito (senza aspettare che tutte
-        // le tab vengano chiuse) → reload immediato
         skipWaiting: true,
         clientsClaim: true,
-
-        // Strategia runtime: HTML sempre dal network (mai dalla cache)
-        // per garantire che index.html sia sempre aggiornato
-        runtimeCaching: [
-          {
-            urlPattern: ({ request }) => request.destination === 'document',
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'html-cache',
-              networkTimeoutSeconds: 5,
-            },
-          },
-        ],
       },
     }),
   ],
