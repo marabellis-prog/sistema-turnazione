@@ -102,7 +102,10 @@ function StepRow({ label, value, active }: {
 
 export function CalendarioPage() {
   const [rigaSel,       setRigaSel]       = useState<string | null>(null)
-  const [mostraLegenda, setMostraLegenda] = useState(false)   // nascosta di default
+  // Legenda: aperta di default su desktop (≥ 640px), chiusa su mobile
+  const [mostraLegenda, setMostraLegenda] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 640px)').matches
+  )
 
   // Rilevamento orientamento per il suggerimento landscape su mobile
   const [isPortrait, setIsPortrait] = useState(
@@ -148,25 +151,28 @@ export function CalendarioPage() {
   })
 
   // Ferie: necessarie per colorare le celle anche quando il turno non esiste
-  // (es. domenica non generata nel calendario ma con ferie inserite)
-  const { data: ferieDB = [] } = useQuery<Pick<Ferie, 'medico_id' | 'data_inizio' | 'data_fine'>[]>({
-    queryKey: ['ferie-ranges'],   // chiave separata: select parziale, no join medici
+  // (es. domenica non generata nel calendario ma con ferie inserite).
+  // Includiamo `approvate` per distinguere visivamente le richieste in attesa.
+  const { data: ferieDB = [] } = useQuery<Pick<Ferie, 'medico_id' | 'data_inizio' | 'data_fine' | 'approvate'>[]>({
+    queryKey: ['ferie-ranges'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('ferie').select('medico_id, data_inizio, data_fine')
+        .from('ferie').select('medico_id, data_inizio, data_fine, approvate')
       if (error) throw error
       return data ?? []
     },
   })
 
-  // Map medicoId → [[start, end], ...] per lookup O(1)
+  // Due mappe separate: approvate (verde pieno) vs in attesa (verde a righe)
   const ferieRanges = useMemo(() => {
-    const m = new Map<string, [string, string][]>()
+    const approved = new Map<string, [string, string][]>()
+    const pending  = new Map<string, [string, string][]>()
     for (const f of ferieDB) {
-      if (!m.has(f.medico_id)) m.set(f.medico_id, [])
-      m.get(f.medico_id)!.push([f.data_inizio, f.data_fine])
+      const map = f.approvate ? approved : pending
+      if (!map.has(f.medico_id)) map.set(f.medico_id, [])
+      map.get(f.medico_id)!.push([f.data_inizio, f.data_fine])
     }
-    return m
+    return { approved, pending }
   }, [ferieDB])
 
   // ── Calcoli upfront (disponibili appena arrivano i dati) ─────────
@@ -462,13 +468,24 @@ export function CalendarioPage() {
             <span style={{ color: '#5a5a4a' }}>Dom / Festivo</span>
           </span>
 
-          {/* Ferie */}
+          {/* Ferie approvate */}
           <span className="flex items-center gap-1">
             <span className="inline-flex items-center justify-center rounded border"
               style={{ width: 26, height: 18, background: '#d5e5d0', borderColor: '#8a9882', fontSize: 9, color: '#2e5a28', fontWeight: 700 }}>
               F
             </span>
-            <span style={{ color: '#5a5a4a' }}>Ferie</span>
+            <span style={{ color: '#5a5a4a' }}>Ferie approvate</span>
+          </span>
+
+          {/* Ferie in approvazione */}
+          <span className="flex items-center gap-1">
+            <span className="inline-flex items-center justify-center rounded border"
+              style={{
+                width: 26, height: 18,
+                background: 'repeating-linear-gradient(-45deg, #d5e5d0 0, #d5e5d0 3px, #a8c4a0 3px, #a8c4a0 6px)',
+                borderColor: '#8a9882',
+              }} />
+            <span style={{ color: '#5a5a4a' }}>In approvazione</span>
           </span>
 
           {/* Riga selezionata */}
@@ -550,13 +567,19 @@ export function CalendarioPage() {
                       const tr    = cell?.turno_ricerca  ?? ''
                       const modif = cell?.modificato_manualmente ?? false
 
-                      const isFerieDay = (cell?.is_ferie ?? false)
-                        || (ferieRanges.get(med.id)?.some(([s, e]) => col.data >= s && col.data <= e) ?? false)
+                      // Verifica se il giorno è in un range di ferie approvate o in attesa
+                      const inRange = (m: Map<string, [string, string][]>) =>
+                        m.get(med.id)?.some(([s, e]) => col.data >= s && col.data <= e) ?? false
+                      const isFerieApproved = (cell?.is_ferie ?? false) || inRange(ferieRanges.approved)
+                      const isFeriePending  = !isFerieApproved && inRange(ferieRanges.pending)
 
                       // Colore base della cella (senza selezione)
                       let bgBase: string
-                      if (isFerieDay) {
-                        bgBase = '#d5e5d0'
+                      if (isFerieApproved) {
+                        bgBase = '#d5e5d0'   // verde pieno: ferie approvate
+                      } else if (isFeriePending) {
+                        // Verde a righe diagonali: ferie in attesa di approvazione
+                        bgBase = 'repeating-linear-gradient(-45deg, #d5e5d0 0, #d5e5d0 3px, #a8c4a0 3px, #a8c4a0 6px)'
                       } else if (col.isDomenica || col.isFestivo) {
                         bgBase = '#fde0e0'   // rosa-rosso
                       } else if (tc || tr) {
