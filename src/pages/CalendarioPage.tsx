@@ -4,7 +4,7 @@ import { RefreshCw, Info, AlertTriangle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { generaColonne, MESI_IT, MESI_SHORT_IT } from '../lib/algorithm'
 import type {
-  Medico, Turno, Configurazione, ColonnaCal,
+  Medico, Turno, Ferie, Configurazione, ColonnaCal,
   TurnoClinico, TurnoRicerca,
 } from '../types'
 
@@ -31,9 +31,14 @@ function LabelTurno({ tc, tr }: { tc: string; tr: string }) {
     <div className="flex flex-col items-center leading-none gap-px">
       {tc && (
         <span style={{
-          fontSize:   tc === 'REP' ? 9 : 11,
-          fontWeight: 700,
-          color:      CELL_COLORS[tc]?.fg ?? '#3a3d30',
+          fontSize:      tc === 'REP' ? 9 : 11,
+          fontWeight:    700,
+          // REP: rosso brillante — altri: colori muted dal tema
+          color:         tc === 'REP' ? '#b91c1c'
+                       : tc === 'M'   ? '#2e4a28'
+                       : tc === 'P'   ? '#253a4a'
+                       : tc === 'L'   ? '#4a3a1a'
+                       : '#3a3d30',
           letterSpacing: tc === 'REP' ? '-0.3px' : undefined,
         }}>
           {tc}
@@ -128,6 +133,28 @@ export function CalendarioPage() {
       return data
     },
   })
+
+  // Ferie: necessarie per colorare le celle anche quando il turno non esiste
+  // (es. domenica non generata nel calendario ma con ferie inserite)
+  const { data: ferieDB = [] } = useQuery<Pick<Ferie, 'medico_id' | 'data_inizio' | 'data_fine'>[]>({
+    queryKey: ['ferie'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ferie').select('medico_id, data_inizio, data_fine')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+
+  // Map medicoId → [[start, end], ...] per lookup O(1)
+  const ferieRanges = useMemo(() => {
+    const m = new Map<string, [string, string][]>()
+    for (const f of ferieDB) {
+      if (!m.has(f.medico_id)) m.set(f.medico_id, [])
+      m.get(f.medico_id)!.push([f.data_inizio, f.data_fine])
+    }
+    return m
+  }, [ferieDB])
 
   // ── Calcoli upfront (disponibili appena arrivano i dati) ─────────
   // Questi useMemo si aggiornano non appena config/medici sono pronti,
@@ -464,37 +491,34 @@ export function CalendarioPage() {
                   <tr key={med.id}
                     onClick={() => setRigaSel(isSel ? null : med.id)}
                     className="cursor-pointer transition-colors"
-                    style={{ background: isSel ? '#dde8d5' : '' }}
+                    style={{ background: isSel ? '#a8c89a' : '' }}
                     onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = '#eae8e0' }}
                     onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = '' }}>
                     <td className="cal-td-nome"
-                      style={{ background: isSel ? '#c5d8bc' : undefined }}>
+                      style={{ background: isSel ? '#90b880' : undefined }}>
                       {med.nome}
                     </td>
                     {colonne.map(col => {
                       const cell  = medMap?.get(col.data)
                       const tc    = cell?.turno_clinico ?? ''
                       const tr    = cell?.turno_ricerca  ?? ''
-                      const ferie = cell?.is_ferie ?? false
                       const modif = cell?.modificato_manualmente ?? false
 
+                      // Ferie: controlla sia il flag in turni che la tabella ferie
+                      // (serve per domeniche/giorni senza turno generato)
+                      const isFerieDay = (cell?.is_ferie ?? false)
+                        || (ferieRanges.get(med.id)?.some(([s, e]) => col.data >= s && col.data <= e) ?? false)
+
                       // Priorità background:
-                      // 1. riga selezionata → verde uniforme
-                      // 2. ferie           → verde ferie
-                      // 3. turno clinico   → colore del turno
-                      // 4. solo ricerca    → colore ricerca
-                      // 5. domenica/fest.  → crema (solo celle vuote)
-                      // 6. default         → crema neutra
+                      // 1. riga selezionata → verde saturo visibile
+                      // 2. ferie            → verde ferie (domina domenica/festivo)
+                      // 3. domenica/festivo → crema calda
+                      // 4. default          → crema neutra (uniforme per tutte le celle con turno)
                       let bg: string
                       if (isSel) {
-                        bg = '#e0e8d8'
-                      } else if (ferie) {
+                        bg = '#b8d4a8'
+                      } else if (isFerieDay) {
                         bg = '#d5e5d0'
-                      } else if (tc && CELL_COLORS[tc]) {
-                        bg = CELL_COLORS[tc].bg
-                      } else if (tr) {
-                        const firstTr = tr.split('+')[0]
-                        bg = CELL_COLORS[firstTr]?.bg ?? '#faf8f3'
                       } else if (col.isDomenica || col.isFestivo) {
                         bg = '#f0ead8'
                       } else {
