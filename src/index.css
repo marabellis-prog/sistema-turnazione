@@ -62,8 +62,7 @@
   .cal-cell-festivo   { background: #f0ead8 !important; }
   .cal-cell-ferie     { background: #d5e5d0 !important; }
   .cal-cell-modificata {
-    outline: 2px solid #9ab488;
-    outline-offset: -2px;
+    box-shadow: inset 0 0 0 2px #38bdf8, 0 0 6px 1px rgba(56,189,248,0.45);
   }
 
   .cal-row-selected td { background: #eae8e0 !important; }

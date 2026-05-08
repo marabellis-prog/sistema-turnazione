@@ -434,9 +434,7 @@ export function CalendarioPage() {
           {/* Dom/Festivo */}
           <span className="flex items-center gap-1">
             <span className="inline-flex items-center justify-center rounded border"
-              style={{ width: 26, height: 18, background: '#fde0e0', borderColor: '#8a9882', fontSize: 10, color: '#9a2020', fontWeight: 700 }}>
-              7
-            </span>
+              style={{ width: 26, height: 18, background: '#fde0e0', borderColor: '#8a9882' }} />
             <span style={{ color: '#5a5a4a' }}>Dom / Festivo</span>
           </span>
 
@@ -461,9 +459,7 @@ export function CalendarioPage() {
           {/* Modificato manualmente */}
           <span className="flex items-center gap-1">
             <span className="inline-flex items-center justify-center rounded"
-              style={{ width: 26, height: 18, background: '#e8e3d8', outline: '2px solid #9ab488', outlineOffset: '-2px', fontSize: 9, color: '#476540', fontWeight: 700 }}>
-              ✎
-            </span>
+              style={{ width: 26, height: 18, background: '#e8e3d8', boxShadow: 'inset 0 0 0 2px #38bdf8, 0 0 6px 1px rgba(56,189,248,0.45)' }} />
             <span style={{ color: '#5a5a4a' }}>Modificato</span>
           </span>
         </div>
