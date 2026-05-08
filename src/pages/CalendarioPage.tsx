@@ -491,11 +491,11 @@ export function CalendarioPage() {
                   <tr key={med.id}
                     onClick={() => setRigaSel(isSel ? null : med.id)}
                     className="cursor-pointer transition-colors"
-                    style={{ background: isSel ? '#a8c89a' : '' }}
+                    style={{ background: isSel ? '#fef08a' : '' }}
                     onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = '#eae8e0' }}
                     onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = '' }}>
                     <td className="cal-td-nome"
-                      style={{ background: isSel ? '#90b880' : undefined }}>
+                      style={{ background: isSel ? '#fde047' : undefined }}>
                       {med.nome}
                     </td>
                     {colonne.map(col => {
@@ -510,15 +510,18 @@ export function CalendarioPage() {
                         || (ferieRanges.get(med.id)?.some(([s, e]) => col.data >= s && col.data <= e) ?? false)
 
                       // Priorità background:
-                      // 1. riga selezionata → verde saturo visibile
-                      // 2. ferie            → verde ferie (domina domenica/festivo)
-                      // 3. domenica/festivo → crema calda
-                      // 4. default          → crema neutra (uniforme per tutte le celle con turno)
+                      // 1. riga selezionata → giallo chiaro
+                      // 2. ferie            → verde (domina domenica/festivo)
+                      // 3. ha turno         → crema leggermente più scura della pagina
+                      // 4. domenica/festivo → crema calda (solo celle vuote)
+                      // 5. default          → bianco-crema neutro
                       let bg: string
                       if (isSel) {
-                        bg = '#b8d4a8'
+                        bg = '#fef9c3'
                       } else if (isFerieDay) {
                         bg = '#d5e5d0'
+                      } else if (tc || tr) {
+                        bg = '#e8e3d8'   // leggermente più scuro di #f4f1ea (sfondo pagina)
                       } else if (col.isDomenica || col.isFestivo) {
                         bg = '#f0ead8'
                       } else {
