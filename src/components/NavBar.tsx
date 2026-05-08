@@ -95,6 +95,13 @@ export function NavBar({ user, onSignOut }: Props) {
         {/* Spacer */}
         <div className="flex-1" />
 
+        {/* Versione build — sempre visibile all'estrema destra */}
+        <span className="hidden sm:block text-[10px] font-mono shrink-0"
+          style={{ color: '#577a45' }}
+          title={`Versione ${__APP_VERSION__} — build del ${__BUILD_DATE__}`}>
+          v{__APP_VERSION__} · {__BUILD_DATE__}
+        </span>
+
         {/* Utente + logout */}
         {user && (
           <div className="flex items-center gap-3">
