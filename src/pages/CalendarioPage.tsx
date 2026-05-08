@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { RefreshCw, Info, RotateCw, Plane } from 'lucide-react'
+import { RefreshCw, Info, RotateCw, Plane, BarChart3, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { generaColonne, MESI_IT } from '../lib/algorithm'
 import { CalendarLoadingScreen } from '../components/CalendarLoadingScreen'
 import { FerieModal, expandRange, toRanges, type DayChange } from '../components/FerieModal'
+import { RiepilogoTurni } from '../components/RiepilogoTurni'
 import { useAuth } from '../hooks/useAuth'
 import { useFerieRealtime } from '../hooks/useFerieRealtime'
 import type {
@@ -126,10 +127,11 @@ export function CalendarioPage() {
   const [loadError,    setLoadError]    = useState<string | null>(null)
   const [loadDone,     setLoadDone]     = useState(false)
 
-  // Utente loggato + stato modal "Richiedi Ferie"
+  // Utente loggato + stato modal "Richiedi Ferie" e "Riepilogo turni"
   const { user } = useAuth()
   const qc = useQueryClient()
   const [showRichiediFerie, setShowRichiediFerie] = useState(false)
+  const [showRiepilogo,     setShowRiepilogo]     = useState(false)
 
   // Realtime sulle ferie: quando l'admin approva/respinge una richiesta
   // (o un altro medico aggiunge le sue), il calendario pubblico aggiorna
@@ -544,6 +546,19 @@ export function CalendarioPage() {
             style={mostraLegenda ? { background: '#e0e8d8', borderColor: '#9ab488' } : {}}>
             <Info size={13} /> Legenda
           </button>
+          {/* Riepilogo turni — visibile SOLO ai medici turnisti loggati.
+              Apre un modal con il conteggio M/P/L/S/D/Totale del medico. */}
+          {mioMedico && (
+            <button onClick={() => setShowRiepilogo(true)}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-white shadow-sm transition-colors"
+              style={{ background: '#7eb6d4' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#5d9bc1'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#7eb6d4'}
+              title={`Riepilogo turni di ${mioMedico.nome}`}>
+              <BarChart3 size={13} />
+              <span className="hidden sm:inline">Riepilogo turni</span>
+            </button>
+          )}
           {/* Richiedi Ferie — visibile SOLO se l'utente loggato corrisponde
               ad un medico in elenco (match per nome). Account "supervisore"
               senza assegnazione ad un medico non vede questo pulsante. */}
@@ -677,6 +692,58 @@ export function CalendarioPage() {
           onSave={handleSaveSelfFerie}
           onClose={() => setShowRichiediFerie(false)}
         />
+      )}
+
+      {/* ── Modal Riepilogo turni — solo per il medico loggato ── */}
+      {showRiepilogo && mioMedico && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }}
+          onClick={() => setShowRiepilogo(false)}>
+          <div
+            className="relative bg-white rounded-2xl shadow-2xl flex flex-col"
+            style={{ maxWidth: 'min(94vw, 720px)', maxHeight: '92vh' }}
+            onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 pt-4 pb-3 border-b border-stone-200 shrink-0">
+              <div className="flex items-center gap-2">
+                <BarChart3 size={20} style={{ color: '#5d9bc1' }} />
+                <div>
+                  <h3 className="font-bold text-stone-800 text-base">
+                    Riepilogo turni — {mioMedico.nome}
+                  </h3>
+                  <p className="text-xs text-stone-500 mt-0.5">
+                    Conteggio nel periodo {MESI_IT[config.mese_inizio]} {config.anno_inizio}
+                    {' → '} {MESI_IT[config.mese_fine]} {config.anno_fine} ·
+                    Totale = (M + P) + 2L
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setShowRiepilogo(false)}
+                className="text-stone-400 hover:text-stone-600 transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+            {/* Tabella */}
+            <div className="overflow-auto p-4">
+              <RiepilogoTurni
+                medici={medici}
+                colonne={colonne}
+                getTC={(mid, data) =>
+                  turniMap.get(mid)?.get(data)?.turno_clinico ?? ''
+                }
+                filtroMedicoId={mioMedico.id}
+              />
+            </div>
+            {/* Legenda */}
+            <div className="px-6 py-2.5 border-t border-stone-200 text-xs text-stone-500"
+              style={{ background: '#faf8f3' }}>
+              <strong>S</strong> = sabati lavorati ·
+              <strong className="ml-2">D</strong> = domeniche lavorate ·
+              REP non concorre alla copertura, ma sabati/domeniche lo includono
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

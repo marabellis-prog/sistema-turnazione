@@ -31,6 +31,7 @@ import {
   calcolaCalendarioCompleto, generaColonne, MESI_IT,
 } from '../../lib/algorithm'
 import { ConfirmModal } from '../../components/ConfirmModal'
+import { RiepilogoTurni } from '../../components/RiepilogoTurni'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
 import type {
@@ -782,6 +783,29 @@ export function ModificaTurniPage() {
               <CoppiaTabelle cols={cs} />
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Riepilogo turni — in fondo, copre TUTTI i medici per l'intero periodo.
+          Si auto-aggiorna in tempo reale con le modifiche locali (getCella legge
+          prima dal Map modifiche, poi dal DB). */}
+      {!loading && config && colonne.length > 0 && (
+        <div className="mt-4">
+          <h3 className="text-sm font-bold mb-1.5 flex items-center gap-2"
+            style={{ color: '#456b3a' }}>
+            <Calendar size={14} />
+            Riepilogo turni — periodo intero
+            <span className="text-[10px] font-normal text-stone-500">
+              ({colonne.length} giorni · M=1, P=1, L=2, REP=0)
+            </span>
+          </h3>
+          <div className="overflow-auto rounded-lg border border-stone-300 bg-white">
+            <RiepilogoTurni
+              medici={medici}
+              colonne={colonne}
+              getTC={(mid, data) => getCella(mid, data).tc}
+            />
+          </div>
         </div>
       )}
 
