@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { RefreshCw, Info, RotateCw, Plane, X } from 'lucide-react'
+import { RefreshCw, Info, RotateCw, Plane } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { generaColonne, MESI_IT } from '../lib/algorithm'
 import { CalendarLoadingScreen } from '../components/CalendarLoadingScreen'
+import { FerieModal, expandRange, toRanges, type DayChange } from '../components/FerieModal'
 import { useAuth } from '../hooks/useAuth'
 import type {
   Medico, Turno, Ferie, Configurazione, ColonnaCal,
@@ -124,16 +125,10 @@ export function CalendarioPage() {
   const [loadError,    setLoadError]    = useState<string | null>(null)
   const [loadDone,     setLoadDone]     = useState(false)
 
-  // Utente loggato + stati modal "Richiedi Ferie"
+  // Utente loggato + stato modal "Richiedi Ferie"
   const { user } = useAuth()
   const qc = useQueryClient()
   const [showRichiediFerie, setShowRichiediFerie] = useState(false)
-  const [ferieDataInizio,   setFerieDataInizio]   = useState('')
-  const [ferieDataFine,     setFerieDataFine]     = useState('')
-  const [ferieNote,         setFerieNote]         = useState('')
-  const [ferieSaving,       setFerieSaving]       = useState(false)
-  const [ferieMsg,          setFerieMsg]          = useState<string | null>(null)
-  const [ferieErr,          setFerieErr]          = useState<string | null>(null)
 
   // ── Query dati statici ───────────────────────────────────────────
   const { data: config, isLoading: lCfg } = useQuery<Configurazione | null>({
@@ -442,40 +437,60 @@ export function CalendarioPage() {
     )
   }
 
-  // ── Submit "Richiedi Ferie" ───────────────────────────────────────
-  // Inserisce un record in tabella `ferie` con approvate=false → l'admin
-  // lo vedrà in pagina "Gestione Ferie" e potrà approvarlo.
-  async function submitRichiediFerie() {
+  // ── Salva modifiche dal FerieModal in modalità "self" ─────────────
+  // L'utente può: (a) aggiungere giorni → diventano richieste pending,
+  // (b) cancellare giorni delle SUE richieste pending. Le ferie già
+  // approvate sono read-only nel modal stesso (mode='self'), quindi
+  // l'utente non può accidentalmente generare changes con 'remove' su
+  // un giorno approvato — ma facciamo comunque il filtro di sicurezza.
+  const ferieDelMioMedico = useMemo(
+    () => ferieDB.filter(f => f.medico_id === mioMedico?.id),
+    [ferieDB, mioMedico?.id],
+  )
+
+  async function handleSaveSelfFerie(changes: Map<string, DayChange>) {
     if (!mioMedico) return
-    if (!ferieDataInizio || !ferieDataFine) {
-      setFerieErr('Inserisci data di inizio e fine.')
-      return
+    const toRemoveSet = new Set(
+      [...changes.entries()].filter(([, v]) => v === 'remove').map(([k]) => k)
+    )
+    const toAdd = [...changes.entries()].filter(([, v]) => v === 'add').map(([k]) => k)
+
+    // Carica i record completi delle ferie del medico (incluso 'note')
+    // per poter splittare i range pending toccati dalle rimozioni.
+    const { data: myFerie, error: loadErr } = await supabase
+      .from('ferie').select('*').eq('medico_id', mioMedico.id)
+    if (loadErr) throw loadErr
+
+    // ── Rimozioni: solo su record PENDING (approvate = false) ────────
+    const affected = (myFerie ?? []).filter((f: Ferie) =>
+      !f.approvate &&
+      expandRange(f.data_inizio, f.data_fine).some(d => toRemoveSet.has(d))
+    )
+    for (const record of affected as Ferie[]) {
+      const allDays  = expandRange(record.data_inizio, record.data_fine)
+      const remaining = allDays.filter(d => !toRemoveSet.has(d))
+      const { error } = await supabase.from('ferie').delete().eq('id', record.id)
+      if (error) throw error
+      // Ricrea i giorni rimanenti (sempre come pending, perché lo erano)
+      for (const { start, end } of toRanges(remaining)) {
+        await supabase.from('ferie').insert({
+          medico_id: mioMedico.id, data_inizio: start, data_fine: end,
+          note: record.note, approvate: false,
+        })
+      }
     }
-    if (ferieDataFine < ferieDataInizio) {
-      setFerieErr('La data di fine deve essere uguale o successiva alla data di inizio.')
-      return
-    }
-    setFerieSaving(true); setFerieErr(null); setFerieMsg(null)
-    try {
+
+    // ── Aggiunte: tutte come pending ─────────────────────────────────
+    for (const { start, end } of toRanges(toAdd)) {
       const { error } = await supabase.from('ferie').insert({
-        medico_id:    mioMedico.id,
-        data_inizio:  ferieDataInizio,
-        data_fine:    ferieDataFine,
-        approvate:    false,
-        note:         ferieNote.trim() || null,
+        medico_id: mioMedico.id, data_inizio: start, data_fine: end,
+        note: null, approvate: false,
       })
       if (error) throw error
-      setFerieMsg('✓ Richiesta inviata — in attesa di approvazione.')
-      // Reset campi e invalidate cache
-      setFerieDataInizio(''); setFerieDataFine(''); setFerieNote('')
-      qc.invalidateQueries({ queryKey: ['ferie-ranges'] })
-      qc.invalidateQueries({ queryKey: ['ferie'] })
-      setTimeout(() => { setShowRichiediFerie(false); setFerieMsg(null) }, 1500)
-    } catch (e) {
-      setFerieErr((e as Error).message)
-    } finally {
-      setFerieSaving(false)
     }
+
+    qc.invalidateQueries({ queryKey: ['ferie'] })
+    qc.invalidateQueries({ queryKey: ['ferie-ranges'] })
   }
 
   // ── Tabella calendario ────────────────────────────────────────────
@@ -510,10 +525,7 @@ export function CalendarioPage() {
               ad un medico in elenco (match per nome). Account "supervisore"
               senza assegnazione ad un medico non vede questo pulsante. */}
           {mioMedico && (
-            <button onClick={() => {
-              setShowRichiediFerie(true)
-              setFerieMsg(null); setFerieErr(null)
-            }}
+            <button onClick={() => setShowRichiediFerie(true)}
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-white shadow-sm transition-colors"
               style={{ background: '#476540' }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#374f30'}
@@ -623,95 +635,17 @@ export function CalendarioPage() {
         )}
       </div>
 
-      {/* ── Modal Richiedi Ferie ─────────────────────────────────── */}
+      {/* ── Modal Richiedi Ferie (stesso modal di Gestione Ferie, mode='self') ── */}
       {showRichiediFerie && mioMedico && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)' }}
-          onClick={() => !ferieSaving && setShowRichiediFerie(false)}>
-          <div
-            className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm animate-[fadeSlideIn_0.15s_ease-out]"
-            onClick={e => e.stopPropagation()}>
-            {/* Header */}
-            <div className="flex items-center gap-3 px-5 pt-5 pb-3"
-              style={{ color: '#476540' }}>
-              <Plane size={20} className="shrink-0" />
-              <h3 className="font-bold text-base text-stone-800 flex-1">
-                Richiedi ferie
-              </h3>
-              <button onClick={() => !ferieSaving && setShowRichiediFerie(false)}
-                className="text-stone-500 hover:text-stone-600 transition-colors -mt-1">
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Corpo */}
-            <div className="px-5 pb-3 space-y-3">
-              <p className="text-xs text-stone-500">
-                Stai richiedendo ferie per: <strong className="text-stone-700">{mioMedico.nome}</strong>.
-                La richiesta resterà <strong>in attesa di approvazione</strong> dall'admin.
-              </p>
-
-              <div className="grid grid-cols-2 gap-2">
-                <label className="text-xs text-stone-600">
-                  Data inizio
-                  <input type="date" value={ferieDataInizio}
-                    onChange={e => setFerieDataInizio(e.target.value)}
-                    disabled={ferieSaving}
-                    className="mt-0.5 w-full text-sm border border-stone-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-olive-300" />
-                </label>
-                <label className="text-xs text-stone-600">
-                  Data fine
-                  <input type="date" value={ferieDataFine}
-                    onChange={e => setFerieDataFine(e.target.value)}
-                    disabled={ferieSaving}
-                    min={ferieDataInizio || undefined}
-                    className="mt-0.5 w-full text-sm border border-stone-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-olive-300" />
-                </label>
-              </div>
-
-              <label className="block text-xs text-stone-600">
-                Note (opzionale)
-                <textarea value={ferieNote}
-                  onChange={e => setFerieNote(e.target.value)}
-                  disabled={ferieSaving}
-                  rows={2}
-                  placeholder="Es: viaggio, motivi familiari, ..."
-                  className="mt-0.5 w-full text-sm border border-stone-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-olive-300 resize-none" />
-              </label>
-
-              {ferieMsg && (
-                <div className="text-xs px-2 py-1.5 rounded"
-                  style={{ background: '#d5e5d0', color: '#2e5a28' }}>
-                  {ferieMsg}
-                </div>
-              )}
-              {ferieErr && (
-                <div className="text-xs px-2 py-1.5 rounded"
-                  style={{ background: '#fde0e0', color: '#7a2020' }}>
-                  {ferieErr}
-                </div>
-              )}
-            </div>
-
-            {/* Azioni */}
-            <div className="flex gap-2 justify-end px-5 pb-5 pt-1">
-              <button onClick={() => setShowRichiediFerie(false)}
-                disabled={ferieSaving}
-                className="btn-secondary py-1.5 px-4 text-sm">
-                Annulla
-              </button>
-              <button onClick={submitRichiediFerie}
-                disabled={ferieSaving || !ferieDataInizio || !ferieDataFine}
-                className="py-1.5 px-4 text-sm rounded-lg font-medium text-white shadow transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ background: '#476540' }}
-                onMouseEnter={e => { if (!ferieSaving) (e.currentTarget as HTMLElement).style.background = '#374f30' }}
-                onMouseLeave={e => { if (!ferieSaving) (e.currentTarget as HTMLElement).style.background = '#476540' }}>
-                {ferieSaving ? 'Invio…' : 'Invia richiesta'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <FerieModal
+          medico={mioMedico}
+          ferie={ferieDelMioMedico}
+          mode="self"
+          title={`Richiedi ferie — ${mioMedico.nome}`}
+          subtitle="Clicca i giorni per richiederli · le ferie già approvate sono bloccate · le richieste in attesa puoi annullarle ricliccandole"
+          onSave={handleSaveSelfFerie}
+          onClose={() => setShowRichiediFerie(false)}
+        />
       )}
     </div>
   )
