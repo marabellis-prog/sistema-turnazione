@@ -49,6 +49,55 @@ function addMonths(d: Date, n: number): Date {
   const r = new Date(d); r.setDate(1); r.setMonth(r.getMonth() + n); return r
 }
 
+// ── Festività italiane ───────────────────────────────────────────
+
+/** Calcola la domenica di Pasqua (algoritmo di Gauss) */
+function getEaster(year: number): Date {
+  const a = year % 19
+  const b = Math.floor(year / 100)
+  const c = year % 100
+  const d = Math.floor(b / 4)
+  const e = b % 4
+  const f = Math.floor((b + 8) / 25)
+  const g = Math.floor((b - f + 1) / 3)
+  const h = (19 * a + b - d - g + 15) % 30
+  const ii = Math.floor(c / 4)
+  const k = c % 4
+  const l = (32 + 2 * e + 2 * ii - h - k) % 7
+  const m = Math.floor((a + 11 * h + 22 * l) / 451)
+  const month = Math.floor((h + l - 7 * m + 114) / 31)
+  const day   = ((h + l - 7 * m + 114) % 31) + 1
+  return new Date(year, month - 1, day)
+}
+
+function getItalianHolidays(year: number): Set<string> {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const iso  = (y: number, m: number, d: number) => `${y}-${pad(m)}-${pad(d)}`
+
+  const fixed = [
+    iso(year, 1,  1),   // Capodanno
+    iso(year, 1,  6),   // Epifania
+    iso(year, 4, 25),   // Liberazione
+    iso(year, 5,  1),   // Festa del lavoro
+    iso(year, 6,  2),   // Repubblica
+    iso(year, 8, 15),   // Ferragosto
+    iso(year, 11, 1),   // Tutti i Santi
+    iso(year, 12, 8),   // Immacolata
+    iso(year, 12, 25),  // Natale
+    iso(year, 12, 26),  // Santo Stefano
+  ]
+
+  const easter = getEaster(year)
+  const easterMon = new Date(easter)
+  easterMon.setDate(easterMon.getDate() + 1)
+
+  return new Set([
+    ...fixed,
+    easter.toISOString().split('T')[0],       // Pasqua
+    easterMon.toISOString().split('T')[0],    // Lunedì dell'Angelo
+  ])
+}
+
 // ══════════════════════════════════════════════════════════════════
 // DAY STATE & STYLES
 // ══════════════════════════════════════════════════════════════════
@@ -103,6 +152,9 @@ function MonthBlock({ year, month, approved, pending, changes, onDayClick }: {
   changes: Map<string, DayChange>
   onDayClick: (d: string) => void
 }) {
+  // Festività italiane per questo anno (Pasqua calcolata)
+  const holidays = useMemo(() => getItalianHolidays(year), [year])
+
   const firstDow    = (new Date(year, month, 1).getDay() + 6) % 7  // 0=Mon
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const cells: (number | null)[] = [
@@ -117,10 +169,11 @@ function MonthBlock({ year, month, approved, pending, changes, onDayClick }: {
         {MESI_IT[month + 1].toUpperCase()} {year}
       </p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 26px)', gap: 2 }}>
+        {/* Header giorni: solo D (domenica, indice 6) è rosso */}
         {DOW.map((d, i) => (
           <div key={i} style={{
             textAlign: 'center', fontSize: 9, fontWeight: 700, height: 16,
-            color: i >= 5 ? '#b91c1c' : '#9ca3af',
+            color: i === 6 ? '#b91c1c' : '#9ca3af',
           }}>{d}</div>
         ))}
         {cells.map((day, i) => {
@@ -128,19 +181,22 @@ function MonthBlock({ year, month, approved, pending, changes, onDayClick }: {
           const mm  = String(month + 1).padStart(2, '0')
           const dd  = String(day).padStart(2, '0')
           const iso = `${year}-${mm}-${dd}`
-          const state = getDayState(iso, approved, pending, changes)
-          const isWe  = (i % 7) >= 5
+          const state     = getDayState(iso, approved, pending, changes)
+          const isSunday  = (i % 7) === 6
+          const isHoliday = holidays.has(iso)
+          // Il numero è rosso per domeniche e festivi; il colore del bg viene dallo stato ferie
+          const numColor  = (isSunday || isHoliday) ? '#b91c1c' : (DAY_STYLE[state].color as string)
           return (
             <button key={iso} onClick={() => onDayClick(iso)}
               title={iso}
               style={{
                 ...DAY_STYLE[state],
+                color: numColor,
                 width: 26, height: 26,
                 borderRadius: 4,
-                fontSize: 10, fontWeight: 600,
+                fontSize: 10, fontWeight: (isSunday || isHoliday) ? 800 : 600,
                 cursor: 'pointer',
                 transition: 'opacity .1s, transform .1s',
-                ...(state === 'none' && isWe ? { background: '#fde0e0', border: '1px solid #fca5a5', color: '#9a2020' } : {}),
               }}
               onMouseEnter={e => { e.currentTarget.style.opacity = '.75'; e.currentTarget.style.transform = 'scale(1.08)' }}
               onMouseLeave={e => { e.currentTarget.style.opacity = '1';   e.currentTarget.style.transform = 'scale(1)'    }}
