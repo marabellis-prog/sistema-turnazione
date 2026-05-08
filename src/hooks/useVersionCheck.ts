@@ -6,8 +6,13 @@
  * della tabella `app_version` in Supabase. Tutti i client connessi ricevono
  * l'evento postgres_changes ISTANTANEAMENTE senza polling.
  *
- * Come fallback (es. dopo sleep laptop / disconnessione temporanea),
- * la tabella viene riqueryata quando il tab torna visibile.
+ * IMPORTANTE: il CDN Fastly di GitHub Pages può continuare a servire
+ * l'HTML vecchio per qualche minuto dopo il deploy (TTL ~10 min, purge
+ * automatico ma con propagazione asincrona fra PoP). Per questo motivo,
+ * quando arriva la notifica Realtime, NON mostriamo subito il badge:
+ * pollianmo prima che il CDN serva davvero la nuova versione PER L'URL
+ * NUDA usata dall'utente. Solo allora il badge compare → cliccarlo
+ * (o fare Ctrl+F5) aggiornerà davvero la pagina.
  *
  * Setup richiesto (da fare UNA VOLTA):
  *   1. Esegui in Supabase → SQL Editor:
@@ -26,11 +31,84 @@
  *      (Settings → Secrets → Actions). Trovalo in Supabase → Settings → API.
  */
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+
+const BUNDLE_RE = /\/sistema-turnazione\/assets\/index-[A-Za-z0-9_-]+\.js/
+
+/** Estrae il path del bundle JS principale (Vite emette <script src="…/assets/index-HASH.js">) */
+function extractBundlePath(html: string): string | null {
+  const m = html.match(BUNDLE_RE)
+  return m ? m[0] : null
+}
+
+/** Path del bundle JS attualmente caricato in pagina (dal DOM) */
+function getCurrentBundlePath(): string | null {
+  const scripts = Array.from(document.querySelectorAll('script[src*="/assets/index-"]'))
+  for (const s of scripts) {
+    const src = (s as HTMLScriptElement).getAttribute('src') || ''
+    const m = src.match(BUNDLE_RE)
+    if (m) return m[0]
+  }
+  return null
+}
 
 export function useVersionCheck() {
   const [updateAvailable, setUpdateAvailable] = useState(false)
+  const pollHandleRef = useRef<number | null>(null)
+
+  // Verifica se il CDN serve già la nuova versione PER L'URL NUDA.
+  // L'utente, anche cliccando il badge o facendo Ctrl+F5, finisce per
+  // colpire questa URL — se il CDN qui risponde col vecchio bundle,
+  // il refresh non servirebbe a niente. Quindi confrontiamo il bundle
+  // referenziato nell'HTML del CDN col bundle caricato in pagina:
+  // se sono diversi, fresh è davvero raggiungibile.
+  const checkFreshAvailable = useCallback(async (): Promise<boolean> => {
+    try {
+      const r = await fetch(window.location.pathname, {
+        cache:       'reload', // bypassa HTTP cache del browser
+        credentials: 'same-origin',
+        headers:     { 'Cache-Control': 'no-cache, no-store' },
+      })
+      if (!r.ok) return false
+      const html = await r.text()
+      const newBundle = extractBundlePath(html)
+      const curBundle = getCurrentBundlePath()
+      return !!newBundle && !!curBundle && newBundle !== curBundle
+    } catch (_) {
+      return false
+    }
+  }, [])
+
+  const stopPoll = useCallback(() => {
+    if (pollHandleRef.current !== null) {
+      clearInterval(pollHandleRef.current)
+      pollHandleRef.current = null
+    }
+  }, [])
+
+  // Polling con backoff: aspetta che il CDN serva fresh per URL nuda.
+  // Il primo check è immediato, poi ogni 10s. Timeout safety dopo 10 min:
+  // mostriamo comunque il badge — l'utente potrà comunque ricevere il fresh
+  // tramite la query string (?_r=…) nell'applyUpdate, che bypassa il CDN.
+  const startPolling = useCallback(() => {
+    if (pollHandleRef.current !== null) return
+    let tries = 0
+    const tick = async () => {
+      tries++
+      if (await checkFreshAvailable()) {
+        stopPoll()
+        setUpdateAvailable(true)
+        return
+      }
+      if (tries >= 60) {
+        stopPoll()
+        setUpdateAvailable(true) // safety net dopo 10 min
+      }
+    }
+    tick()
+    pollHandleRef.current = window.setInterval(tick, 10000)
+  }, [checkFreshAvailable, stopPoll])
 
   useEffect(() => {
     let lastTs: string | null = null
@@ -45,7 +123,6 @@ export function useVersionCheck() {
     })()
 
     // ── Supabase Realtime: notifica istantanea via WebSocket ──────
-    // GitHub Actions fa PATCH su questa riga dopo ogni deploy.
     const channel = supabase
       .channel('app-version-watch')
       .on(
@@ -59,7 +136,9 @@ export function useVersionCheck() {
         (payload) => {
           const newTs = String((payload.new as { ts: number }).ts)
           if (lastTs && lastTs !== newTs) {
-            setUpdateAvailable(true)
+            // NON mostriamo subito il badge: aspettiamo che il fresh
+            // sia raggiungibile dal client (purge CDN propagato qui).
+            startPolling()
           }
           lastTs = newTs
         }
@@ -67,9 +146,6 @@ export function useVersionCheck() {
       .subscribe()
 
     // ── Fallback visibilitychange ─────────────────────────────────
-    // Se il WebSocket si disconnette (sleep, rete caduta) e si riconnette,
-    // Supabase gestisce il reconnect automatico. Questo fallback copre il
-    // caso in cui la finestra fosse chiusa/ibernata e l'evento sia stato perso.
     const onVisible = async () => {
       if (document.visibilityState !== 'visible') return
       try {
@@ -80,7 +156,7 @@ export function useVersionCheck() {
           .single()
         if (data) {
           const remoteTs = String(data.ts)
-          if (lastTs && remoteTs !== lastTs) setUpdateAvailable(true)
+          if (lastTs && remoteTs !== lastTs) startPolling()
           lastTs = remoteTs
         }
       } catch (_) { /* ignora */ }
@@ -90,20 +166,15 @@ export function useVersionCheck() {
     return () => {
       supabase.removeChannel(channel)
       document.removeEventListener('visibilitychange', onVisible)
+      stopPoll()
     }
-  }, [])
+  }, [startPolling, stopPoll])
 
   // ── Ricarica pulita: hard reload con cache busting ────────────
-  // Strategia in 3 fasi (l'ordine è critico):
-  //   1. Cleanup cache SW + cache API (residui di vecchie versioni PWA)
-  //   2. PRE-FETCH dell'URL target con `cache: 'reload'` → istruisce il
-  //      browser a fare fetch bypassando la HTTP cache E a popolare la
-  //      cache con la response fresca. Senza questo passaggio, il browser
-  //      poteva servire l'HTML vecchio dalla disk cache anche con query
-  //      string nuova (per via di edge case del CDN Fastly di GH Pages).
-  //   3. `location.replace(sameUrl)` → ora il browser usa la entry fresca
-  //      appena popolata in cache, l'HTML è quello nuovo, e i tag <script>
-  //      puntano ai bundle JS con l'hash aggiornato.
+  // Quando arriviamo qui, checkFreshAvailable() ha già confermato che
+  // fresh è disponibile sul CDN. Il pre-fetch + replace garantiscono
+  // che il browser usi la response fresca anche se la disk cache
+  // contenesse l'HTML vecchio.
   const applyUpdate = useCallback(async () => {
     // 1. Svuota cache API (PWA / SW caches)
     if (window.caches) {
@@ -121,24 +192,22 @@ export function useVersionCheck() {
       } catch (_) { /* ignora */ }
     }
 
-    // 2. URL target: stesso path + query univoca per forzare nuova cache key
-    //    (sia lato browser sia lato CDN). Mantenere identico il URL fra
-    //    pre-fetch e replace è ESSENZIALE per riusare la cache fresca.
+    // 2. URL target con query univoca: forza nuova cache key sul CDN.
+    //    Anche se il CDN servisse ancora vecchio per URL nuda, qui va
+    //    sicuramente all'origin perché la query string non era mai vista.
     const reloadUrl = window.location.pathname + '?_r=' + Date.now() + window.location.hash
 
-    // 2b. Pre-fetch fresh: `cache: 'reload'` ⇒ bypass HTTP cache + repopola
+    // 2b. Pre-fetch con cache:'reload' — bypassa HTTP cache + ripopola
     try {
       const r = await fetch(reloadUrl, {
         cache:       'reload',
         credentials: 'same-origin',
         headers:     { 'Cache-Control': 'no-cache, no-store, must-revalidate' },
       })
-      // Drena il body — alcuni browser non finalizzano la cache entry
-      // se la response non è stata letta interamente.
-      await r.text()
-    } catch (_) { /* CDN potrebbe rifiutare → reload comunque */ }
+      await r.text() // drena body per finalizzare cache entry
+    } catch (_) { /* reload comunque */ }
 
-    // 3. Naviga al nuovo URL: il browser usa la entry popolata al passo 2b.
+    // 3. Naviga: il browser usa la entry fresca appena popolata.
     window.location.replace(reloadUrl)
   }, [])
 
