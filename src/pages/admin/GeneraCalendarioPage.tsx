@@ -339,7 +339,10 @@ export function GeneraCalendarioPage() {
       {/* ═══ COLONNA SINISTRA ═══════════════════════════════════ */}
       <div className="flex-1 space-y-5">
         <div>
-          <h2 className="text-xl font-bold text-stone-800 mb-0.5">Genera Calendario</h2>
+          <h2 className="text-xl font-bold text-stone-800 mb-0.5 flex items-center gap-2">
+            <Zap size={20} style={{ color: '#476540' }} />
+            Genera Calendario
+          </h2>
           <p className="text-sm text-stone-600">
             Scegli schema e periodo, poi genera tutti i turni teorici.
           </p>

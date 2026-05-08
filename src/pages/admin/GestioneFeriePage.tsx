@@ -567,7 +567,10 @@ export function GestioneFeriePage() {
       )}
 
       <div>
-        <h2 className="text-xl font-bold text-stone-800">Gestione Ferie</h2>
+        <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
+          <Calendar size={20} style={{ color: '#476540' }} />
+          Gestione Ferie
+        </h2>
         <p className="text-sm text-stone-600 mt-0.5">
           Inserisci e approva le ferie dei medici.
         </p>

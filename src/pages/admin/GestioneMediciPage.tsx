@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Save, X, Trash2, AlertTriangle, RefreshCw, GripVertical } from 'lucide-react'
+import { Plus, Pencil, Save, X, Trash2, AlertTriangle, RefreshCw, GripVertical, Users } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
@@ -291,7 +291,10 @@ export function GestioneMediciPage() {
       {/* Titolo + pulsante salva ordine */}
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-stone-800">Gestione Medici</h2>
+          <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
+            <Users size={20} style={{ color: '#476540' }} />
+            Gestione Medici
+          </h2>
           <p className="text-sm text-stone-600 mt-0.5">
             Trascina le righe per riordinare la rotazione.
             Dopo modifiche o eliminazioni <strong>rigenera il calendario</strong>.

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Shield, User, Lock, UserPlus, Pencil, Save, X } from 'lucide-react'
+import { Plus, Trash2, Shield, User, Lock, UserPlus, Pencil, Save, X, UserCheck } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
@@ -146,7 +146,10 @@ export function GestioneUtentiPage() {
         onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
 
       <div>
-        <h2 className="text-xl font-bold text-stone-800">Utenti Autorizzati</h2>
+        <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
+          <UserCheck size={20} style={{ color: '#476540' }} />
+          Utenti Autorizzati
+        </h2>
         <p className="text-sm text-stone-600 mt-0.5">
           Solo gli account Google in questa lista possono accedere all'app.
         </p>
