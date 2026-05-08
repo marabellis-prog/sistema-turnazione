@@ -137,6 +137,7 @@ export function GestioneSchemaPage() {
   const [saving,     setSaving]     = useState(false)
   const [msg,        setMsg]        = useState('')
   const [showPreview, setShowPreview] = useState(false)
+  const [showHelp,   setShowHelp]   = useState(false)
 
   // ── Hook dipendenze esterne (devono essere prima degli useEffect) ──
   const { confirm, confirmState } = useConfirm()
@@ -723,10 +724,52 @@ export function GestioneSchemaPage() {
             </div>
           )
         })}
-        <span className="ml-auto text-[10px] text-stone-500 italic">
-          doppio clic su cella per svuotare
-        </span>
+        <button
+          onClick={() => setShowHelp(v => !v)}
+          className="ml-auto flex items-center gap-1 text-[10px] text-stone-400 hover:text-stone-600 transition-colors shrink-0"
+          title={showHelp ? 'Nascondi istruzioni' : 'Mostra istruzioni'}>
+          {showHelp ? '▲ nascondi guida' : '▼ come funziona?'}
+        </button>
       </div>
+
+      {/* ═══ ISTRUZIONI (collassabile) ═══════════════════════════ */}
+      {showHelp && (
+        <div className="shrink-0 rounded-lg border border-stone-200 bg-stone-50 px-4 py-3 text-xs"
+          style={{ color: '#4a4a3a' }}>
+          <div className="grid grid-cols-2 gap-x-8 gap-y-0.5 sm:grid-cols-2">
+
+            {/* ── Colonna sinistra: comandi ── */}
+            <div>
+              <p className="font-bold uppercase tracking-wide mb-1.5" style={{ color: '#374f30', fontSize: 10 }}>
+                Comandi
+              </p>
+              <ul className="space-y-1 leading-snug">
+                <li><span className="font-semibold">Trascina</span> un turnista (dalla strip, dal contatore o da una cella piena) su una cella vuota → <span className="font-semibold">sposta</span></li>
+                <li><span className="font-semibold">Trascina</span> su una cella già occupata → <span className="font-semibold">scambia</span> i due valori</li>
+                <li><span className="font-semibold">Doppio clic</span> su una cella → svuota</li>
+                <li>Checkbox <span className="font-semibold text-red-600">REP</span> → marca lo slot come reperibilità</li>
+                <li><span className="font-semibold">+ slot</span> nella cella giorno → aggiunge una riga per turni sovrapposti</li>
+                <li><span className="font-semibold">Prova Schema</span> → anteprima locale del ciclo completo senza salvare</li>
+              </ul>
+            </div>
+
+            {/* ── Colonna destra: logica rotazione ── */}
+            <div>
+              <p className="font-bold uppercase tracking-wide mb-1.5" style={{ color: '#374f30', fontSize: 10 }}>
+                Logica della rotazione
+              </p>
+              <ul className="space-y-1 leading-snug">
+                <li>I <span className="font-semibold">numeri nelle celle</span> (1, 2, 3 …) sono <span className="font-semibold">posizioni di rotazione</span>, non medici fissi</li>
+                <li><span className="font-semibold">Settimana 0</span>: medico 1 → posizione 1, medico 2 → posizione 2, ecc.</li>
+                <li><span className="font-semibold">Settimana 1</span>: tutto si sposta di uno — medico 1 → posizione 2, medico 2 → posizione 3, ecc.</li>
+                <li>Dopo <span className="font-semibold">N settimane</span> (N = numero medici) il ciclo si ripete identico</li>
+                <li>L'<span className="font-semibold">ordine dei medici</span> nella lista determina il punto di partenza — modificalo in <em>Gestione Medici</em></li>
+              </ul>
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* ═══ GRIGLIA + CONTATORE (+ ANTEPRIMA a destra) ═════════ */}
       {/* flex-wrap: se l'anteprima non entra (< 400px) va a capo */}
