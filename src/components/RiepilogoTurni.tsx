@@ -111,15 +111,19 @@ export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId }:
           <th style={thStyle}>F</th>
           <th style={thStyle} title="Turni in sub-intensiva">
             <span style={{
-              display: 'inline-block', width: 12, height: 12, borderRadius: '50%',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 18, height: 18, borderRadius: '50%',
               background: '#fecaca', border: '1.5px solid #dc2626',
-            }} />
+              fontSize: 10, fontWeight: 800, color: '#9f1239', lineHeight: 1,
+            }}>S</span>
           </th>
           <th style={thStyle} title="Turni in medicina">
             <span style={{
-              display: 'inline-block', width: 12, height: 12, borderRadius: '50%',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 18, height: 18, borderRadius: '50%',
               background: '#bae6fd', border: '1.5px solid #0284c7',
-            }} />
+              fontSize: 10, fontWeight: 800, color: '#0c4a6e', lineHeight: 1,
+            }}>M</span>
           </th>
           <th style={thStyle}>Totale</th>
         </tr>
