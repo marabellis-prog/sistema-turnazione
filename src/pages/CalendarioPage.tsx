@@ -16,15 +16,33 @@ interface CellDisplay {
   is_ferie:               boolean
 }
 
+// Stessi colori del "Prova Schema" in GestioneSchemaPage
+const CELL_COLORS: Record<string, { bg: string; fg: string }> = {
+  M:   { bg: '#dde8d5', fg: '#2e4a28' },
+  P:   { bg: '#d5e0e8', fg: '#253a4a' },
+  L:   { bg: '#ece5d5', fg: '#4a3a1a' },
+  REP: { bg: '#e8d5d5', fg: '#5a2a2a' },
+  RM:  { bg: '#ddd8ea', fg: '#3a2858' },
+  RP:  { bg: '#ead8e2', fg: '#582840' },
+}
+
 function LabelTurno({ tc, tr }: { tc: string; tr: string }) {
   return (
     <div className="flex flex-col items-center leading-none gap-px">
-      {tc === 'M'   && <span style={{ fontSize: 13, fontWeight: 600, color: '#2e4a28' }}>M</span>}
-      {tc === 'P'   && <span style={{ fontSize: 13, fontWeight: 600, color: '#253a4a' }}>P</span>}
-      {tc === 'L'   && <span style={{ fontSize: 13, fontWeight: 700, color: '#4a3a1a' }}>L</span>}
-      {tc === 'REP' && <span style={{ fontSize: 11, fontWeight: 700, color: '#b91c1c' }}>REP</span>}
+      {tc && (
+        <span style={{
+          fontSize:   tc === 'REP' ? 9 : 11,
+          fontWeight: 700,
+          color:      CELL_COLORS[tc]?.fg ?? '#3a3d30',
+          letterSpacing: tc === 'REP' ? '-0.3px' : undefined,
+        }}>
+          {tc}
+        </span>
+      )}
       {tr && tr.split('+').map(p => (
-        <span key={p} style={{ fontSize: 9, fontWeight: 500, color: '#3a2858' }}>{p}</span>
+        <span key={p} style={{ fontSize: 8, fontWeight: 600, color: CELL_COLORS[p]?.fg ?? '#3a2858' }}>
+          {p}
+        </span>
       ))}
     </div>
   )
@@ -347,20 +365,63 @@ export function CalendarioPage() {
       </div>
 
       {mostraLegenda && (
-        <div className="flex flex-wrap gap-3 px-4 py-2 border-b text-xs shrink-0"
+        <div className="flex flex-wrap gap-2 px-4 py-2 border-b text-xs shrink-0 items-center"
           style={{ background: '#f0ece4', borderColor: '#d5ccb8' }}>
-          <span className="flex items-center gap-1.5"><LabelTurno tc="M"   tr="" /> Mattina</span>
-          <span className="flex items-center gap-1.5"><LabelTurno tc="P"   tr="" /> Pomeriggio</span>
-          <span className="flex items-center gap-1.5"><LabelTurno tc="L"   tr="" /> Lungo (M+P)</span>
-          <span className="flex items-center gap-1.5"><LabelTurno tc="REP" tr="" /> Reperibilità</span>
-          <span className="flex items-center gap-1.5"><LabelTurno tc=""   tr="RM" /> Ric. mat.</span>
-          <span className="flex items-center gap-1.5"><LabelTurno tc=""   tr="RP" /> Ric. pom.</span>
-          <span className="flex items-center gap-1 px-1 rounded"
-            style={{ background: '#f0ead8', border: '1px solid #d5ccb8' }}>🟡 Dom/Festivo</span>
-          <span className="flex items-center gap-1 px-1 rounded"
-            style={{ background: '#d5e5d0', border: '1px solid #b0c8a8' }}>🌿 Ferie</span>
-          <span className="flex items-center gap-1 px-1 rounded"
-            style={{ outline: '2px solid #9ab488' }}>✎ Modificato</span>
+          {(['M','P','L','REP'] as const).map(t => (
+            <span key={t} className="flex items-center gap-1">
+              <span className="inline-flex items-center justify-center rounded"
+                style={{
+                  width: 22, height: 18,
+                  background: CELL_COLORS[t].bg,
+                  color: CELL_COLORS[t].fg,
+                  fontSize: t === 'REP' ? 8 : 10,
+                  fontWeight: 700,
+                  letterSpacing: t === 'REP' ? '-0.3px' : undefined,
+                }}>
+                {t}
+              </span>
+              <span style={{ color: '#5a5a4a' }}>
+                {t === 'M' ? 'Mattina' : t === 'P' ? 'Pomeriggio' : t === 'L' ? 'Lungo' : 'Reperibilità'}
+              </span>
+            </span>
+          ))}
+          {(['RM','RP'] as const).map(t => (
+            <span key={t} className="flex items-center gap-1">
+              <span className="inline-flex items-center justify-center rounded"
+                style={{
+                  width: 22, height: 18,
+                  background: CELL_COLORS[t].bg,
+                  color: CELL_COLORS[t].fg,
+                  fontSize: 8, fontWeight: 600,
+                }}>
+                {t}
+              </span>
+              <span style={{ color: '#5a5a4a' }}>
+                {t === 'RM' ? 'Ric. mat.' : 'Ric. pom.'}
+              </span>
+            </span>
+          ))}
+          <span className="flex items-center gap-1">
+            <span className="inline-flex items-center justify-center rounded"
+              style={{ width: 22, height: 18, background: '#f0ead8', fontSize: 10 }}>
+              15
+            </span>
+            <span style={{ color: '#5a5a4a' }}>Dom/Festivo</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-flex items-center justify-center rounded"
+              style={{ width: 22, height: 18, background: '#d5e5d0', fontSize: 10, color: '#2e5a28' }}>
+              🌿
+            </span>
+            <span style={{ color: '#5a5a4a' }}>Ferie</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-flex items-center justify-center rounded"
+              style={{ width: 22, height: 18, background: '#faf8f3', outline: '2px solid #9ab488', fontSize: 9, color: '#476540' }}>
+              ✎
+            </span>
+            <span style={{ color: '#5a5a4a' }}>Modificato</span>
+          </span>
         </div>
       )}
 
@@ -416,9 +477,30 @@ export function CalendarioPage() {
                       const tr    = cell?.turno_ricerca  ?? ''
                       const ferie = cell?.is_ferie ?? false
                       const modif = cell?.modificato_manualmente ?? false
-                      let bg = isSel ? '#e8f0e0' : '#faf8f3'
-                      if (ferie) bg = '#d5e5d0'
-                      else if (col.isDomenica || col.isFestivo) bg = '#f0ead8'
+
+                      // Priorità background:
+                      // 1. riga selezionata → verde uniforme
+                      // 2. ferie           → verde ferie
+                      // 3. turno clinico   → colore del turno
+                      // 4. solo ricerca    → colore ricerca
+                      // 5. domenica/fest.  → crema (solo celle vuote)
+                      // 6. default         → crema neutra
+                      let bg: string
+                      if (isSel) {
+                        bg = '#e0e8d8'
+                      } else if (ferie) {
+                        bg = '#d5e5d0'
+                      } else if (tc && CELL_COLORS[tc]) {
+                        bg = CELL_COLORS[tc].bg
+                      } else if (tr) {
+                        const firstTr = tr.split('+')[0]
+                        bg = CELL_COLORS[firstTr]?.bg ?? '#faf8f3'
+                      } else if (col.isDomenica || col.isFestivo) {
+                        bg = '#f0ead8'
+                      } else {
+                        bg = '#faf8f3'
+                      }
+
                       return (
                         <td key={col.data}
                           className={`cal-cell ${modif ? 'cal-cell-modificata' : ''}`}
