@@ -54,6 +54,18 @@ export function NavBar({ user, onSignOut }: Props) {
     e.preventDefault()
     const existing = window.open('', tabName)
     if (!existing) { window.location.href = href; return }
+
+    // Se la tab nominata è la NOSTRA tab corrente (succede quando
+    // il window.name di questa tab coincide col target — es. clicco
+    // "Rigenera calendario" da una pagina /admin/qualcos'altro che
+    // ha window.name = TAB_ADMIN), navighiamo normalmente in-app.
+    // Altrimenti window.open ci restituisce noi stessi e poi `isBlank=false`
+    // farebbe un focus() no-op, lasciando l'utente bloccato.
+    if (existing === window) {
+      window.location.href = href
+      return
+    }
+
     let isBlank = true
     try {
       const cur = existing.location.href

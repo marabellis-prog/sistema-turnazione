@@ -3,11 +3,11 @@ import { Users, Calendar, UserCheck, Settings, Zap, Table2 } from 'lucide-react'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 
 const links = [
+  { to: '/admin/schema',  label: 'Disegna Schema',    Icon: Table2 },
   { to: '/admin/genera',  label: 'Genera Calendario', Icon: Zap },
   { to: '/admin/turni',   label: 'Modifica Turni',    Icon: Calendar },
   { to: '/admin/ferie',   label: 'Gestione Ferie',    Icon: Calendar },
-  { to: '/admin/schema',  label: 'Disegna Schema',    Icon: Table2 },
-  { to: '/admin/medici',  label: 'Medici',            Icon: Users },
+  { to: '/admin/medici',  label: 'Medici/Turnisti',   Icon: Users },
   { to: '/admin/utenti',  label: 'Utenti',            Icon: UserCheck },
   { to: '/admin/config',  label: 'Configurazione',    Icon: Settings },
 ]

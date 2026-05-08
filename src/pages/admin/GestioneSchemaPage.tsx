@@ -25,7 +25,6 @@ const PASTEL: { bg: string; fg: string }[] = [
 ]
 
 const GIORNI_IT  = ['','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato','Domenica']
-const COLONNE_PRESET = ['M', 'P', 'RM', 'RP']
 const REP_BG = '#fee2e2'
 
 // ── Costanti layout anteprima calendario ─────────────────────────
@@ -129,10 +128,10 @@ export function GestioneSchemaPage() {
 
   const [schemaNum,  setSchemaNum]  = useState(1)
   const [tipoSchema, setTipoSchema] = useState<'weekly' | 'custom'>('weekly')
-  const [colonne,    setColonne]    = useState<string[]>(['M', 'P'])
+  // Colonne fisse — il modello DB ha sempre M / P / RM / RP. Niente UI per aggiungere
+  // o rimuovere colonne: lo schema lavora sempre con queste 4.
+  const colonne: string[] = ['M', 'P', 'RM', 'RP']
   const [giorni,     setGiorni]     = useState<number[]>([1,2,3,4,5,6,7])
-  const [nuovaCol,   setNuovaCol]   = useState('')
-  const [addColOpen, setAddColOpen] = useState(false)
   const [griglia,    setGriglia]    = useState<Record<number, SlotRow[]>>({})
   const [saving,     setSaving]     = useState(false)
   const [msg,        setMsg]        = useState('')
@@ -307,16 +306,7 @@ export function GestioneSchemaPage() {
       if (tipoSchema === 'weekly') setGiorni([1,2,3,4,5,6,7])
       return
     }
-    const colUsate = new Set<string>()
-    data.forEach(r => {
-      if (r.numero_medico_mattina    !== null) colUsate.add('M')
-      if (r.numero_medico_pomeriggio !== null) colUsate.add('P')
-      if (r.numero_medico_rm         !== null) colUsate.add('RM')
-      if (r.numero_medico_rp         !== null) colUsate.add('RP')
-    })
-    const colList = ['M','P','RM','RP'].filter(c => colUsate.has(c))
-    if (colList.length > 0) setColonne(colList)
-
+    // Le colonne sono fisse (M/P/RM/RP), nessun filtro — sempre presenti.
     const g: Record<number, SlotRow[]> = {}
     const giorniUsati = new Set<number>()
     data.forEach(r => {
@@ -377,40 +367,6 @@ export function GestioneSchemaPage() {
       const rows = [...(prev[giorno] ?? [])]
       rows.splice(idx, 1)
       return { ...prev, [giorno]: rows }
-    })
-  }
-
-  function aggiungiColonna(nome: string) {
-    const n = nome.trim().toUpperCase()
-    if (!n || colonne.includes(n)) return
-    markUnsaved()
-    setColonne(prev => [...prev, n])
-    setGriglia(prev => {
-      const g: Record<number, SlotRow[]> = {}
-      Object.entries(prev).forEach(([d, rows]) => {
-        g[+d] = rows.map(r => ({ ...r, vals: { ...r.vals, [n]: null } }))
-      })
-      return g
-    })
-    setNuovaCol(''); setAddColOpen(false)
-  }
-
-  async function rimuoviColonna(col: string) {
-    const ok = await confirm({
-      title:        `Elimina colonna "${col}"`,
-      message:      'I dati di questa colonna andranno persi. Continuare?',
-      confirmLabel: 'Elimina',
-      danger:       true,
-    })
-    if (!ok) return
-    markUnsaved()
-    setColonne(prev => prev.filter(c => c !== col))
-    setGriglia(prev => {
-      const g: Record<number, SlotRow[]> = {}
-      Object.entries(prev).forEach(([d, rows]) => {
-        g[+d] = rows.map(r => { const v = { ...r.vals }; delete v[col]; return { ...r, vals: v } })
-      })
-      return g
     })
   }
 
@@ -615,36 +571,15 @@ export function GestioneSchemaPage() {
           ))}
         </div>
 
-        {/* Colonne */}
+        {/* Colonne — fisse: M / P / RM / RP. Mostrate solo come info. */}
         <div className="flex items-center gap-1 flex-wrap">
           <span className="text-xs text-stone-600 font-medium">Colonne:</span>
           {colonne.map(col => (
             <span key={col} className="inline-flex items-center gap-0.5 bg-stone-100 text-stone-700
                            text-xs px-1.5 py-0.5 rounded-full border border-stone-200">
               {col}
-              <button onClick={() => rimuoviColonna(col)} className="text-stone-500 hover:text-red-500 ml-0.5 leading-none">
-                <X size={9} />
-              </button>
             </span>
           ))}
-          {addColOpen ? (
-            <div className="flex items-center gap-1">
-              <input value={nuovaCol} onChange={e => setNuovaCol(e.target.value.toUpperCase())}
-                onKeyDown={e => e.key === 'Enter' && aggiungiColonna(nuovaCol)}
-                placeholder="es. RM" autoFocus
-                className="border border-olive-400 rounded px-1 py-0.5 text-xs w-16 focus:outline-none" />
-              {COLONNE_PRESET.filter(c => !colonne.includes(c)).map(c => (
-                <button key={c} onClick={() => aggiungiColonna(c)}
-                  className="bg-olive-100 text-olive-700 text-xs px-1 py-0.5 rounded hover:bg-olive-200">{c}</button>
-              ))}
-              <button onClick={() => setAddColOpen(false)} className="text-stone-500 hover:text-gray-600"><X size={12} /></button>
-            </div>
-          ) : (
-            <button onClick={() => setAddColOpen(true)}
-              className="text-olive-600 hover:text-olive-800 flex items-center gap-0.5 text-xs">
-              <Plus size={11} /> aggiungi
-            </button>
-          )}
         </div>
 
         {/* Aggiungi giorno (solo custom) */}
