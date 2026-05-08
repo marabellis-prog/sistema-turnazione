@@ -24,61 +24,13 @@
       body { margin: 0; background: #f9fafb; }
     </style>
 
-    <!-- ── Rilevamento automatico nuovi deploy ─────────────────────
-         1. Unregistra qualsiasi Service Worker residuo (non più usato)
-         2. Controlla version.json subito e poi ogni 30 secondi
-         3. Se il timestamp cambia → svuota i cache e ricarica la pagina
-         Il deploy di GitHub Actions dura ~1-2 min: entro 30s dalla
-         fine del deploy la pagina si aggiorna da sola, senza F5.
-    ──────────────────────────────────────────────────────────────── -->
+    <!-- Rimuove Service Worker residui da versioni precedenti -->
     <script>
-      ;(function () {
-        // 1. Rimuovi Service Worker eventualmente installati in precedenza
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.getRegistrations().then(function (regs) {
-            regs.forEach(function (r) { r.unregister() })
-          })
-        }
-
-        var KEY  = 'app_version'
-        var BASE = '/sistema-turnazione'
-
-        function applyUpdate() {
-          // Svuota tutti i cache (SW o browser) poi ricarica
-          var go = function () { location.href = location.href }
-          if (window.caches) {
-            caches.keys()
-              .then(function (keys) {
-                return Promise.all(keys.map(function (k) { return caches.delete(k) }))
-              })
-              .then(go).catch(go)
-          } else {
-            go()
-          }
-        }
-
-        function checkVersion() {
-          // ?nc=timestamp: bypassa browser cache e CDN (URL unico ogni chiamata)
-          fetch(BASE + '/version.json?nc=' + Date.now(), { cache: 'no-store' })
-            .then(function (r) { return r.json() })
-            .then(function (v) {
-              var ts   = String(v.ts)
-              var prev = localStorage.getItem(KEY)
-              localStorage.setItem(KEY, ts)
-              if (prev && prev !== ts) {
-                applyUpdate()
-              }
-            })
-            .catch(function () { /* offline o 404: ignora silenziosamente */ })
-        }
-
-        // Controlla subito al caricamento
-        checkVersion()
-
-        // Poi ricontrolla ogni 30 secondi — così entro 30s dal termine
-        // del deploy GitHub Actions la pagina si aggiorna da sola
-        setInterval(checkVersion, 30000)
-      })()
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function (regs) {
+          regs.forEach(function (r) { r.unregister() })
+        })
+      }
     </script>
   </head>
   <body>

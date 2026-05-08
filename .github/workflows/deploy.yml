@@ -36,3 +36,16 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
           force_orphan: true
+
+      # Aggiorna app_version in Supabase → tutti i client connessi ricevono
+      # la notifica real-time via WebSocket e mostrano il badge "Aggiornamento disponibile".
+      # Richiede il secret SUPABASE_SERVICE_ROLE_KEY (Settings → Secrets → Actions).
+      - name: Notifica nuova versione via Supabase Realtime
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" -X PATCH \
+            "${{ secrets.VITE_SUPABASE_URL }}/rest/v1/app_version?id=eq.1" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            -d "{\"ts\": $(date +%s%3N)}"

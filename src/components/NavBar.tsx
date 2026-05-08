@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import { LogOut, Calendar, Settings, Users, AlertTriangle, RefreshCw } from 'lucide-react'
 import { usePendingActions } from '../contexts/PendingActionsContext'
+import { useVersionCheck } from '../hooks/useVersionCheck'
 import type { AuthUser } from '../types'
 
 interface Props {
@@ -11,6 +12,7 @@ interface Props {
 export function NavBar({ user, onSignOut }: Props) {
   const loc = useLocation()
   const { needsRegen, needsRefresh } = usePendingActions()
+  const { updateAvailable, applyUpdate } = useVersionCheck()
 
   const navLink = (to: string, label: string, Icon: React.ElementType) => {
     const active = loc.pathname.startsWith(to)
@@ -41,6 +43,19 @@ export function NavBar({ user, onSignOut }: Props) {
             Sistema Turni
           </span>
         </div>
+
+        {/* ── Aggiornamento disponibile (tutti gli utenti) ─────── */}
+        {updateAvailable && (
+          <button
+            onClick={applyUpdate}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold
+                       transition-colors hover:opacity-90 shrink-0"
+            style={{ background: '#d97706', color: '#fff' }}
+            title="Clicca per ricaricare con la versione aggiornata">
+            <RefreshCw size={12} className="animate-spin" style={{ animationDuration: '2s' }} />
+            Aggiornamento disponibile — ricarica
+          </button>
+        )}
 
         {/* ── Avviso pendente (solo admin) ──────────────────────── */}
         {user?.ruolo === 'admin' && needsRegen && (
