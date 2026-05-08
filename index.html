@@ -6,6 +6,16 @@
     <title>Sistema Turnazione</title>
     <meta name="description" content="Gestione turni medici" />
 
+    <!-- Cache-Control: l'HTML non deve mai essere cachato dal browser.
+         Gli asset JS/CSS hanno hash nei nomi → cache lunga è ok per loro.
+         Ma se l'HTML viene cachato, il browser punta ai bundle vecchi
+         anche dopo un nuovo deploy → badge "Aggiornamento disponibile" inutile.
+         Gli HTTP headers di GH Pages superano il meta http-equiv, ma alcuni
+         browser onorano comunque il meta come hint forte. -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+
     <!-- Favicon browser desktop -->
     <link rel="icon" type="image/svg+xml" href="/sistema-turnazione/favicon.svg" />
 

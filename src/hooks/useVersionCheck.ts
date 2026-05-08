@@ -94,8 +94,18 @@ export function useVersionCheck() {
   }, [])
 
   // ── Ricarica pulita: hard reload con cache busting ────────────
+  // Strategia in 3 fasi (l'ordine è critico):
+  //   1. Cleanup cache SW + cache API (residui di vecchie versioni PWA)
+  //   2. PRE-FETCH dell'URL target con `cache: 'reload'` → istruisce il
+  //      browser a fare fetch bypassando la HTTP cache E a popolare la
+  //      cache con la response fresca. Senza questo passaggio, il browser
+  //      poteva servire l'HTML vecchio dalla disk cache anche con query
+  //      string nuova (per via di edge case del CDN Fastly di GH Pages).
+  //   3. `location.replace(sameUrl)` → ora il browser usa la entry fresca
+  //      appena popolata in cache, l'HTML è quello nuovo, e i tag <script>
+  //      puntano ai bundle JS con l'hash aggiornato.
   const applyUpdate = useCallback(async () => {
-    // 1. Svuota i cache del Service Worker (se presenti)
+    // 1. Svuota cache API (PWA / SW caches)
     if (window.caches) {
       try {
         const keys = await caches.keys()
@@ -103,7 +113,7 @@ export function useVersionCheck() {
       } catch (_) { /* ignora */ }
     }
 
-    // 2. Unregistra eventuali SW residui da versioni precedenti
+    // 1b. Unregistra eventuali Service Worker residui
     if ('serviceWorker' in navigator) {
       try {
         const regs = await navigator.serviceWorker.getRegistrations()
@@ -111,12 +121,25 @@ export function useVersionCheck() {
       } catch (_) { /* ignora */ }
     }
 
-    // 3. Hard reload con query param univoco —
-    // bypassa la cache HTTP del browser E quella del CDN GitHub Pages
-    // (un URL diverso = nuova entry di cache → fetch fresco dall'origin)
-    const url = new URL(window.location.href)
-    url.searchParams.set('_r', String(Date.now()))
-    window.location.replace(url.toString())
+    // 2. URL target: stesso path + query univoca per forzare nuova cache key
+    //    (sia lato browser sia lato CDN). Mantenere identico il URL fra
+    //    pre-fetch e replace è ESSENZIALE per riusare la cache fresca.
+    const reloadUrl = window.location.pathname + '?_r=' + Date.now() + window.location.hash
+
+    // 2b. Pre-fetch fresh: `cache: 'reload'` ⇒ bypass HTTP cache + repopola
+    try {
+      const r = await fetch(reloadUrl, {
+        cache:       'reload',
+        credentials: 'same-origin',
+        headers:     { 'Cache-Control': 'no-cache, no-store, must-revalidate' },
+      })
+      // Drena il body — alcuni browser non finalizzano la cache entry
+      // se la response non è stata letta interamente.
+      await r.text()
+    } catch (_) { /* CDN potrebbe rifiutare → reload comunque */ }
+
+    // 3. Naviga al nuovo URL: il browser usa la entry popolata al passo 2b.
+    window.location.replace(reloadUrl)
   }, [])
 
   return { updateAvailable, applyUpdate }
