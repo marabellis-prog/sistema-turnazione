@@ -17,7 +17,13 @@ function expandRange(start: string, end: string): string[] {
   const cur = new Date(start + 'T00:00:00')
   const fin = new Date(end   + 'T00:00:00')
   while (cur <= fin) {
-    days.push(cur.toISOString().split('T')[0])
+    // ⚠️ NON usare toISOString(): converte in UTC, con fuso CEST/CET
+    // mezzanotte locale diventa il giorno prima → ogni data esplosa
+    // verrebbe shiftata di 1 giorno indietro.
+    const y = cur.getFullYear()
+    const m = String(cur.getMonth() + 1).padStart(2, '0')
+    const d = String(cur.getDate()).padStart(2, '0')
+    days.push(`${y}-${m}-${d}`)
     cur.setDate(cur.getDate() + 1)
   }
   return days

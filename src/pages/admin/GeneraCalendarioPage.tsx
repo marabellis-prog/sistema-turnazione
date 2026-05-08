@@ -300,7 +300,11 @@ export function GeneraCalendarioPage() {
       setMessaggio('Cancellazione turni precedenti...')
       const medicoIds  = medici.map(m => m.id)
       const dataInizio = `${annoInizio}-${String(meseInizio).padStart(2,'0')}-01`
-      const dataFine   = new Date(annoFine, meseFine, 0).toISOString().split('T')[0]
+      // ⚠️ NON usare toISOString(): converte in UTC e con fuso CEST/CET
+      // mezzanotte locale diventa il giorno prima → la cancellazione
+      // salterebbe l'ultimo giorno del mese di fine.
+      const lastDay  = new Date(annoFine, meseFine, 0).getDate()
+      const dataFine = `${annoFine}-${String(meseFine).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`
 
       const { error: delErr } = await supabase.from('turni')
         .delete()

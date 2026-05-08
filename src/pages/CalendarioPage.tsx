@@ -70,7 +70,12 @@ function calcolaMesi(cfg: Configurazione): ChunkMese[] {
   let anno = cfg.anno_inizio, mese = cfg.mese_inizio
   while (anno < cfg.anno_fine || (anno === cfg.anno_fine && mese <= cfg.mese_fine)) {
     const di = `${anno}-${String(mese).padStart(2,'0')}-01`
-    const df = new Date(anno, mese, 0).toISOString().split('T')[0]
+    // ⚠️ NON usare toISOString(): converte in UTC e con fuso CEST/CET
+    // mezzanotte locale diventa 22:00/23:00 del giorno PRIMA → l'ultimo
+    // giorno del mese viene troncato e i turni del 30/31 spariscono.
+    // new Date(anno, mese, 0).getDate() = numero giorni del mese corrente.
+    const lastDay = new Date(anno, mese, 0).getDate()
+    const df = `${anno}-${String(mese).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`
     mesi.push({ anno, mese, di, df })
     if (mese === 12) { anno++; mese = 1 } else mese++
   }
