@@ -57,15 +57,18 @@ export function useVersionCheck() {
   const [updateAvailable, setUpdateAvailable] = useState(false)
   const pollHandleRef = useRef<number | null>(null)
 
-  // Verifica se il CDN serve già la nuova versione PER L'URL NUDA.
-  // L'utente, anche cliccando il badge o facendo Ctrl+F5, finisce per
-  // colpire questa URL — se il CDN qui risponde col vecchio bundle,
-  // il refresh non servirebbe a niente. Quindi confrontiamo il bundle
-  // referenziato nell'HTML del CDN col bundle caricato in pagina:
-  // se sono diversi, fresh è davvero raggiungibile.
+  // Verifica se il CDN serve già la nuova versione.
+  // ATTENZIONE: dobbiamo fetchare la ROOT dell'app (`import.meta.env.BASE_URL`,
+  // es. "/sistema-turnazione/"), NON window.location.pathname. Le pagine SPA
+  // tipo "/admin/ferie" su GitHub Pages restituiscono 404 (sono route lato
+  // client, non file fisici) → un fetch del pathname corrente fallirebbe e
+  // checkFreshAvailable tornerebbe sempre false, impedendo al badge di apparire.
+  // La root invece serve sempre l'index.html con i tag <script src="…">.
+  // Confrontiamo il bundle referenziato nel response col bundle caricato in
+  // pagina: se sono diversi, il fresh è raggiungibile.
   const checkFreshAvailable = useCallback(async (): Promise<boolean> => {
     try {
-      const r = await fetch(window.location.pathname, {
+      const r = await fetch(import.meta.env.BASE_URL, {
         cache:       'reload', // bypassa HTTP cache del browser
         credentials: 'same-origin',
         headers:     { 'Cache-Control': 'no-cache, no-store' },
