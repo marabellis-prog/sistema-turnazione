@@ -61,12 +61,31 @@ function AntepremaSchema({
   )
 
   // Dimensioni fisse e leggibili — niente più adattamento proporzionale.
-  const dayW = 28, cellW = 38, cellH = 24, fontSize = 11
+  // Mini-tabella width: 26 (gg) + 4*36 (M/P/RM/RP) + 3*22 (REP/SUB/MED) = 236 px
+  const dayW = 26, cellW = 36, boolW = 22, cellH = 24, fontSize = 11
+
+  // Stile dell'header per le colonne booleane (REP/SUB/MED): colore label
+  // diverso per leggibilità, sfondo verde olive come gli altri header.
+  const boolHeaderBase: React.CSSProperties = {
+    background:    '#456b3a',
+    border:        '1px solid #2b3c24',
+    width:         boolW, height: cellH,
+    fontSize:      9, fontWeight: 800,
+    textAlign:     'center', verticalAlign: 'middle', padding: 0,
+    letterSpacing: '-0.3px',
+  }
+  // Stile della cella booleana — sfondo eredita rowBg, mostra ✓ colorato
+  const boolCellBase: React.CSSProperties = {
+    width: boolW, height: cellH,
+    textAlign: 'center', verticalAlign: 'middle',
+    border: '1px solid #d5ccb8',
+    padding: 0,
+  }
 
   return (
     <div style={{
       height:      '100%',
-      columnWidth: 200,        // 2 colonne entrano in ~420px (container 460 - padding)
+      columnWidth: 250,        // ~236px mini-tabella + margini → 2 colonne in 560
       columnGap:   8,
       columnFill:  'auto',     // riempi la prima colonna prima di passare alla seconda
       overflow:    'auto',
@@ -99,6 +118,9 @@ function AntepremaSchema({
                       textAlign: 'center', verticalAlign: 'middle', padding: 0,
                     }}>{l}</th>
                   ))}
+                  <th style={{ ...boolHeaderBase, color: '#fca5a5' }}>REP</th>
+                  <th style={{ ...boolHeaderBase, color: '#fca5a5' }} title="Sub-intensiva">SUB</th>
+                  <th style={{ ...boolHeaderBase, color: '#7ec3e8' }} title="Medicina">MED</th>
                 </tr>
               </thead>
               <tbody>
@@ -137,6 +159,22 @@ function AntepremaSchema({
                           </td>
                         )
                       })}
+                      {/* REP / SUB / MED — ✓ colorato se attivo, vuoto altrimenti */}
+                      <td style={{ ...boolCellBase, background: isRep ? '#fee2e2' : rowBg }}>
+                        {s.is_reperibilita && (
+                          <span style={{ color: '#b91c1c', fontWeight: 900, fontSize: 12 }}>✓</span>
+                        )}
+                      </td>
+                      <td style={{ ...boolCellBase, background: isRep ? '#fee2e2' : rowBg }}>
+                        {s.is_sub && (
+                          <span style={{ color: '#dc2626', fontWeight: 900, fontSize: 12 }}>✓</span>
+                        )}
+                      </td>
+                      <td style={{ ...boolCellBase, background: isRep ? '#fee2e2' : rowBg }}>
+                        {s.is_med && (
+                          <span style={{ color: '#0284c7', fontWeight: 900, fontSize: 12 }}>✓</span>
+                        )}
+                      </td>
                     </tr>
                   )
                 })}
@@ -483,9 +521,9 @@ export function GeneraCalendarioPage() {
 
       {/* ═══ COLONNA DESTRA — anteprima schema ══════════════════ */}
       {/* Colonna destra — altezza fissa = viewport - navbar - padding admin.
-          Larghezza w-[460px] per consentire al multi-column interno di
-          mostrare 2 colonne fianco a fianco quando ci sono molti slot. */}
-      <div className="w-[460px] shrink-0 min-w-0"
+          Larghezza w-[560px] per ospitare anche le colonne REP/SUB/MED
+          oltre M/P/RM/RP, con possibilità di multi-column quando serve. */}
+      <div className="w-[560px] shrink-0 min-w-0"
         style={{ height: 'calc(100vh - 96px)', position: 'sticky', top: 0 }}>
         <div className="card flex flex-col" style={{ height: '100%' }}>
 
@@ -501,6 +539,8 @@ export function GeneraCalendarioPage() {
                 REP
               </span>
               <span>Num. = posizione rotazione</span>
+              <span><strong style={{ color: '#dc2626' }}>S</strong> = sub-intensiva</span>
+              <span><strong style={{ color: '#0284c7' }}>M</strong> = medicina</span>
             </div>
           </div>
 
