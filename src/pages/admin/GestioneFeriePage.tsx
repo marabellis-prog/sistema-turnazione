@@ -572,7 +572,7 @@ export function GestioneFeriePage() {
           Gestione Ferie
         </h2>
         <p className="text-sm text-stone-600 mt-0.5">
-          Inserisci e approva le ferie dei medici.
+          Inserisci e approva le ferie dei medici
         </p>
       </div>
 
