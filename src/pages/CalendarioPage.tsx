@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { RefreshCw, Info, AlertTriangle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { generaColonne, MESI_IT, MESI_SHORT_IT } from '../lib/algorithm'
+import { generaColonne, MESI_IT } from '../lib/algorithm'
 import type {
   Medico, Turno, Ferie, Configurazione, ColonnaCal,
   TurnoClinico, TurnoRicerca,
@@ -233,6 +233,16 @@ export function CalendarioPage() {
       else g.push({ mese: col.mese, anno: col.anno, count: 1 })
     })
     return g
+  }, [colonne])
+
+  // Set delle date che sono l'ultimo giorno del loro mese (per il bordo separatore)
+  const lastDaysOfMonth = useMemo(() => {
+    const s = new Set<string>()
+    colonne.forEach((col, i) => {
+      const next = colonne[i + 1]
+      if (!next || next.mese !== col.mese || next.anno !== col.anno) s.add(col.data)
+    })
+    return s
   }, [colonne])
 
   // ── Loading screen ───────────────────────────────────────────────
@@ -466,21 +476,26 @@ export function CalendarioPage() {
                 {gruppiMese.map(g => (
                   <th key={`${g.anno}-${g.mese}`} colSpan={g.count}
                     className="cal-th text-[11px] text-white"
-                    style={{ background: '#374f30', borderColor: '#2b3c24' }}>
-                    {MESI_SHORT_IT[g.mese]}{g.anno !== config.anno_inizio ? ` ${g.anno}` : ''}
+                    style={{ background: '#374f30', borderColor: '#2b3c24', letterSpacing: '0.04em' }}>
+                    {MESI_IT[g.mese].toUpperCase()} {g.anno}
                   </th>
                 ))}
               </tr>
               <tr>
-                {colonne.map(col => (
-                  <th key={col.data}
-                    className="cal-th text-[10px] !px-0 !py-0.5 w-8"
-                    style={col.isDomenica || col.isFestivo
-                      ? { background: '#f0ead8', color: '#6b5030' } : {}}
-                    title={col.data}>
-                    {col.giorno}
-                  </th>
-                ))}
+                {colonne.map(col => {
+                  const isLastOfMonth = lastDaysOfMonth.has(col.data)
+                  return (
+                    <th key={col.data}
+                      className="cal-th text-[10px] !px-0 !py-0.5 w-8"
+                      style={{
+                        ...(col.isDomenica || col.isFestivo ? { background: '#f0ead8', color: '#6b5030' } : {}),
+                        ...(isLastOfMonth ? { borderRight: '2px solid #7a9a6a' } : {}),
+                      }}
+                      title={col.data}>
+                      {col.giorno}
+                    </th>
+                  )
+                })}
               </tr>
             </thead>
             <tbody>
@@ -531,7 +546,10 @@ export function CalendarioPage() {
                       return (
                         <td key={col.data}
                           className={`cal-cell ${modif ? 'cal-cell-modificata' : ''}`}
-                          style={{ background: bg }}
+                          style={{
+                            background: bg,
+                            ...(lastDaysOfMonth.has(col.data) ? { borderRight: '2px solid #7a9a6a' } : {}),
+                          }}
                           title={cell?.note || undefined}>
                           {(tc || tr) ? <LabelTurno tc={tc} tr={tr} /> : null}
                         </td>
