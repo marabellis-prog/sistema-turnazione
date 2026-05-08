@@ -11,6 +11,7 @@ import { AdminLayout }       from './pages/admin/AdminLayout'
 import { GeneraCalendarioPage } from './pages/admin/GeneraCalendarioPage'
 import { GestioneMediciPage }   from './pages/admin/GestioneMediciPage'
 import { GestioneFeriePage }    from './pages/admin/GestioneFeriePage'
+import { ModificaTurniPage }   from './pages/admin/ModificaTurniPage'
 import { GestioneUtentiPage }   from './pages/admin/GestioneUtentiPage'
 import { ConfigPage }           from './pages/admin/ConfigPage'
 import { GestioneSchemaPage }   from './pages/admin/GestioneSchemaPage'
@@ -84,12 +85,7 @@ function AppRoutes() {
           <Route path="utenti"  element={<GestioneUtentiPage />} />
           <Route path="config"  element={<ConfigPage />} />
           <Route path="schema"  element={<GestioneSchemaPage />} />
-          {/* turni: placeholder, sviluppato nella prossima iterazione */}
-          <Route path="turni"   element={
-            <div className="text-stone-600 text-sm">
-              Modifica turni – in sviluppo nella prossima versione.
-            </div>
-          } />
+          <Route path="turni"   element={<ModificaTurniPage />} />
         </Route>
 
         {/* Root → redirect (spinner durante loading, mai pagina bianca) */}
