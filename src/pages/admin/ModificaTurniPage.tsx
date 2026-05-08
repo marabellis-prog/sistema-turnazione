@@ -108,6 +108,28 @@ function turnoToString(tc: TurnoClinico, tr: TurnoRicerca): string {
   return [tc, tr].filter(Boolean).join(' ')
 }
 
+/**
+ * Spezza il periodo in chunk mensili (di, df) per fare batch di query
+ * Supabase. Senza questa partizione una singola .select() viene troncata
+ * a 1000 righe (limite default PostgREST) → l'ultimo periodo del calendario
+ * mancherebbe le ultime righe.
+ *
+ * NOTA: usa getter locali (.getDate()) per l'ultimo giorno del mese, MAI
+ * toISOString() — converte in UTC e con fuso CEST/CET shift indietro di 1.
+ */
+function calcolaMesi(cfg: Configurazione): { di: string; df: string }[] {
+  const out: { di: string; df: string }[] = []
+  let anno = cfg.anno_inizio, mese = cfg.mese_inizio
+  while (anno < cfg.anno_fine || (anno === cfg.anno_fine && mese <= cfg.mese_fine)) {
+    const di      = `${anno}-${String(mese).padStart(2,'0')}-01`
+    const lastDay = new Date(anno, mese, 0).getDate()
+    const df      = `${anno}-${String(mese).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`
+    out.push({ di, df })
+    if (mese === 12) { anno++; mese = 1 } else mese++
+  }
+  return out
+}
+
 // ════════════════════════════════════════════════════════════════════
 // EditableCell — singola cella editabile (TC + TR di un medico in un giorno)
 // ════════════════════════════════════════════════════════════════════
@@ -249,15 +271,27 @@ export function ModificaTurniPage() {
     },
   })
 
+  // Query turni paginata per mese — la query Supabase è limitata a 1000
+  // righe di default; con ~25 medici × 180 giorni siamo a ~4500 righe e
+  // l'ultimo periodo verrebbe troncato. Spezzando in batch mensili
+  // (~750 righe/mese) restiamo sotto al cap per ogni richiesta.
   const { data: turni = [], refetch: refetchTurni, isLoading: lTur } =
     useQuery<Turno[]>({
-      queryKey: ['turni-modifica'],
+      queryKey: ['turni-modifica', config?.id],
+      enabled:  !!config,
       queryFn: async () => {
-        const { data, error } = await supabase
-          .from('turni')
-          .select('id, medico_id, data, turno_clinico, turno_ricerca, modificato_manualmente, is_ferie, note, created_at, updated_at')
-        if (error) throw error
-        return (data ?? []) as Turno[]
+        if (!config) return []
+        const mesi = calcolaMesi(config)
+        let all: Turno[] = []
+        for (const { di, df } of mesi) {
+          const { data, error } = await supabase
+            .from('turni')
+            .select('id, medico_id, data, turno_clinico, turno_ricerca, modificato_manualmente, is_ferie, note, created_at, updated_at')
+            .gte('data', di).lte('data', df)
+          if (error) throw error
+          all = [...all, ...((data ?? []) as Turno[])]
+        }
+        return all
       },
     })
 
