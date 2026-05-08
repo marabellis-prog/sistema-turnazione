@@ -726,9 +726,18 @@ export function GestioneSchemaPage() {
         })}
         <button
           onClick={() => setShowHelp(v => !v)}
-          className="ml-auto flex items-center gap-1 text-[10px] text-stone-400 hover:text-stone-600 transition-colors shrink-0"
-          title={showHelp ? 'Nascondi istruzioni' : 'Mostra istruzioni'}>
-          {showHelp ? '▲ nascondi guida' : '▼ come funziona?'}
+          className="ml-auto flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1
+                     rounded-full border transition-colors shrink-0"
+          style={showHelp
+            ? { background: '#374f30', color: '#fff', borderColor: '#2b3c24' }
+            : { background: '#e0e8d8', color: '#374f30', borderColor: '#9ab488' }}
+          onMouseEnter={e => {
+            if (!showHelp) e.currentTarget.style.background = '#c8d8b8'
+          }}
+          onMouseLeave={e => {
+            if (!showHelp) e.currentTarget.style.background = '#e0e8d8'
+          }}>
+          {showHelp ? '▲ Nascondi guida' : '? Come funziona'}
         </button>
       </div>
 
