@@ -33,7 +33,7 @@ import {
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import type {
-  Configurazione, Medico, SchemaModello, Turno,
+  Configurazione, Medico, SchemaModello, Turno, Ferie,
   TurnoClinico, TurnoRicerca, ColonnaCal,
 } from '../../types'
 
@@ -146,18 +146,20 @@ function calcolaMesi(cfg: Configurazione): { di: string; df: string }[] {
 // ════════════════════════════════════════════════════════════════════
 
 interface EditableCellProps {
-  tipo:        TipoTabella   // 'clinica' = edita TC, 'ricerca' = edita TR
-  tc:          TurnoClinico  // sempre passati per il bg/check; quello "non gestito" dal tipo è readonly
-  tr:          TurnoRicerca
-  isModified:  boolean       // valore corrente diverso dall'originale (per il tipo della tabella)
-  isFerie:     boolean
-  isRedDay:    boolean       // domenica/festivo
+  tipo:             TipoTabella   // 'clinica' = edita TC, 'ricerca' = edita TR
+  tc:               TurnoClinico  // sempre passati per la coerenza del modello
+  tr:               TurnoRicerca
+  isModified:       boolean       // valore corrente diverso dall'originale (per il tipo)
+  isFerieApproved:  boolean       // ferie approvate → bg verde solido
+  isFeriePending:   boolean       // ferie in attesa → bg verde a righe diagonali
+  isRedDay:         boolean       // domenica/festivo
+  readOnly?:        boolean       // se true, niente click/editing (es. tabella ricerca)
   onChangeClinico:  (tc: TurnoClinico) => void
   onChangeRicerca:  (tr: TurnoRicerca) => void
 }
 
 function EditableCell({
-  tipo, tc, tr, isModified, isFerie, isRedDay,
+  tipo, tc, tr, isModified, isFerieApproved, isFeriePending, isRedDay, readOnly = false,
   onChangeClinico, onChangeRicerca,
 }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
@@ -172,6 +174,7 @@ function EditableCell({
   }, [editing])
 
   const startEdit = () => {
+    if (readOnly) return
     setDraft(tipo === 'clinica' ? tc : tr)
     setEditing(true)
   }
@@ -187,17 +190,20 @@ function EditableCell({
     setEditing(false)
   }
 
-  // Background della cella:
-  // - clinica: colore basato su TC (verde M, blu P, beige L, rosso REP)
-  // - ricerca: colore basato su TR (viola RM, magenta RP, mix)
-  // Ferie e festivi hanno priorità sul background neutro.
+  // Background della cella (priorità: ferie > festivo/neutro > tipo):
+  //   1. Ferie approvate → verde solido
+  //   2. Ferie pending   → verde a righe diagonali
+  //   3. CLINICA: NON colora in base a TC (su richiesta dell'utente).
+  //      Solo neutro (#fefefe) o rosa-rosso per festivi/domeniche.
+  //   4. RICERCA: colore basato su TR (CELL_COLORS), preserva il visual code
   let bg: string
-  if (isFerie) {
+  if (isFerieApproved) {
+    bg = '#d5e5d0'
+  } else if (isFeriePending) {
     bg = 'repeating-linear-gradient(-45deg, #d5e5d0 0, #d5e5d0 3px, #a8c4a0 3px, #a8c4a0 6px)'
   } else if (tipo === 'clinica') {
-    bg = CELL_COLORS[tc]?.bg ?? (isRedDay ? '#fde0e0' : '#fefefe')
+    bg = isRedDay ? '#fde0e0' : '#fefefe'
   } else {
-    // ricerca: prendi il primo TR per il colore (RM > RP arbitrariamente)
     const first = tr.split('+')[0]
     bg = CELL_COLORS[first]?.bg ?? (isRedDay ? '#fde0e0' : '#fefefe')
   }
@@ -212,12 +218,12 @@ function EditableCell({
 
   return (
     <td
-      onClick={!editing ? startEdit : undefined}
+      onClick={!editing && !readOnly ? startEdit : undefined}
       style={{
         width: 32, minWidth: 32, height: 28,
         background:    bg,
         boxShadow:     modifiedShadow,
-        cursor:        editing ? 'text' : 'pointer',
+        cursor:        readOnly ? 'default' : (editing ? 'text' : 'pointer'),
         padding:       0,
         textAlign:     'center',
         verticalAlign: 'middle',
@@ -312,6 +318,31 @@ export function ModificaTurniPage() {
     },
   })
 
+  // Ferie: usiamo la stessa logica del calendario pubblico — la cella è
+  // "in ferie" se la sua data cade dentro un range salvato nella tabella
+  // `ferie`, distinguendo ferie approvate (verde solido) da quelle in
+  // attesa (verde a righe).
+  const { data: ferieDB = [] } = useQuery<Pick<Ferie, 'medico_id' | 'data_inizio' | 'data_fine' | 'approvate'>[]>({
+    queryKey: ['ferie-ranges'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ferie').select('medico_id, data_inizio, data_fine, approvate')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+
+  const ferieRanges = useMemo(() => {
+    const approved = new Map<string, [string, string][]>()
+    const pending  = new Map<string, [string, string][]>()
+    for (const f of ferieDB) {
+      const map = f.approvate ? approved : pending
+      if (!map.has(f.medico_id)) map.set(f.medico_id, [])
+      map.get(f.medico_id)!.push([f.data_inizio, f.data_fine])
+    }
+    return { approved, pending }
+  }, [ferieDB])
+
   // Query turni paginata per mese — la query Supabase è limitata a 1000
   // righe di default; con ~25 medici × 180 giorni siamo a ~4500 righe.
   // Spezziamo in batch mensili (~750 righe/mese) sotto il cap.
@@ -389,9 +420,18 @@ export function ModificaTurniPage() {
     return teoriciByKey.get(`${medicoId}|${data}`) ?? { tc: '', tr: '' }
   }, [teoriciByKey])
 
-  const isFerieCella = useCallback((medicoId: string, data: string): boolean => {
-    return turniByKey.get(`${medicoId}|${data}`)?.is_ferie ?? false
-  }, [turniByKey])
+  // "Ferie" come nel calendario pubblico:
+  //   - is_ferie del singolo turno (legacy/manual) → conta come approvata
+  //   - oppure data dentro un range della tabella ferie
+  const ferieStatus = useCallback((medicoId: string, data: string): 'approved' | 'pending' | null => {
+    const inRange = (m: Map<string, [string, string][]>) =>
+      m.get(medicoId)?.some(([s, e]) => data >= s && data <= e) ?? false
+    if ((turniByKey.get(`${medicoId}|${data}`)?.is_ferie ?? false) || inRange(ferieRanges.approved)) {
+      return 'approved'
+    }
+    if (inRange(ferieRanges.pending)) return 'pending'
+    return null
+  }, [turniByKey, ferieRanges])
 
   // ── Update cella (delta vs DB) ─────────────────────────────────────
   // Modifica un singolo "lato" della cella (TC o TR) preservando l'altro.
@@ -476,14 +516,19 @@ export function ModificaTurniPage() {
     const isMod = tipo === 'clinica'
       ? cur.tc !== orig.tc
       : cur.tr !== orig.tr
+    const ferie = ferieStatus(medicoId, col.data)
     return (
       <EditableCell
         key={`${medicoId}|${col.data}|${tipo}`}
         tipo={tipo}
         tc={cur.tc} tr={cur.tr}
         isModified={isMod}
-        isFerie={isFerieCella(medicoId, col.data)}
+        isFerieApproved={ferie === 'approved'}
+        isFeriePending={ferie === 'pending'}
         isRedDay={col.isDomenica || col.isFestivo}
+        // Tabella RICERCA: read-only. I turni RM/RP saranno ricalcolati
+        // automaticamente da una logica futura (vedi richiesta utente).
+        readOnly={tipo === 'ricerca'}
         onChangeClinico={tcNew => updateCella(medicoId, col.data, tcNew, cur.tr)}
         onChangeRicerca={trNew => updateCella(medicoId, col.data, cur.tc, trNew)}
       />
@@ -584,8 +629,9 @@ export function ModificaTurniPage() {
             Modifica Turni
           </h2>
           <p className="text-sm text-stone-600 mt-0.5">
-            Due tabelle: <strong>clinica</strong> (M / P / L / REP) sopra, <strong>ricerca</strong> (RM / RP) sotto.
-            Clicca una cella per modificarla. Bordo azzurro = diversa dallo schema originale.
+            <strong>Clinica</strong> (M / P / L / REP): clicca una cella per modificarla.
+            <strong className="ml-2">Ricerca</strong> (RM / RP): sola lettura, ricalcolata automaticamente.
+            Bordo azzurro = diversa dallo schema originale.
           </p>
         </div>
 
