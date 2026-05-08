@@ -162,6 +162,10 @@ export function CalendarioPage() {
     return medici.find(m => m.nome.toUpperCase().trim() === myName)
   }, [user?.nome, medici])
 
+  // Sub-set delle ferie del medico associato all'utente (per il modal "self")
+  // ⚠️ DEVE stare qui sopra — prima di qualsiasi early-return (loadDone, config)
+  // — altrimenti React lancia "rendered fewer hooks than expected" → schermo bianco.
+
   // Ferie: necessarie per colorare le celle anche quando il turno non esiste
   // (es. domenica non generata nel calendario ma con ferie inserite).
   // Includiamo `approvate` per distinguere visivamente le richieste in attesa.
@@ -186,6 +190,12 @@ export function CalendarioPage() {
     }
     return { approved, pending }
   }, [ferieDB])
+
+  // Sub-set delle ferie del medico associato all'utente (per modal "Richiedi Ferie")
+  const ferieDelMioMedico = useMemo(
+    () => ferieDB.filter(f => f.medico_id === mioMedico?.id),
+    [ferieDB, mioMedico?.id],
+  )
 
   // ── Calcoli upfront (disponibili appena arrivano i dati) ─────────
   // Questi useMemo si aggiornano non appena config/medici sono pronti,
@@ -442,10 +452,8 @@ export function CalendarioPage() {
   // approvate sono read-only nel modal stesso (mode='self'), quindi
   // l'utente non può accidentalmente generare changes con 'remove' su
   // un giorno approvato — ma facciamo comunque il filtro di sicurezza.
-  const ferieDelMioMedico = useMemo(
-    () => ferieDB.filter(f => f.medico_id === mioMedico?.id),
-    [ferieDB, mioMedico?.id],
-  )
+  // ⚠️ ferieDelMioMedico è definito SOPRA con gli altri hook, prima degli
+  // early-return (regola degli hooks: stesso ordine ad ogni render).
 
   async function handleSaveSelfFerie(changes: Map<string, DayChange>) {
     if (!mioMedico) return
