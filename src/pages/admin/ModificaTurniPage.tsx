@@ -32,6 +32,7 @@ import {
 } from '../../lib/algorithm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { RiepilogoTurni } from '../../components/RiepilogoTurni'
+import { LegendaCalendario } from '../../components/LegendaCalendario'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
 import { useTurniRealtime } from '../../hooks/useTurniRealtime'
@@ -762,7 +763,7 @@ export function ModificaTurniPage() {
     )
   }
 
-  /** Coppia di tabelle (clinica + ricerca) per uno stesso periodo */
+  /** Coppia di tabelle (clinica + ricerca) + legenda per uno stesso periodo */
   function CoppiaTabelle({ cols }: { cols: ColonnaCal[] }) {
     return (
       <div className="space-y-2">
@@ -772,6 +773,8 @@ export function ModificaTurniPage() {
         <div className="overflow-auto rounded-lg border bg-white" style={{ borderColor: '#c98a96' }}>
           <TabellaPeriodo cols={cols} tipo="ricerca" />
         </div>
+        {/* Legenda — sempre visibile sotto le tabelle del mese */}
+        <LegendaCalendario variant="admin" />
       </div>
     )
   }

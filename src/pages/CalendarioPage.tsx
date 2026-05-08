@@ -1,11 +1,12 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { RefreshCw, Info, RotateCw, Plane, BarChart3, X } from 'lucide-react'
+import { RefreshCw, RotateCw, Plane, BarChart3, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { generaColonne, MESI_IT } from '../lib/algorithm'
 import { CalendarLoadingScreen } from '../components/CalendarLoadingScreen'
 import { FerieModal, expandRange, toRanges, type DayChange } from '../components/FerieModal'
 import { RiepilogoTurni } from '../components/RiepilogoTurni'
+import { LegendaCalendario } from '../components/LegendaCalendario'
 import { useAuth } from '../hooks/useAuth'
 import { useFerieRealtime } from '../hooks/useFerieRealtime'
 import { useTurniRealtime } from '../hooks/useTurniRealtime'
@@ -119,11 +120,7 @@ function stimaRighe(cfg: Configurazione, nMedici: number): number {
 // ════════════════════════════════════════════════════════════════════
 
 export function CalendarioPage() {
-  const [rigaSel,       setRigaSel]       = useState<string | null>(null)
-  // Legenda: aperta di default su desktop (≥ 640px), chiusa su mobile
-  const [mostraLegenda, setMostraLegenda] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 640px)').matches
-  )
+  const [rigaSel, setRigaSel] = useState<string | null>(null)
 
   // Rilevamento orientamento per il suggerimento landscape su mobile
   const [isPortrait, setIsPortrait] = useState(
@@ -580,11 +577,6 @@ export function CalendarioPage() {
               <RotateCw size={12} /> Orizzontale
             </span>
           )}
-          <button onClick={() => setMostraLegenda(v => !v)}
-            className="btn-secondary py-1 px-2 text-xs"
-            style={mostraLegenda ? { background: '#e0e8d8', borderColor: '#9ab488' } : {}}>
-            <Info size={13} /> Legenda
-          </button>
           {/* Riepilogo turni — visibile SOLO ai medici turnisti loggati.
               Apre un modal con il conteggio M/P/L/S/D/Totale del medico. */}
           {mioMedico && (
@@ -628,81 +620,6 @@ export function CalendarioPage() {
         </div>
       </div>
 
-      {mostraLegenda && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1.5 px-4 py-2 border-b text-xs shrink-0 items-center"
-          style={{ background: '#f0ece4', borderColor: '#d5ccb8' }}>
-
-          {/* Tipi di turno — sfondo crema #e8e3d8, testo colorato per tipo */}
-          {([ ['M','Mattina'], ['P','Pomeriggio'], ['L','Lungo (M+P)'], ['REP','Reperibilità'],
-               ['RM','Ric. mat.'], ['RP','Ric. pom.'] ] as [string,string][]).map(([t, label]) => {
-            const isRep = t === 'REP'
-            return (
-              <span key={t} className="flex items-center gap-1">
-                <span className="inline-flex items-center justify-center rounded border"
-                  style={{
-                    width: 26, height: 18,
-                    background: '#e8e3d8',
-                    borderColor: '#8a9882',
-                    color:      isRep ? '#b91c1c' : (CELL_COLORS[t]?.fg ?? '#3a3d30'),
-                    fontSize:   isRep ? 8 : (t.length > 1 ? 8 : 10),
-                    fontWeight: isRep ? 800 : 700,
-                    letterSpacing: isRep ? '-0.3px' : undefined,
-                  }}>
-                  {t}
-                </span>
-                <span style={{ color: '#5a5a4a' }}>{label}</span>
-              </span>
-            )
-          })}
-
-          {/* Separatore */}
-          <span style={{ width: 1, height: 14, background: '#c0b8a8', display: 'inline-block', margin: '0 2px' }} />
-
-          {/* Dom/Festivo */}
-          <span className="flex items-center gap-1">
-            <span className="inline-flex items-center justify-center rounded border"
-              style={{ width: 26, height: 18, background: '#fef3c7', borderColor: '#8a9882' }} />
-            <span style={{ color: '#5a5a4a' }}>Dom / Festivo</span>
-          </span>
-
-          {/* Ferie approvate */}
-          <span className="flex items-center gap-1">
-            <span className="inline-flex items-center justify-center rounded border"
-              style={{ width: 26, height: 18, background: '#d5e5d0', borderColor: '#8a9882', fontSize: 9, color: '#2e5a28', fontWeight: 700 }}>
-              F
-            </span>
-            <span style={{ color: '#5a5a4a' }}>Ferie approvate</span>
-          </span>
-
-          {/* Ferie in approvazione */}
-          <span className="flex items-center gap-1">
-            <span className="inline-flex items-center justify-center rounded border"
-              style={{
-                width: 26, height: 18,
-                background: 'repeating-linear-gradient(-45deg, #d5e5d0 0, #d5e5d0 3px, #a8c4a0 3px, #a8c4a0 6px)',
-                borderColor: '#8a9882',
-              }} />
-            <span style={{ color: '#5a5a4a' }}>In approvazione</span>
-          </span>
-
-          {/* Riga selezionata */}
-          <span className="flex items-center gap-1">
-            <span className="inline-flex items-center justify-center rounded border"
-              style={{ width: 26, height: 18, background: 'rgba(190,140,90,0.35)', borderColor: '#8a9882', fontSize: 9, color: '#5a3d1a', fontWeight: 700 }}>
-              ★
-            </span>
-            <span style={{ color: '#5a5a4a' }}>Riga selezionata</span>
-          </span>
-
-          {/* Modificato manualmente */}
-          <span className="flex items-center gap-1">
-            <span className="inline-flex items-center justify-center rounded"
-              style={{ width: 26, height: 18, background: '#e8e3d8', boxShadow: 'inset 0 0 0 2px #38bdf8, 0 0 6px 1px rgba(56,189,248,0.45)' }} />
-            <span style={{ color: '#5a5a4a' }}>Modificato</span>
-          </span>
-        </div>
-      )}
-
       <div className="overflow-auto flex-1">
         {turni.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-stone-500">
@@ -716,6 +633,10 @@ export function CalendarioPage() {
             {/* ─── TABELLA RICERCA (RM/RP) ─── */}
             <div style={{ height: 8 }} />
             {renderTabella('ricerca')}
+            {/* ─── LEGENDA — sempre visibile sotto le tabelle ─── */}
+            <div className="px-3 py-2">
+              <LegendaCalendario variant="pubblica" />
+            </div>
           </>
         )}
       </div>
