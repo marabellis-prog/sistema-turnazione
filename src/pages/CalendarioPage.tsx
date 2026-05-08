@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { RefreshCw, Info, AlertTriangle } from 'lucide-react'
+import { RefreshCw, Info, AlertTriangle, RotateCw } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { generaColonne, MESI_IT } from '../lib/algorithm'
 import type {
@@ -102,7 +102,20 @@ function StepRow({ label, value, active }: {
 
 export function CalendarioPage() {
   const [rigaSel,       setRigaSel]       = useState<string | null>(null)
-  const [mostraLegenda, setMostraLegenda] = useState(true)
+  const [mostraLegenda, setMostraLegenda] = useState(false)   // nascosta di default
+
+  // Rilevamento orientamento per il suggerimento landscape su mobile
+  const [isPortrait, setIsPortrait] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(orientation: portrait)').matches
+  )
+  const isTouch = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
+
+  useEffect(() => {
+    const mq = window.matchMedia('(orientation: portrait)')
+    const handler = (e: MediaQueryListEvent) => setIsPortrait(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
 
   // Stato fetch per mese
   const [turni,        setTurni]        = useState<Turno[]>([])
@@ -381,22 +394,33 @@ export function CalendarioPage() {
     <div className="flex flex-col h-[calc(100vh-48px)]">
       <div className="flex items-center gap-3 px-4 py-2 shrink-0 border-b"
         style={{ background: '#faf8f3', borderColor: '#d5ccb8' }}>
-        <h1 className="text-sm font-bold" style={{ color: '#2b3c24' }}>
+        <h1 className="text-sm font-bold shrink-0" style={{ color: '#2b3c24' }}>
           Calendario {config.anno_inizio}
           {config.anno_fine !== config.anno_inizio ? `–${config.anno_fine}` : ''}
         </h1>
-        <span className="text-xs" style={{ color: '#6b6b5a' }}>
+        {/* Info turni — nascosta su schermi piccoli */}
+        <span className="text-xs hidden sm:inline" style={{ color: '#6b6b5a' }}>
           {medici.length} medici · Schema {config.schema_attivo} ·{' '}
-          {turni.length.toLocaleString('it-IT')} turni · {mesi.length} mesi
+          {turni.length.toLocaleString('it-IT')} turni
         </span>
         <div className="ml-auto flex items-center gap-2">
+          {/* Suggerimento landscape — visibile solo su touch portrait */}
+          {isTouch && isPortrait && (
+            <span className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full animate-pulse"
+              style={{ background: '#e0e8d8', color: '#374f30' }}
+              title="Ruota il dispositivo in orizzontale per una visione migliore">
+              <RotateCw size={12} /> Orizzontale
+            </span>
+          )}
           <button onClick={() => setMostraLegenda(v => !v)}
-            className="btn-secondary py-1 px-2 text-xs">
+            className="btn-secondary py-1 px-2 text-xs"
+            style={mostraLegenda ? { background: '#e0e8d8', borderColor: '#9ab488' } : {}}>
             <Info size={13} /> Legenda
           </button>
           <button onClick={() => config && mesi.length > 0 && caricaTurni(config, mesi)}
             className="btn-secondary py-1 px-2 text-xs">
-            <RefreshCw size={13} /> Aggiorna
+            <RefreshCw size={13} />
+            <span className="hidden sm:inline ml-1">Aggiorna</span>
           </button>
         </div>
       </div>
@@ -479,7 +503,10 @@ export function CalendarioPage() {
                 {gruppiMese.map(g => (
                   <th key={`${g.anno}-${g.mese}`} colSpan={g.count}
                     className="cal-th text-[11px] text-white"
-                    style={{ background: '#374f30', borderColor: '#2b3c24', letterSpacing: '0.04em' }}>
+                    style={{
+                      background: '#374f30', borderColor: '#2b3c24', letterSpacing: '0.04em',
+                      position: 'sticky', top: 0, zIndex: 30,
+                    }}>
                     {MESI_IT[g.mese].toUpperCase()} {g.anno}
                   </th>
                 ))}
@@ -491,6 +518,7 @@ export function CalendarioPage() {
                     <th key={col.data}
                       className="cal-th text-[10px] !px-0 !py-0.5 w-8"
                       style={{
+                        position: 'sticky', top: 22, zIndex: 20,
                         ...(col.isDomenica || col.isFestivo ? { background: '#fde0e0', color: '#9a2020' } : {}),
                         ...(isLastOfMonth ? { borderRight: '2px solid #7a9a6a' } : {}),
                       }}

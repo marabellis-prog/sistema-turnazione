@@ -45,8 +45,9 @@
   .cal-td-nome-header {
     @apply border border-stone-300 bg-stone-100 px-2 py-1 font-bold text-stone-700;
     position: sticky;
+    top: 0;
     left: 0;
-    z-index: 20;
+    z-index: 40;   /* sopra a tutti gli header sticky */
     min-width: 90px;
   }
 
