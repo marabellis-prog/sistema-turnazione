@@ -7,11 +7,14 @@ const buildDate = new Date().toLocaleDateString('it-IT', {
   day: '2-digit', month: '2-digit', year: '2-digit',
 })
 
+// In CI (GitHub Actions) usa il commit SHA, in locale mostra 'dev'
+const buildSha = (process.env.GITHUB_SHA ?? '').slice(0, 7) || 'dev'
+
 export default defineConfig({
   base: '/sistema-turnazione/',
 
   define: {
-    __APP_VERSION__: JSON.stringify(pkg.version),
+    __APP_VERSION__: JSON.stringify(buildSha),
     __BUILD_DATE__:  JSON.stringify(buildDate),
   },
 
