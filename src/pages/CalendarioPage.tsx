@@ -137,7 +137,7 @@ export function CalendarioPage() {
   // Ferie: necessarie per colorare le celle anche quando il turno non esiste
   // (es. domenica non generata nel calendario ma con ferie inserite)
   const { data: ferieDB = [] } = useQuery<Pick<Ferie, 'medico_id' | 'data_inizio' | 'data_fine'>[]>({
-    queryKey: ['ferie'],
+    queryKey: ['ferie-ranges'],   // chiave separata: select parziale, no join medici
     queryFn: async () => {
       const { data, error } = await supabase
         .from('ferie').select('medico_id, data_inizio, data_fine')
