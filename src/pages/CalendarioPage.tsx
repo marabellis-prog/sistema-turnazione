@@ -296,15 +296,16 @@ export function CalendarioPage() {
   // gli sticky header funzionano naturalmente: la clinica è sticky finché
   // sei nella sua area; quando scrolli sotto, la ricerca prende il top.
   const renderTabella = (tipo: 'clinica' | 'ricerca') => {
-    const headerBg     = tipo === 'clinica' ? '#374f30' : '#4c1d95'
-    const headerBorder = tipo === 'clinica' ? '#2b3c24' : '#3b1d72'
+    // Clinica: verde olive scuro · Ricerca: rosso vinaccia (burgundy)
+    const headerBg     = tipo === 'clinica' ? '#374f30' : '#7a2233'
+    const headerBorder = tipo === 'clinica' ? '#2b3c24' : '#5a1a26'
     const headerLabel  = tipo === 'clinica' ? 'Clinica' : 'Ricerca'
     return (
       <table className="cal-table">
         <thead>
           <tr>
             <th className="cal-td-nome-header" rowSpan={2}
-              style={{ background: headerBg, borderColor: headerBorder }}>
+              style={{ background: headerBg, borderColor: headerBorder, color: '#fff' }}>
               Medico — {headerLabel}
             </th>
             {gruppiMese.map(g => (

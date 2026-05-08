@@ -484,8 +484,9 @@ export function ModificaTurniPage() {
 
   // ── Tabella generica (clinica o ricerca) per un set di colonne ────
   function TabellaPeriodo({ cols, tipo }: { cols: ColonnaCal[]; tipo: TipoTabella }) {
-    const headerBg = tipo === 'clinica' ? '#374f30' : '#4c1d95'
-    const headerBorder = tipo === 'clinica' ? '#2b3c24' : '#3b1d72'
+    // Clinica: verde olive scuro · Ricerca: rosso vinaccia (burgundy)
+    const headerBg     = tipo === 'clinica' ? '#374f30' : '#7a2233'
+    const headerBorder = tipo === 'clinica' ? '#2b3c24' : '#5a1a26'
     return (
       <table className="border-collapse" style={{ tableLayout: 'fixed', borderSpacing: 0 }}>
         <thead>
@@ -547,7 +548,7 @@ export function ModificaTurniPage() {
         <div className="overflow-auto rounded-lg border border-stone-300 bg-white">
           <TabellaPeriodo cols={cols} tipo="clinica" />
         </div>
-        <div className="overflow-auto rounded-lg border bg-white" style={{ borderColor: '#a78bdb' }}>
+        <div className="overflow-auto rounded-lg border bg-white" style={{ borderColor: '#c98a96' }}>
           <TabellaPeriodo cols={cols} tipo="ricerca" />
         </div>
       </div>
