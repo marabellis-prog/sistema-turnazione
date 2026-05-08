@@ -689,9 +689,14 @@ export function CalendarioPage() {
               <RiepilogoTurni
                 medici={medici}
                 colonne={colonne}
-                getTC={(mid, data) =>
-                  turniMap.get(mid)?.get(data)?.turno_clinico ?? ''
-                }
+                getCellInfo={(mid, data) => {
+                  const cell = turniMap.get(mid)?.get(data)
+                  return {
+                    tc:    cell?.turno_clinico ?? '',
+                    isSub: cell?.is_sub ?? false,
+                    isMed: cell?.is_med ?? false,
+                  }
+                }}
               />
             </div>
             {/* Legenda */}
@@ -699,8 +704,9 @@ export function CalendarioPage() {
               style={{ background: '#faf8f3' }}>
               <strong>S</strong> = sabati ·
               <strong className="ml-2">D</strong> = domeniche ·
-              <strong className="ml-2">F</strong> = festivi italiani (escluse domeniche) ·
-              REP è incluso in S/D/F ma non concorre al Totale
+              <strong className="ml-2">F</strong> = festivi (escluse domeniche) ·
+              <span className="ml-2">🔴 = sub-intensiva · 🔵 = medicina</span> ·
+              REP è incluso ma non concorre al Totale
             </div>
           </div>
         </div>

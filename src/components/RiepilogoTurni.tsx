@@ -19,11 +19,17 @@ import { useMemo } from 'react'
 import { getItalianHolidays } from './FerieModal'
 import type { Medico, ColonnaCal, TurnoClinico } from '../types'
 
+interface CellInfo {
+  tc:    TurnoClinico
+  isSub: boolean
+  isMed: boolean
+}
+
 interface Props {
   medici:          Medico[]
   colonne:         ColonnaCal[]
-  /** Restituisce il TC corrente del medico in quella data ('' se nessuno) */
-  getTC:           (medicoId: string, data: string) => TurnoClinico
+  /** Restituisce TC + flag sub/med del medico in quella data */
+  getCellInfo:     (medicoId: string, data: string) => CellInfo
   /** Se presente, filtra il riepilogo a quel solo medico */
   filtroMedicoId?: string
 }
@@ -36,10 +42,12 @@ interface RowStats {
   S:      number   // sabati lavorati (qualunque TC ≠ '')
   D:      number   // domeniche lavorate (qualunque TC ≠ '')
   F:      number   // festivi nazionali italiani lavorati (NON domeniche)
+  SUB:    number   // turni svolti in sub-intensiva (qualsiasi TC con flag is_sub)
+  MED:    number   // turni svolti in medicina       (qualsiasi TC con flag is_med)
   totale: number   // (M + P) + 2L
 }
 
-export function RiepilogoTurni({ medici, colonne, getTC, filtroMedicoId }: Props) {
+export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId }: Props) {
   const stats = useMemo<RowStats[]>(() => {
     // Pre-calcolo festività italiane per gli anni coperti dal periodo
     const annoSet = new Set<number>()
@@ -51,9 +59,9 @@ export function RiepilogoTurni({ medici, colonne, getTC, filtroMedicoId }: Props
       ? medici.filter(m => m.id === filtroMedicoId)
       : medici
     return list.map(m => {
-      let M = 0, P = 0, L = 0, S = 0, D = 0, F = 0
+      let M = 0, P = 0, L = 0, S = 0, D = 0, F = 0, SUB = 0, MED = 0
       for (const col of colonne) {
-        const tc = getTC(m.id, col.data)
+        const { tc, isSub, isMed } = getCellInfo(m.id, col.data)
         if (tc === 'M') M++
         else if (tc === 'P') P++
         else if (tc === 'L') L++
@@ -64,11 +72,14 @@ export function RiepilogoTurni({ medici, colonne, getTC, filtroMedicoId }: Props
           if (col.isDomenica) D++
           else if (festivi.has(col.data)) F++
           else if (new Date(col.data + 'T00:00:00').getDay() === 6) S++
+          // SUB/MED: contano qualsiasi turno (anche REP) con il flag attivo
+          if (isSub) SUB++
+          if (isMed) MED++
         }
       }
-      return { medico: m, M, P, L, S, D, F, totale: (M + P) + 2 * L }
+      return { medico: m, M, P, L, S, D, F, SUB, MED, totale: (M + P) + 2 * L }
     })
-  }, [medici, colonne, getTC, filtroMedicoId])
+  }, [medici, colonne, getCellInfo, filtroMedicoId])
 
   // Stili condivisi per le celle
   const headBg = '#7eb6d4'   // azzurro pastello (stesso della riga TURNI TOTALI)
@@ -98,6 +109,18 @@ export function RiepilogoTurni({ medici, colonne, getTC, filtroMedicoId }: Props
           <th style={thStyle}>S</th>
           <th style={thStyle}>D</th>
           <th style={thStyle}>F</th>
+          <th style={thStyle} title="Turni in sub-intensiva">
+            <span style={{
+              display: 'inline-block', width: 12, height: 12, borderRadius: '50%',
+              background: '#fecaca', border: '1.5px solid #dc2626',
+            }} />
+          </th>
+          <th style={thStyle} title="Turni in medicina">
+            <span style={{
+              display: 'inline-block', width: 12, height: 12, borderRadius: '50%',
+              background: '#bae6fd', border: '1.5px solid #0284c7',
+            }} />
+          </th>
           <th style={thStyle}>Totale</th>
         </tr>
       </thead>
@@ -113,6 +136,24 @@ export function RiepilogoTurni({ medici, colonne, getTC, filtroMedicoId }: Props
             <td style={tdStyle}>{s.S || ''}</td>
             <td style={tdStyle}>{s.D || ''}</td>
             <td style={tdStyle}>{s.F || ''}</td>
+            {/* Conteggio SUB — sfondo rosa pastello quando >0 per richiamare il pallino */}
+            <td style={{
+              ...tdStyle,
+              background: s.SUB > 0 ? '#fef2f2' : undefined,
+              color: s.SUB > 0 ? '#9f1239' : undefined,
+              fontWeight: s.SUB > 0 ? 700 : undefined,
+            }}>
+              {s.SUB || ''}
+            </td>
+            {/* Conteggio MED — sfondo azzurro pastello quando >0 */}
+            <td style={{
+              ...tdStyle,
+              background: s.MED > 0 ? '#f0f9ff' : undefined,
+              color: s.MED > 0 ? '#0c4a6e' : undefined,
+              fontWeight: s.MED > 0 ? 700 : undefined,
+            }}>
+              {s.MED || ''}
+            </td>
             <td style={{
               ...tdStyle, fontWeight: 800,
               background: '#f0f7fb', color: '#1f4a70',
@@ -123,7 +164,7 @@ export function RiepilogoTurni({ medici, colonne, getTC, filtroMedicoId }: Props
         ))}
         {stats.length === 0 && (
           <tr>
-            <td colSpan={8} style={{ ...tdStyle, color: '#9ca3af', fontStyle: 'italic' }}>
+            <td colSpan={10} style={{ ...tdStyle, color: '#9ca3af', fontStyle: 'italic' }}>
               Nessun medico da riepilogare.
             </td>
           </tr>

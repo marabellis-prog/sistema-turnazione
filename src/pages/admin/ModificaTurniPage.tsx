@@ -913,7 +913,15 @@ export function ModificaTurniPage() {
             <RiepilogoTurni
               medici={medici}
               colonne={colonne}
-              getTC={(mid, data) => getCella(mid, data).tc}
+              getCellInfo={(mid, data) => {
+                const cur = getCella(mid, data)
+                const dbT = turniByKey.get(`${mid}|${data}`)
+                return {
+                  tc:    cur.tc,
+                  isSub: dbT?.is_sub ?? false,
+                  isMed: dbT?.is_med ?? false,
+                }
+              }}
             />
           </div>
         </div>
