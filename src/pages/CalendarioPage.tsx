@@ -440,7 +440,7 @@ export function CalendarioPage() {
           ))}
           <span className="flex items-center gap-1">
             <span className="inline-flex items-center justify-center rounded"
-              style={{ width: 22, height: 18, background: '#f0ead8', fontSize: 10 }}>
+              style={{ width: 22, height: 18, background: '#fde0e0', fontSize: 10, color: '#9a2020' }}>
               15
             </span>
             <span style={{ color: '#5a5a4a' }}>Dom/Festivo</span>
@@ -488,7 +488,7 @@ export function CalendarioPage() {
                     <th key={col.data}
                       className="cal-th text-[10px] !px-0 !py-0.5 w-8"
                       style={{
-                        ...(col.isDomenica || col.isFestivo ? { background: '#f0ead8', color: '#6b5030' } : {}),
+                        ...(col.isDomenica || col.isFestivo ? { background: '#fde0e0', color: '#9a2020' } : {}),
                         ...(isLastOfMonth ? { borderRight: '2px solid #7a9a6a' } : {}),
                       }}
                       title={col.data}>
@@ -506,11 +506,11 @@ export function CalendarioPage() {
                   <tr key={med.id}
                     onClick={() => setRigaSel(isSel ? null : med.id)}
                     className="cursor-pointer transition-colors"
-                    style={{ background: isSel ? '#fef08a' : '' }}
+                    style={{ background: isSel ? 'rgba(253,224,71,0.8)' : '' }}
                     onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = '#eae8e0' }}
                     onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = '' }}>
                     <td className="cal-td-nome"
-                      style={{ background: isSel ? '#fde047' : undefined }}>
+                      style={{ background: isSel ? 'rgba(253,224,71,0.85)' : undefined }}>
                       {med.nome}
                     </td>
                     {colonne.map(col => {
@@ -519,29 +519,26 @@ export function CalendarioPage() {
                       const tr    = cell?.turno_ricerca  ?? ''
                       const modif = cell?.modificato_manualmente ?? false
 
-                      // Ferie: controlla sia il flag in turni che la tabella ferie
-                      // (serve per domeniche/giorni senza turno generato)
                       const isFerieDay = (cell?.is_ferie ?? false)
                         || (ferieRanges.get(med.id)?.some(([s, e]) => col.data >= s && col.data <= e) ?? false)
 
-                      // Priorità background:
-                      // 1. riga selezionata → giallo chiaro
-                      // 2. ferie            → verde (domina domenica/festivo)
-                      // 3. ha turno         → crema leggermente più scura della pagina
-                      // 4. domenica/festivo → crema calda (solo celle vuote)
-                      // 5. default          → bianco-crema neutro
-                      let bg: string
-                      if (isSel) {
-                        bg = '#fef9c3'
-                      } else if (isFerieDay) {
-                        bg = '#d5e5d0'
-                      } else if (tc || tr) {
-                        bg = '#e8e3d8'   // leggermente più scuro di #f4f1ea (sfondo pagina)
+                      // Colore base della cella (senza selezione)
+                      let bgBase: string
+                      if (isFerieDay) {
+                        bgBase = '#d5e5d0'
                       } else if (col.isDomenica || col.isFestivo) {
-                        bg = '#f0ead8'
+                        bgBase = '#fde0e0'   // rosa-rosso
+                      } else if (tc || tr) {
+                        bgBase = '#e8e3d8'
                       } else {
-                        bg = '#faf8f3'
+                        bgBase = '#faf8f3'
                       }
+
+                      // Se selezionata: overlay giallo 80% sopra il colore base
+                      // → il colore sottostante (ferie, festivo…) trasparisce al 20%
+                      const bg = isSel
+                        ? `rgba(253,224,71,0.8), ${bgBase}`
+                        : bgBase
 
                       return (
                         <td key={col.data}
