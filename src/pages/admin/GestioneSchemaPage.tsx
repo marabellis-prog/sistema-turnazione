@@ -742,114 +742,80 @@ export function GestioneSchemaPage() {
       {/* ═══ GRIGLIA + CONTATORE (+ ANTEPRIMA a destra) ═════════ */}
       {/* flex-wrap: se l'anteprima non entra (< 400px) va a capo */}
       <div className="flex-1 min-h-0 flex flex-wrap gap-2 items-start overflow-y-auto">
-      {/* Container multi-column: ogni giorno è una mini-tabella indipendente.
-          Quando l'altezza del contenuto supera maxHeight, il browser sposta
-          automaticamente i blocchi successivi nella colonna a destra (CSS
-          multi-column). break-inside: avoid sui blocchi impedisce lo split
-          di un giorno tra due colonne. */}
-      <div className="card shrink-0 p-2" style={{
-        // Lo spazio occupato dalle barre sopra e dalla legenda — calc empirico
-        maxHeight:   'calc(100vh - 230px)',
-        columnWidth: 380,
-        columnGap:   12,
-        columnFill:  'auto',
-        overflow:    'auto',
-      }}>
-        {giorni.map(giorno => {
-          const slots = griglia[giorno] ?? []
-          // Header ripetuto per ogni mini-tabella — non è sticky qui (le
-          // tabelle sono piccole, l'header è sempre vicino).
-          const renderHeaderRow = () => (
-            <thead>
-              <tr>
-                <th style={{
+      <div className="card shrink-0 overflow-auto">
+        <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
+          {/* Header colonne */}
+          <thead>
+            <tr>
+              <th style={{
+                background: '#2b3c24', color: '#fff', fontSize: 11, fontWeight: 700,
+                padding: '4px 8px', textAlign: 'left', width: 86,
+                border: '1px solid #1e40af', position: 'sticky', top: 0, zIndex: 10,
+              }}>
+                Giorno
+              </th>
+              {colonne.map(col => (
+                <th key={col} style={{
                   background: '#2b3c24', color: '#fff', fontSize: 11, fontWeight: 700,
-                  padding: '4px 8px', textAlign: 'left', width: 76,
-                  border: '1px solid #1e40af',
+                  padding: '4px 2px', textAlign: 'center', width: 46,
+                  border: '1px solid #1e40af', position: 'sticky', top: 0, zIndex: 10,
                 }}>
-                  Giorno
+                  {col}
                 </th>
-                {colonne.map(col => (
-                  <th key={col} style={{
-                    background: '#2b3c24', color: '#fff', fontSize: 11, fontWeight: 700,
-                    padding: '4px 2px', textAlign: 'center', width: 46,
-                    border: '1px solid #1e40af',
+              ))}
+              <th style={{
+                background: '#2b3c24', color: '#fca5a5', fontSize: 10, fontWeight: 700,
+                padding: '4px 2px', textAlign: 'center', width: 34,
+                border: '1px solid #1e40af', position: 'sticky', top: 0, zIndex: 10,
+              }}>
+                REP
+              </th>
+              <th style={{
+                background: '#2b3c24', color: '#fca5a5', fontSize: 10, fontWeight: 700,
+                padding: '4px 2px', textAlign: 'center', width: 34,
+                border: '1px solid #1e40af', position: 'sticky', top: 0, zIndex: 10,
+              }}
+                title="Sub-intensiva: il turno clinico di questo slot sarà etichettato (sub) nei calendari">
+                SUB
+              </th>
+              <th style={{
+                background: '#2b3c24', color: '#7ec3e8', fontSize: 10, fontWeight: 700,
+                padding: '4px 2px', textAlign: 'center', width: 34,
+                border: '1px solid #1e40af', position: 'sticky', top: 0, zIndex: 10,
+              }}
+                title="Medicina: il turno clinico di questo slot sarà etichettato (med) nei calendari">
+                MED
+              </th>
+              <th style={{
+                background: '#2b3c24', width: 22,
+                border: '1px solid #1e40af', position: 'sticky', top: 0, zIndex: 10,
+              }} />
+            </tr>
+          </thead>
+
+          <tbody>
+            {giorni.map(giorno => {
+              const slots = griglia[giorno] ?? []
+              if (slots.length === 0) return (
+                <tr key={`g${giorno}-e`}>
+                  <td style={{
+                    background: '#456b3a', color: '#fff', fontWeight: 700, fontSize: 11,
+                    padding: '3px 6px', border: '1px solid #1e40af', textAlign: 'center',
                   }}>
-                    {col}
-                  </th>
-                ))}
-                <th style={{
-                  background: '#2b3c24', color: '#fca5a5', fontSize: 10, fontWeight: 700,
-                  padding: '4px 2px', textAlign: 'center', width: 30,
-                  border: '1px solid #1e40af',
-                }}>REP</th>
-                <th style={{
-                  background: '#2b3c24', color: '#fca5a5', fontSize: 10, fontWeight: 700,
-                  padding: '4px 2px', textAlign: 'center', width: 30,
-                  border: '1px solid #1e40af',
-                }} title="Sub-intensiva">SUB</th>
-                <th style={{
-                  background: '#2b3c24', color: '#7ec3e8', fontSize: 10, fontWeight: 700,
-                  padding: '4px 2px', textAlign: 'center', width: 30,
-                  border: '1px solid #1e40af',
-                }} title="Medicina">MED</th>
-                <th style={{
-                  background: '#2b3c24', width: 22, border: '1px solid #1e40af',
-                }} />
-              </tr>
-            </thead>
-          )
+                    {GIORNI_IT[giorno].slice(0,3).toUpperCase()}
+                  </td>
+                  <td colSpan={colonne.length + 4} style={{
+                    border: '1px solid #e5e7eb', padding: '3px 8px', color: '#9ca3af',
+                  }}>
+                    <button onClick={() => aggiungiSlot(giorno)}
+                      className="flex items-center gap-1 text-olive-400 hover:text-olive-600 text-xs">
+                      <Plus size={11} /> Aggiungi slot
+                    </button>
+                  </td>
+                </tr>
+              )
 
-          // Wrapper di ogni giorno: break-inside avoid evita che il browser
-          // spezzi una mini-tabella tra due colonne. inline-block è
-          // necessario perché in column layout block-level a volte fallisce
-          // l'avoid-break.
-          const wrapperStyle: React.CSSProperties = {
-            breakInside:    'avoid',
-            pageBreakInside: 'avoid',     // legacy fallback
-            display:        'inline-block',
-            width:          '100%',
-            marginBottom:   8,
-          }
-
-          if (slots.length === 0) return (
-            <div key={`g${giorno}-e`} style={wrapperStyle}>
-              <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
-                {renderHeaderRow()}
-                <tbody>
-                  <tr>
-                    <td style={{
-                      background: '#456b3a', color: '#fff', fontWeight: 700, fontSize: 11,
-                      padding: '3px 6px', border: '1px solid #1e40af', textAlign: 'center',
-                    }}>
-                      <div>{GIORNI_IT[giorno].slice(0,3).toUpperCase()}</div>
-                      {tipoSchema === 'custom' && (
-                        <button onClick={() => rimuoviGiorno(giorno)}
-                          style={{ fontSize: 9, color: '#93c5fd', marginTop: 2 }}>
-                          ✕
-                        </button>
-                      )}
-                    </td>
-                    <td colSpan={colonne.length + 4} style={{
-                      border: '1px solid #e5e7eb', padding: '3px 8px', color: '#9ca3af',
-                    }}>
-                      <button onClick={() => aggiungiSlot(giorno)}
-                        className="flex items-center gap-1 text-olive-400 hover:text-olive-600 text-xs">
-                        <Plus size={11} /> Aggiungi slot
-                      </button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          )
-
-          return (
-            <div key={giorno} style={wrapperStyle}>
-              <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
-                {renderHeaderRow()}
-                <tbody>
-                  {slots.map((row, idx) => {
+              return slots.map((row, idx) => {
                 const isRep = row.REP
                 // Alterna bianco / grigio chiaro (ma REP prevale sempre)
                 const rowBg = isRep ? REP_BG : (idx % 2 === 0 ? '#fff' : '#f9fafb')
@@ -964,12 +930,10 @@ export function GestioneSchemaPage() {
                     </td>
                   </tr>
                 )
-              })}
-                </tbody>
-              </table>
-            </div>
-          )
-        })}
+              })
+            })}
+          </tbody>
+        </table>
       </div>
       {/* Contatore — a destra della tabella */}
       <div className="card w-40 shrink-0">

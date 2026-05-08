@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useLayoutEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Zap, AlertTriangle, CheckCircle, Info } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -21,25 +21,19 @@ const PASTEL: { bg: string; fg: string }[] = [
 const GIORNI_S = ['','Lun','Mar','Mer','Gio','Ven','Sab','Dom']
 const ANNI     = [2025, 2026, 2027, 2028]
 
-// ── Anteprima schema — celle calcolate per riempire esattamente lo spazio
+// ── Anteprima schema: una mini-tabella per ogni giorno, layout multi-column.
+// Quando l'altezza supera, i giorni successivi vanno automaticamente nella
+// colonna a destra (CSS columns + break-inside: avoid sui blocchi).
 function AntepremaSchema({
-  schemi, medici, schemaNum, containerRef,
+  schemi, medici, schemaNum,
 }: {
-  schemi:       SchemaModello[]
-  medici:       Medico[]
-  schemaNum:    number
-  containerRef: React.RefObject<HTMLDivElement>
+  schemi:    SchemaModello[]
+  medici:    Medico[]
+  schemaNum: number
 }) {
-  // ── Tutti gli hook prima di qualsiasi early return ────────────────
   const colorMap = useMemo(() => {
     const m: Record<number, { bg: string; fg: string }> = {}
     medici.forEach((med, i) => { m[med.numero_ordine] = PASTEL[i % PASTEL.length] })
-    return m
-  }, [medici])
-
-  const nomeMap = useMemo(() => {
-    const m: Record<number, string> = {}
-    medici.forEach(med => { m[med.numero_ordine] = med.nome.slice(0, 7) })
     return m
   }, [medici])
 
@@ -55,44 +49,6 @@ function AntepremaSchema({
     return pg
   }, [filtered])
 
-  // Numero totale righe (1 header + tutti gli slot)
-  const totalRows = useMemo(() => {
-    let n = 1
-    for (let g = 1; g <= 7; g++) n += perGiorno[g].length
-    return n
-  }, [perGiorno])
-
-  // Dimensioni celle calcolate dal container — si adattano allo spazio
-  const [cellDims, setCellDims] = useState({ w: 54, h: 32, dayW: 50, fontSize: 11, fontSizeSub: 8 })
-
-  useLayoutEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-
-    const compute = () => {
-      const { width, height } = el.getBoundingClientRect()
-      if (width < 10 || height < 10) return
-
-      const N_COLS = 5          // 1 giorno + 4 dati
-      const DAY_RATIO = 0.18    // colonna giorno: 18% della larghezza
-
-      const dayW  = Math.floor(width * DAY_RATIO)
-      const dataW = Math.floor((width - dayW) / 4)
-      const cellH = Math.floor(height / totalRows)
-
-      // Font scale proporzionale all'altezza cella
-      const fs    = Math.max(8,  Math.min(13, Math.floor(cellH * 0.42)))
-      const fsSub = Math.max(6,  Math.min(9,  Math.floor(cellH * 0.28)))
-
-      setCellDims({ w: dataW, h: cellH, dayW, fontSize: fs, fontSizeSub: fsSub })
-    }
-
-    compute()
-    const ro = new ResizeObserver(compute)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [containerRef, totalRows])
-
   const COLS: Array<keyof Pick<SchemaModello,
     'numero_medico_mattina'|'numero_medico_pomeriggio'|'numero_medico_rm'|'numero_medico_rp'>> =
     ['numero_medico_mattina','numero_medico_pomeriggio','numero_medico_rm','numero_medico_rp']
@@ -104,83 +60,92 @@ function AntepremaSchema({
     </div>
   )
 
-  const { w, h, dayW, fontSize, fontSizeSub } = cellDims
+  // Dimensioni fisse e leggibili — niente più adattamento proporzionale.
+  const dayW = 28, cellW = 38, cellH = 24, fontSize = 11
 
   return (
-    <table style={{ borderCollapse: 'collapse', width: '100%', height: '100%', tableLayout: 'fixed' }}>
-      <thead>
-        <tr>
-          <th style={{
-            background: '#456b3a', color: '#e0e8d8',
-            border: '1px solid #2b3c24', width: dayW, height: h,
-            fontSize: Math.max(8, fontSize - 1), fontWeight: 700,
-            textAlign: 'center', verticalAlign: 'middle', padding: '1px 2px',
+    <div style={{
+      height:      '100%',
+      columnWidth: 200,        // 2 colonne entrano in ~420px (container 460 - padding)
+      columnGap:   8,
+      columnFill:  'auto',     // riempi la prima colonna prima di passare alla seconda
+      overflow:    'auto',
+    }}>
+      {[1,2,3,4,5,6,7].map(g => {
+        const slots = perGiorno[g]
+        if (slots.length === 0) return null
+        return (
+          <div key={g} style={{
+            breakInside:    'avoid',
+            pageBreakInside:'avoid',
+            display:        'inline-block',
+            width:          '100%',
+            marginBottom:   6,
           }}>
-            GG
-          </th>
-          {LABELS.map(l => (
-            <th key={l} style={{
-              background: '#456b3a', color: '#e0e8d8',
-              border: '1px solid #2b3c24', width: w, height: h,
-              fontSize: Math.max(8, fontSize - 1), fontWeight: 700,
-              textAlign: 'center', verticalAlign: 'middle', padding: '1px 2px',
-            }}>
-              {l}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {[1,2,3,4,5,6,7].map(g => {
-          const slots = perGiorno[g]
-          if (slots.length === 0) return null
-          return slots.map((s, idx) => {
-            const isRep = s.is_reperibilita
-            const rowBg = isRep ? '#fee2e2' : idx % 2 === 0 ? '#faf8f3' : '#f0ece4'
-            return (
-              <tr key={`${g}-${idx}`} style={{ height: h, background: rowBg }}>
-                {idx === 0 && (
-                  <td rowSpan={slots.length} style={{
-                    background: '#476540', color: '#fff', fontWeight: 700, fontSize,
-                    border: '1px solid #456b3a', textAlign: 'center', verticalAlign: 'middle',
-                    padding: '1px 2px',
-                  }}>
-                    {GIORNI_S[g]}
-                  </td>
-                )}
-                {COLS.map((col, ci) => {
-                  const num = s[col] as number | null
-                  const color = num ? colorMap[num] : null
+            <table style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+              <thead>
+                <tr>
+                  <th style={{
+                    background: '#456b3a', color: '#e0e8d8',
+                    border: '1px solid #2b3c24', width: dayW, height: cellH,
+                    fontSize: 9, fontWeight: 700,
+                    textAlign: 'center', verticalAlign: 'middle', padding: 0,
+                  }}>GG</th>
+                  {LABELS.map(l => (
+                    <th key={l} style={{
+                      background: '#456b3a', color: '#e0e8d8',
+                      border: '1px solid #2b3c24', width: cellW, height: cellH,
+                      fontSize: 10, fontWeight: 700,
+                      textAlign: 'center', verticalAlign: 'middle', padding: 0,
+                    }}>{l}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {slots.map((s, idx) => {
+                  const isRep = s.is_reperibilita
+                  const rowBg = isRep ? '#fee2e2' : idx % 2 === 0 ? '#faf8f3' : '#f0ece4'
                   return (
-                    <td key={ci} style={{
-                      width: w, height: h, textAlign: 'center', verticalAlign: 'middle',
-                      border: '1px solid #d5ccb8',
-                      background: isRep ? '#fee2e2' : (num && color ? color.bg : rowBg),
-                      padding: '1px',
-                    }}>
-                      {num ? (
-                        <div style={{ lineHeight: 1.1 }}>
-                          <div style={{ fontSize, fontWeight: 700, color: color?.fg ?? '#555' }}>
-                            {num}
-                          </div>
-                          {fontSizeSub >= 7 && (
-                            <div style={{ fontSize: fontSizeSub, color: color?.fg ?? '#888', opacity: 0.7 }}>
-                              {nomeMap[num] ?? ''}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <span style={{ color: '#8a8070', fontSize: Math.max(8, fontSize - 2) }}>—</span>
+                    <tr key={idx} style={{ height: cellH, background: rowBg }}>
+                      {idx === 0 && (
+                        <td rowSpan={slots.length} style={{
+                          background: '#476540', color: '#fff', fontWeight: 700, fontSize: 10,
+                          border: '1px solid #456b3a', textAlign: 'center', verticalAlign: 'middle',
+                          padding: 0, width: dayW,
+                        }}>
+                          {GIORNI_S[g]}
+                        </td>
                       )}
-                    </td>
+                      {COLS.map((col, ci) => {
+                        const num = s[col] as number | null
+                        const color = num ? colorMap[num] : null
+                        return (
+                          <td key={ci} style={{
+                            width: cellW, height: cellH,
+                            textAlign: 'center', verticalAlign: 'middle',
+                            border: '1px solid #d5ccb8',
+                            background: isRep ? '#fee2e2' : (num && color ? color.bg : rowBg),
+                            padding: 0,
+                          }}>
+                            {num ? (
+                              <span style={{ fontSize, fontWeight: 700, color: color?.fg ?? '#555' }}>
+                                {num}
+                              </span>
+                            ) : (
+                              <span style={{ color: '#8a8070', fontSize: 9 }}>—</span>
+                            )}
+                          </td>
+                        )
+                      })}
+                    </tr>
                   )
                 })}
-              </tr>
-            )
-          })
-        })}
-      </tbody>
-    </table>
+              </tbody>
+            </table>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -517,8 +482,10 @@ export function GeneraCalendarioPage() {
       </div>
 
       {/* ═══ COLONNA DESTRA — anteprima schema ══════════════════ */}
-      {/* Colonna destra — altezza fissa = viewport - navbar - padding admin */}
-      <div className="w-80 shrink-0 min-w-0"
+      {/* Colonna destra — altezza fissa = viewport - navbar - padding admin.
+          Larghezza w-[460px] per consentire al multi-column interno di
+          mostrare 2 colonne fianco a fianco quando ci sono molti slot. */}
+      <div className="w-[460px] shrink-0 min-w-0"
         style={{ height: 'calc(100vh - 96px)', position: 'sticky', top: 0 }}>
         <div className="card flex flex-col" style={{ height: '100%' }}>
 
@@ -537,13 +504,12 @@ export function GeneraCalendarioPage() {
             </div>
           </div>
 
-          {/* Area tabella — prende tutto lo spazio rimasto, ref al genitore */}
+          {/* Area mini-tabelle: multi-colonna automatico se serve */}
           <div ref={tableRef} className="flex-1 px-3 pb-3" style={{ minHeight: 0 }}>
             <AntepremaSchema
               schemi={schemi}
               medici={medici}
               schemaNum={schemaNum}
-              containerRef={tableRef}
             />
           </div>
 
