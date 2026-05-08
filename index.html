@@ -24,12 +24,19 @@
       body { margin: 0; background: #f9fafb; }
     </style>
 
-    <!-- Rimuove Service Worker residui da versioni precedenti -->
+    <!-- 1. Rimuove Service Worker residui da versioni precedenti -->
+    <!-- 2. Pulisce il query param _r=... usato per bypassare la cache HTTP -->
     <script>
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(function (regs) {
           regs.forEach(function (r) { r.unregister() })
         })
+      }
+      if (window.location.search.indexOf('_r=') !== -1 && window.history && window.history.replaceState) {
+        var u = new URL(window.location.href)
+        u.searchParams.delete('_r')
+        var clean = u.pathname + (u.search || '') + u.hash
+        window.history.replaceState(null, '', clean)
       }
     </script>
   </head>

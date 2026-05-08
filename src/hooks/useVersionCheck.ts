@@ -93,16 +93,30 @@ export function useVersionCheck() {
     }
   }, [])
 
-  // ── Ricarica pulita ───────────────────────────────────────────
-  const applyUpdate = useCallback(() => {
-    const go = () => { location.href = location.href }
+  // ── Ricarica pulita: hard reload con cache busting ────────────
+  const applyUpdate = useCallback(async () => {
+    // 1. Svuota i cache del Service Worker (se presenti)
     if (window.caches) {
-      caches.keys()
-        .then(keys => Promise.all(keys.map(k => caches.delete(k))))
-        .then(go).catch(go)
-    } else {
-      go()
+      try {
+        const keys = await caches.keys()
+        await Promise.all(keys.map(k => caches.delete(k)))
+      } catch (_) { /* ignora */ }
     }
+
+    // 2. Unregistra eventuali SW residui da versioni precedenti
+    if ('serviceWorker' in navigator) {
+      try {
+        const regs = await navigator.serviceWorker.getRegistrations()
+        await Promise.all(regs.map(r => r.unregister()))
+      } catch (_) { /* ignora */ }
+    }
+
+    // 3. Hard reload con query param univoco —
+    // bypassa la cache HTTP del browser E quella del CDN GitHub Pages
+    // (un URL diverso = nuova entry di cache → fetch fresco dall'origin)
+    const url = new URL(window.location.href)
+    url.searchParams.set('_r', String(Date.now()))
+    window.location.replace(url.toString())
   }, [])
 
   return { updateAvailable, applyUpdate }
