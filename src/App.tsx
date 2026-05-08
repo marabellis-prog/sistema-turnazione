@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-route
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { NavBar }            from './components/NavBar'
 import { ProtectedRoute }    from './components/ProtectedRoute'
+import { CalendarLoadingScreen } from './components/CalendarLoadingScreen'
 import { LoginPage }         from './pages/LoginPage'
 import { AuthCallbackPage }  from './pages/AuthCallbackPage'
 import { CalendarioPage }    from './pages/CalendarioPage'
@@ -60,7 +61,8 @@ function AppRoutes() {
         <Route
           path="/calendario"
           element={
-            <ProtectedRoute user={user} loading={loading}>
+            <ProtectedRoute user={user} loading={loading}
+              loadingComponent={<CalendarLoadingScreen lCfg lMed />}>
               <CalendarioPage />
             </ProtectedRoute>
           }

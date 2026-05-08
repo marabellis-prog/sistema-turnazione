@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { RefreshCw, Info, AlertTriangle, RotateCw } from 'lucide-react'
+import { RefreshCw, Info, RotateCw } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { generaColonne, MESI_IT } from '../lib/algorithm'
+import { CalendarLoadingScreen } from '../components/CalendarLoadingScreen'
 import type {
   Medico, Turno, Ferie, Configurazione, ColonnaCal,
   TurnoClinico, TurnoRicerca,
@@ -55,6 +56,15 @@ function LabelTurno({ tc, tr }: { tc: string; tr: string }) {
 
 interface ChunkMese { anno: number; mese: number; di: string; df: string }
 
+// Lettere giorni settimana — indice = .getDay() (0=Dom, 1=Lun, ..., 6=Sab)
+const DAY_LETTERS = ['D', 'L', 'M', 'M', 'G', 'V', 'S']
+
+/** Lettera del giorno della settimana da una data ISO (YYYY-MM-DD), in fuso locale */
+function dayLetter(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return DAY_LETTERS[new Date(y, m - 1, d).getDay()]
+}
+
 function calcolaMesi(cfg: Configurazione): ChunkMese[] {
   const mesi: ChunkMese[] = []
   let anno = cfg.anno_inizio, mese = cfg.mese_inizio
@@ -71,31 +81,6 @@ function stimaRighe(cfg: Configurazione, nMedici: number): number {
   const start = new Date(cfg.anno_inizio, cfg.mese_inizio - 1, 1)
   const end   = new Date(cfg.anno_fine, cfg.mese_fine, 0)
   return (Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1) * nMedici
-}
-
-// ── Riga indicatore step (sempre visibile, placeholder finché non ha valore)
-function StepRow({ label, value, active }: {
-  label: string; value?: string; active?: boolean
-}) {
-  const done = !!value
-  return (
-    <div className="flex items-center gap-2 text-sm">
-      <span className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition-all"
-        style={{
-          background: done ? '#d5e5d0' : active ? '#e8f0e0' : '#ede8e0',
-          color:      done ? '#2b4a28' : active ? '#476540' : '#6b6b5a',
-        }}>
-        {done ? '✓' : active ? '⟳' : '○'}
-      </span>
-      <span className="flex-1" style={{ color: done ? '#3a3d30' : active ? '#3a3d30' : '#6b6b5a' }}>
-        {label}
-      </span>
-      <span className="text-xs font-semibold transition-all"
-        style={{ color: done ? '#476540' : '#7a7a6a', minWidth: 60, textAlign: 'right' }}>
-        {value ?? '—'}
-      </span>
-    </div>
-  )
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -268,122 +253,19 @@ export function CalendarioPage() {
   // Renderizzata da subito (frame 1), struttura COMPLETA con placeholder.
   // I valori si riempiono mano a mano che arrivano i dati — mai blank.
   if (!loadDone) {
-    const pct = stima > 0 && loadedRows > 0
-      ? Math.min(Math.round((loadedRows / stima) * 100), 99)
-      : meseCorrente > 0 && mesi.length > 0
-        ? Math.min(Math.round((meseCorrente / mesi.length) * 85), 85)
-        : lCfg ? 2 : lMed ? 6 : mesi.length > 0 ? 10 : 4
-
-    // Placeholder barre mesi: mostra 6 slot se non sappiamo ancora
-    const nBarre = mesi.length > 0 ? mesi.length : 6
-
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-48px)]"
-        style={{ background: '#f4f1ea' }}>
-        <div className="rounded-2xl p-7 shadow-lg"
-          style={{ background: '#faf8f3', border: '1px solid #d5ccb8', width: 360 }}>
-
-          {/* Titolo fisso — sempre visibile dal frame 1 */}
-          <div className="flex items-center gap-3 mb-5">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 shrink-0"
-              style={{ borderColor: '#476540' }} />
-            <div>
-              <h2 className="font-bold text-sm leading-tight" style={{ color: '#2b3c24' }}>
-                Caricamento calendario
-              </h2>
-              <p className="text-xs mt-0.5" style={{ color: '#6b6b5a' }}>
-                Il sistema sta recuperando i dati dal server
-              </p>
-            </div>
-          </div>
-
-          {/* 4 step SEMPRE visibili dal primo frame — valori arrivano man mano */}
-          <div className="space-y-2.5 mb-5">
-            <StepRow
-              label="Configurazione periodo"
-              value={config
-                ? `${MESI_IT[config.mese_inizio]} → ${MESI_IT[config.mese_fine]} ${config.anno_fine}`
-                : undefined}
-              active={lCfg}
-            />
-            <StepRow
-              label="Medici attivi"
-              value={medici.length > 0 ? `${medici.length} turnisti` : undefined}
-              active={lMed}
-            />
-            <StepRow
-              label="Piano di caricamento"
-              value={mesi.length > 0
-                ? `${mesi.length} mesi · ~${stima.toLocaleString('it-IT')} turni`
-                : undefined}
-              active={!!config && !!medici.length && mesi.length === 0}
-            />
-            <StepRow
-              label={meseCorrente > 0
-                ? `${meseName}  (${meseCorrente} di ${mesi.length})`
-                : 'Scaricamento turni'}
-              value={loadedRows > 0
-                ? `${loadedRows.toLocaleString('it-IT')} / ~${stima > 0 ? stima.toLocaleString('it-IT') : '…'}`
-                : undefined}
-              active={meseCorrente > 0}
-            />
-          </div>
-
-          {/* Barra progresso — sempre visibile, parte da 2% */}
-          <div className="space-y-2">
-            <div className="flex justify-between text-xs" style={{ color: '#7a7a6a' }}>
-              <span>
-                {loadedRows > 0
-                  ? `${loadedRows.toLocaleString('it-IT')} turni caricati`
-                  : stima > 0
-                    ? `~${stima.toLocaleString('it-IT')} turni da caricare`
-                    : 'Connessione al server...'}
-              </span>
-              <span style={{ color: '#476540', fontWeight: 700 }}>{pct}%</span>
-            </div>
-            <div className="h-3 rounded-full overflow-hidden" style={{ background: '#e0e8d8' }}>
-              <div className="h-full rounded-full transition-all duration-400"
-                style={{
-                  width: `${Math.max(pct, 2)}%`,   // minimo 2% così non è vuota
-                  background: 'linear-gradient(90deg, #374f30 0%, #6b8254 100%)',
-                }} />
-            </div>
-
-            {/* Barre mesi — 6 placeholder da subito, poi si riempiono */}
-            <div className="flex gap-1 mt-1">
-              {Array.from({ length: nBarre }).map((_, i) => {
-                const m = mesi[i]
-                const fatto   = i < meseCorrente - 1
-                const inCorso = i === meseCorrente - 1
-                const label   = m ? MESI_IT[m.mese].slice(0, 3) : '···'
-                return (
-                  <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
-                    <div className="w-full h-1.5 rounded-full transition-all duration-300"
-                      style={{
-                        background: fatto ? '#476540' : inCorso ? '#9ab488' : '#d5ccb8',
-                      }} />
-                    <span style={{
-                      fontSize: 8,
-                      color: fatto ? '#476540' : inCorso ? '#476540' : '#6b6b5a',
-                      fontWeight: inCorso ? 700 : 400,
-                    }}>
-                      {label}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {loadError && (
-            <div className="flex items-start gap-2 p-3 rounded-lg text-xs mt-4"
-              style={{ background: '#fde8e8', color: '#7a2020', border: '1px solid #f0c0c0' }}>
-              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-              <span>{loadError}</span>
-            </div>
-          )}
-        </div>
-      </div>
+      <CalendarLoadingScreen
+        config={config}
+        medici={medici}
+        mesi={mesi}
+        stima={stima}
+        meseCorrente={meseCorrente}
+        meseName={meseName}
+        loadedRows={loadedRows}
+        loadError={loadError}
+        lCfg={lCfg}
+        lMed={lMed}
+      />
     )
   }
 
@@ -531,16 +413,35 @@ export function CalendarioPage() {
               <tr>
                 {colonne.map(col => {
                   const isLastOfMonth = lastDaysOfMonth.has(col.data)
+                  const letter = dayLetter(col.data)
+                  // 'D' (domenica) sempre rosso; festivi anche
+                  const isRedDay = letter === 'D' || col.isFestivo
                   return (
                     <th key={col.data}
-                      className="cal-th text-[10px] !px-0 !py-0.5 w-8"
+                      className="cal-th !px-0 !py-0.5 w-8"
                       style={{
                         position: 'sticky', top: 22, zIndex: 20,
-                        ...(col.isDomenica || col.isFestivo ? { background: '#fde0e0', color: '#9a2020' } : {}),
+                        ...(isRedDay ? { background: '#fde0e0' } : {}),
                         ...(isLastOfMonth ? { borderRight: '2px solid #7a9a6a' } : {}),
                       }}
                       title={col.data}>
-                      {col.giorno}
+                      <div style={{ lineHeight: 1, padding: '1px 0' }}>
+                        <div style={{
+                          fontSize:   10,
+                          fontWeight: 700,
+                          color:      isRedDay ? '#9a2020' : undefined,
+                        }}>
+                          {col.giorno}
+                        </div>
+                        <div style={{
+                          fontSize:   8,
+                          fontWeight: 600,
+                          marginTop:  1,
+                          color:      isRedDay ? '#9a2020' : '#9ca3af',
+                        }}>
+                          {letter}
+                        </div>
+                      </div>
                     </th>
                   )
                 })}
