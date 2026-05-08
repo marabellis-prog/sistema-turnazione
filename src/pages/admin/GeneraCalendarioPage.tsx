@@ -325,7 +325,18 @@ export function GeneraCalendarioPage() {
 
       setStato('ok')
       setMessaggio(`✓ Generati ${turniGenerati.length} turni · Schema ${schemaNum} · ${periodoLabel}`)
+      // Invalida tutte le cache che ora sono stale dopo la rigenerazione:
+      // - 'turni'         → CalendarioPage fetch manuale (key invalidata
+      //                     come segnale, in pratica la pagina pubblica
+      //                     ricarica al cambio tab/refresh)
+      // - 'turni-modifica' → ModificaTurniPage useQuery (anche la
+      //                     dipendenza da config.updated_at lo coprirebbe,
+      //                     questo è cintura+bretelle)
+      // - 'configurazione' (già fatto sopra)
+      // - 'ferie-ranges'  → eventuali ferie/turni linkate
       qc.invalidateQueries({ queryKey: ['turni'] })
+      qc.invalidateQueries({ queryKey: ['turni-modifica'] })
+      qc.invalidateQueries({ queryKey: ['ferie-ranges'] })
       clearAll()  // ✓ Azzera avvisi pendenti: calendario appena rigenerato
 
     } catch (e: unknown) {

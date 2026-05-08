@@ -299,22 +299,30 @@ export function ModificaTurniPage() {
     },
   })
 
+  // Condivide la queryKey ['schemi_modello'] con GestioneSchemaPage e
+  // GeneraCalendarioPage: così quando lo schema viene salvato altrove,
+  // l'invalidateQueries fatto da quella pagina raggiunge anche noi.
   const { data: schemi = [] } = useQuery<SchemaModello[]>({
-    queryKey: ['schemi-modello-modifica'],
+    queryKey: ['schemi_modello'],
     queryFn: async () => {
       const { data, error } = await supabase.from('schemi_modello').select('*')
+        .order('giorno_settimana').order('slot')
       if (error) throw error
       return data ?? []
     },
   })
 
   // Query turni paginata per mese — la query Supabase è limitata a 1000
-  // righe di default; con ~25 medici × 180 giorni siamo a ~4500 righe e
-  // l'ultimo periodo verrebbe troncato. Spezzando in batch mensili
-  // (~750 righe/mese) restiamo sotto al cap per ogni richiesta.
+  // righe di default; con ~25 medici × 180 giorni siamo a ~4500 righe.
+  // Spezziamo in batch mensili (~750 righe/mese) sotto il cap.
+  //
+  // ATTENZIONE: la queryKey deve dipendere da config.updated_at (NON da
+  // config.id, che resta fisso). Così, dopo "Genera Calendario" che fa
+  // bumping di updated_at, la key cambia → useQuery rifetcha automatico
+  // → niente più sovrapposizione tra turni vecchi e nuovi.
   const { data: turni = [], refetch: refetchTurni, isLoading: lTur } =
     useQuery<Turno[]>({
-      queryKey: ['turni-modifica', config?.id],
+      queryKey: ['turni-modifica', config?.updated_at],
       enabled:  !!config,
       queryFn: async () => {
         if (!config) return []
