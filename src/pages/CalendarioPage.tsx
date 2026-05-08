@@ -402,59 +402,66 @@ export function CalendarioPage() {
       </div>
 
       {mostraLegenda && (
-        <div className="flex flex-wrap gap-2 px-4 py-2 border-b text-xs shrink-0 items-center"
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5 px-4 py-2 border-b text-xs shrink-0 items-center"
           style={{ background: '#f0ece4', borderColor: '#d5ccb8' }}>
-          {(['M','P','L','REP'] as const).map(t => (
-            <span key={t} className="flex items-center gap-1">
-              <span className="inline-flex items-center justify-center rounded"
-                style={{
-                  width: 22, height: 18,
-                  background: CELL_COLORS[t].bg,
-                  color: CELL_COLORS[t].fg,
-                  fontSize: t === 'REP' ? 8 : 10,
-                  fontWeight: 700,
-                  letterSpacing: t === 'REP' ? '-0.3px' : undefined,
-                }}>
-                {t}
+
+          {/* Tipi di turno — sfondo crema #e8e3d8, testo colorato per tipo */}
+          {([ ['M','Mattina'], ['P','Pomeriggio'], ['L','Lungo (M+P)'], ['REP','Reperibilità'],
+               ['RM','Ric. mat.'], ['RP','Ric. pom.'] ] as [string,string][]).map(([t, label]) => {
+            const isRep = t === 'REP'
+            return (
+              <span key={t} className="flex items-center gap-1">
+                <span className="inline-flex items-center justify-center rounded border"
+                  style={{
+                    width: 26, height: 18,
+                    background: '#e8e3d8',
+                    borderColor: '#8a9882',
+                    color:      isRep ? '#b91c1c' : (CELL_COLORS[t]?.fg ?? '#3a3d30'),
+                    fontSize:   isRep ? 8 : (t.length > 1 ? 8 : 10),
+                    fontWeight: isRep ? 800 : 700,
+                    letterSpacing: isRep ? '-0.3px' : undefined,
+                  }}>
+                  {t}
+                </span>
+                <span style={{ color: '#5a5a4a' }}>{label}</span>
               </span>
-              <span style={{ color: '#5a5a4a' }}>
-                {t === 'M' ? 'Mattina' : t === 'P' ? 'Pomeriggio' : t === 'L' ? 'Lungo' : 'Reperibilità'}
-              </span>
-            </span>
-          ))}
-          {(['RM','RP'] as const).map(t => (
-            <span key={t} className="flex items-center gap-1">
-              <span className="inline-flex items-center justify-center rounded"
-                style={{
-                  width: 22, height: 18,
-                  background: CELL_COLORS[t].bg,
-                  color: CELL_COLORS[t].fg,
-                  fontSize: 8, fontWeight: 600,
-                }}>
-                {t}
-              </span>
-              <span style={{ color: '#5a5a4a' }}>
-                {t === 'RM' ? 'Ric. mat.' : 'Ric. pom.'}
-              </span>
-            </span>
-          ))}
+            )
+          })}
+
+          {/* Separatore */}
+          <span style={{ width: 1, height: 14, background: '#c0b8a8', display: 'inline-block', margin: '0 2px' }} />
+
+          {/* Dom/Festivo */}
           <span className="flex items-center gap-1">
-            <span className="inline-flex items-center justify-center rounded"
-              style={{ width: 22, height: 18, background: '#fde0e0', fontSize: 10, color: '#9a2020' }}>
-              15
+            <span className="inline-flex items-center justify-center rounded border"
+              style={{ width: 26, height: 18, background: '#fde0e0', borderColor: '#8a9882', fontSize: 10, color: '#9a2020', fontWeight: 700 }}>
+              7
             </span>
-            <span style={{ color: '#5a5a4a' }}>Dom/Festivo</span>
+            <span style={{ color: '#5a5a4a' }}>Dom / Festivo</span>
           </span>
+
+          {/* Ferie */}
           <span className="flex items-center gap-1">
-            <span className="inline-flex items-center justify-center rounded"
-              style={{ width: 22, height: 18, background: '#d5e5d0', fontSize: 10, color: '#2e5a28' }}>
-              🌿
+            <span className="inline-flex items-center justify-center rounded border"
+              style={{ width: 26, height: 18, background: '#d5e5d0', borderColor: '#8a9882', fontSize: 9, color: '#2e5a28', fontWeight: 700 }}>
+              F
             </span>
             <span style={{ color: '#5a5a4a' }}>Ferie</span>
           </span>
+
+          {/* Riga selezionata */}
+          <span className="flex items-center gap-1">
+            <span className="inline-flex items-center justify-center rounded border"
+              style={{ width: 26, height: 18, background: '#fef9c3', borderColor: '#8a9882', fontSize: 9, color: '#78630a', fontWeight: 700 }}>
+              ★
+            </span>
+            <span style={{ color: '#5a5a4a' }}>Riga selezionata</span>
+          </span>
+
+          {/* Modificato manualmente */}
           <span className="flex items-center gap-1">
             <span className="inline-flex items-center justify-center rounded"
-              style={{ width: 22, height: 18, background: '#faf8f3', outline: '2px solid #9ab488', fontSize: 9, color: '#476540' }}>
+              style={{ width: 26, height: 18, background: '#e8e3d8', outline: '2px solid #9ab488', outlineOffset: '-2px', fontSize: 9, color: '#476540', fontWeight: 700 }}>
               ✎
             </span>
             <span style={{ color: '#5a5a4a' }}>Modificato</span>
