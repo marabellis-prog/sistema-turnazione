@@ -87,14 +87,19 @@ function getItalianHolidays(year: number): Set<string> {
     iso(year, 12, 26),  // Santo Stefano
   ]
 
-  const easter = getEaster(year)
-  const easterMon = new Date(easter)
-  easterMon.setDate(easterMon.getDate() + 1)
+  // ⚠️ Usa getter locali (getFullYear/Month/Date) — NON toISOString():
+  // toISOString() converte in UTC e con il fuso italiano (UTC+1/+2)
+  // mezzanotte locale diventa il giorno prima in UTC → data sbagliata.
+  const localIso = (d: Date) =>
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+
+  const easter    = getEaster(year)
+  const easterMon = new Date(easter.getFullYear(), easter.getMonth(), easter.getDate() + 1)
 
   return new Set([
     ...fixed,
-    easter.toISOString().split('T')[0],       // Pasqua
-    easterMon.toISOString().split('T')[0],    // Lunedì dell'Angelo
+    localIso(easter),       // Pasqua
+    localIso(easterMon),    // Lunedì dell'Angelo
   ])
 }
 
