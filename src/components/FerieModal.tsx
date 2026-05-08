@@ -85,7 +85,7 @@ function getEaster(year: number): Date {
   return new Date(year, month - 1, day)
 }
 
-function getItalianHolidays(year: number): Set<string> {
+export function getItalianHolidays(year: number): Set<string> {
   const pad = (n: number) => String(n).padStart(2, '0')
   const iso  = (y: number, m: number, d: number) => `${y}-${pad(m)}-${pad(d)}`
 

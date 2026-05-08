@@ -712,7 +712,7 @@ export function CalendarioPage() {
         />
       )}
 
-      {/* ── Modal Riepilogo turni — solo per il medico loggato ── */}
+      {/* ── Modal Riepilogo turni — completo (tutti i medici) ── */}
       {showRiepilogo && mioMedico && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -720,7 +720,7 @@ export function CalendarioPage() {
           onClick={() => setShowRiepilogo(false)}>
           <div
             className="relative bg-white rounded-2xl shadow-2xl flex flex-col"
-            style={{ maxWidth: 'min(94vw, 720px)', maxHeight: '92vh' }}
+            style={{ maxWidth: 'min(96vw, 820px)', maxHeight: '92vh' }}
             onClick={e => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-center justify-between px-6 pt-4 pb-3 border-b border-stone-200 shrink-0">
@@ -728,7 +728,7 @@ export function CalendarioPage() {
                 <BarChart3 size={20} style={{ color: '#5d9bc1' }} />
                 <div>
                   <h3 className="font-bold text-stone-800 text-base">
-                    Riepilogo turni — {mioMedico.nome}
+                    Riepilogo turni
                   </h3>
                   <p className="text-xs text-stone-500 mt-0.5">
                     Conteggio nel periodo {MESI_IT[config.mese_inizio]} {config.anno_inizio}
@@ -742,7 +742,7 @@ export function CalendarioPage() {
                 <X size={18} />
               </button>
             </div>
-            {/* Tabella */}
+            {/* Tabella — tutti i medici */}
             <div className="overflow-auto p-4">
               <RiepilogoTurni
                 medici={medici}
@@ -750,15 +750,15 @@ export function CalendarioPage() {
                 getTC={(mid, data) =>
                   turniMap.get(mid)?.get(data)?.turno_clinico ?? ''
                 }
-                filtroMedicoId={mioMedico.id}
               />
             </div>
             {/* Legenda */}
             <div className="px-6 py-2.5 border-t border-stone-200 text-xs text-stone-500"
               style={{ background: '#faf8f3' }}>
-              <strong>S</strong> = sabati lavorati ·
-              <strong className="ml-2">D</strong> = domeniche lavorate ·
-              REP non concorre alla copertura, ma sabati/domeniche lo includono
+              <strong>S</strong> = sabati ·
+              <strong className="ml-2">D</strong> = domeniche ·
+              <strong className="ml-2">F</strong> = festivi italiani (escluse domeniche) ·
+              REP è incluso in S/D/F ma non concorre al Totale
             </div>
           </div>
         </div>

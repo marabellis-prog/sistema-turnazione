@@ -16,6 +16,7 @@
  */
 
 import { useMemo } from 'react'
+import { getItalianHolidays } from './FerieModal'
 import type { Medico, ColonnaCal, TurnoClinico } from '../types'
 
 interface Props {
@@ -34,33 +35,38 @@ interface RowStats {
   L:      number
   S:      number   // sabati lavorati (qualunque TC ≠ '')
   D:      number   // domeniche lavorate (qualunque TC ≠ '')
+  F:      number   // festivi nazionali italiani lavorati (NON domeniche)
   totale: number   // (M + P) + 2L
 }
 
 export function RiepilogoTurni({ medici, colonne, getTC, filtroMedicoId }: Props) {
   const stats = useMemo<RowStats[]>(() => {
+    // Pre-calcolo festività italiane per gli anni coperti dal periodo
+    const annoSet = new Set<number>()
+    colonne.forEach(c => annoSet.add(c.anno))
+    const festivi = new Set<string>()
+    for (const a of annoSet) for (const d of getItalianHolidays(a)) festivi.add(d)
+
     const list = filtroMedicoId
       ? medici.filter(m => m.id === filtroMedicoId)
       : medici
     return list.map(m => {
-      let M = 0, P = 0, L = 0, S = 0, D = 0
+      let M = 0, P = 0, L = 0, S = 0, D = 0, F = 0
       for (const col of colonne) {
         const tc = getTC(m.id, col.data)
         if (tc === 'M') M++
         else if (tc === 'P') P++
         else if (tc === 'L') L++
-        // Sabati/Domeniche lavorati: il medico aveva un TC qualsiasi (incluso REP).
-        // REP è considerato "essere di turno" anche se non copre la giornata operativa.
+        // S/D/F: il medico aveva un TC qualsiasi (incluso REP).
+        // REP = "essere di turno" anche se non copre la giornata operativa.
+        // Priorità: domenica > festivo > sabato. Mai doppio conteggio.
         if (tc) {
-          if (col.isDomenica) {
-            D++
-          } else {
-            const dow = new Date(col.data + 'T00:00:00').getDay()  // 6 = sabato
-            if (dow === 6) S++
-          }
+          if (col.isDomenica) D++
+          else if (festivi.has(col.data)) F++
+          else if (new Date(col.data + 'T00:00:00').getDay() === 6) S++
         }
       }
-      return { medico: m, M, P, L, S, D, totale: (M + P) + 2 * L }
+      return { medico: m, M, P, L, S, D, F, totale: (M + P) + 2 * L }
     })
   }, [medici, colonne, getTC, filtroMedicoId])
 
@@ -91,6 +97,7 @@ export function RiepilogoTurni({ medici, colonne, getTC, filtroMedicoId }: Props
           <th style={thStyle}>L</th>
           <th style={thStyle}>S</th>
           <th style={thStyle}>D</th>
+          <th style={thStyle}>F</th>
           <th style={thStyle}>Totale</th>
         </tr>
       </thead>
@@ -105,6 +112,7 @@ export function RiepilogoTurni({ medici, colonne, getTC, filtroMedicoId }: Props
             <td style={tdStyle}>{s.L || ''}</td>
             <td style={tdStyle}>{s.S || ''}</td>
             <td style={tdStyle}>{s.D || ''}</td>
+            <td style={tdStyle}>{s.F || ''}</td>
             <td style={{
               ...tdStyle, fontWeight: 800,
               background: '#f0f7fb', color: '#1f4a70',
@@ -115,7 +123,7 @@ export function RiepilogoTurni({ medici, colonne, getTC, filtroMedicoId }: Props
         ))}
         {stats.length === 0 && (
           <tr>
-            <td colSpan={7} style={{ ...tdStyle, color: '#9ca3af', fontStyle: 'italic' }}>
+            <td colSpan={8} style={{ ...tdStyle, color: '#9ca3af', fontStyle: 'italic' }}>
               Nessun medico da riepilogare.
             </td>
           </tr>
