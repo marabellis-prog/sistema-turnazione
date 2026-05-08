@@ -8,6 +8,7 @@ import { FerieModal, expandRange, toRanges, type DayChange } from '../components
 import { RiepilogoTurni } from '../components/RiepilogoTurni'
 import { useAuth } from '../hooks/useAuth'
 import { useFerieRealtime } from '../hooks/useFerieRealtime'
+import { useTurniRealtime } from '../hooks/useTurniRealtime'
 import type {
   Medico, Turno, Ferie, Configurazione, ColonnaCal,
   TurnoClinico, TurnoRicerca,
@@ -138,6 +139,12 @@ export function CalendarioPage() {
   // istantaneamente i pattern verde solido / verde a righe.
   useFerieRealtime()
 
+  // Realtime sui turni: quando l'admin modifica un turno o rigenera tutto,
+  // il calendario pubblico si rifresca da solo. NON usiamo useQuery per i
+  // turni qui (carichiamo per mese con state manuale), quindi passiamo
+  // un onChange che richiama caricaTurni. Il debounce 500ms del hook
+  // assicura che N upsert consecutivi facciano un solo refetch.
+
   // ── Query dati statici ───────────────────────────────────────────
   const { data: config, isLoading: lCfg } = useQuery<Configurazione | null>({
     queryKey: ['configurazione'],
@@ -265,6 +272,17 @@ export function CalendarioPage() {
       caricaTurni(config, mesi)
     }
   }, [config, medici.length, mesi, caricaTurni])
+
+  // Realtime turni: l'admin modifica un turno → tutti i client (medici
+  // collegati al calendario, altri admin) ricevono l'evento e ricaricano.
+  // useRef interno al hook → onChange è "stabile" anche se cambiano
+  // config/mesi tra un render e l'altro: viene presa la versione più
+  // recente al firing. Debounce 500ms evita N fetch su upsert massivo.
+  useTurniRealtime({
+    onChange: () => {
+      if (config && mesi.length > 0) caricaTurni(config, mesi)
+    },
+  })
 
   // ── Mappa display ────────────────────────────────────────────────
   const turniMap = useMemo(() => {

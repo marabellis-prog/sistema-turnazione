@@ -34,6 +34,7 @@ import { ConfirmModal } from '../../components/ConfirmModal'
 import { RiepilogoTurni } from '../../components/RiepilogoTurni'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
+import { useTurniRealtime } from '../../hooks/useTurniRealtime'
 import type {
   Configurazione, Medico, SchemaModello, Turno, Ferie,
   TurnoClinico, TurnoRicerca, ColonnaCal,
@@ -276,6 +277,11 @@ export function ModificaTurniPage() {
   // Realtime sulle ferie: nuove richieste / approvazioni / cancellazioni
   // si riflettono istantaneamente sul pattern verde delle celle.
   useFerieRealtime()
+
+  // Realtime sui turni: se un altro admin sta modificando in parallelo
+  // (o un Genera Calendario sta rigenerando tutto), questa tab si aggiorna
+  // automaticamente. Usa la queryKey ['turni-modifica'] di questa pagina.
+  useTurniRealtime()
 
   const [view,        setView]        = useState<'lineare' | 'mensile'>('mensile')
   const [navPending,  setNavPending]  = useState<string | null>(null)
