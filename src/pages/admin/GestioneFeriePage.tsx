@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Calendar, Check, X, Plus, Clock } from 'lucide-react'
+import { Calendar, Check, X, Plus, Clock, Wifi, WifiOff } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
@@ -29,6 +29,7 @@ export function GestioneFeriePage() {
   const [modalMedico,    setModalMedico]    = useState<Medico | null>(null)
   const [insertMedicoId, setInsertMedicoId] = useState('')
   const [errore,         setErrore]         = useState('')
+  const [realtimeOn,     setRealtimeOn]     = useState(false)
 
   // ── Query ────────────────────────────────────────────────────
   const { data: medici = [] } = useQuery<Medico[]>({
@@ -48,6 +49,32 @@ export function GestioneFeriePage() {
       return data ?? []
     },
   })
+
+  // ── Realtime sulle ferie ─────────────────────────────────────
+  // Sottoscrive ai cambiamenti sulla tabella `ferie` via Supabase Realtime
+  // (WebSocket). Quando un medico richiede ferie dalla pagina pubblica,
+  // o un'altra sessione admin approva/elimina, l'invalidate fa ricomparire
+  // la riga aggiornata in pochi millisecondi senza bisogno di ricaricare.
+  //
+  // Setup richiesto su Supabase (UNA VOLTA, da SQL Editor):
+  //   ALTER PUBLICATION supabase_realtime ADD TABLE public.ferie;
+  // Senza questa riga il listener si registra ma non riceve eventi.
+  useEffect(() => {
+    const channel = supabase
+      .channel('ferie-watch')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'ferie' },
+        () => {
+          qc.invalidateQueries({ queryKey: ['ferie'] })
+          qc.invalidateQueries({ queryKey: ['ferie-ranges'] })
+        }
+      )
+      .subscribe(status => {
+        // 'SUBSCRIBED' = canale attivo e in ascolto
+        setRealtimeOn(status === 'SUBSCRIBED')
+      })
+    return () => { supabase.removeChannel(channel) }
+  }, [qc])
 
   // ── Ferie raggruppate per medico ─────────────────────────────
   const ferieByMedico = useMemo(() => {
@@ -184,14 +211,31 @@ export function GestioneFeriePage() {
         />
       )}
 
-      <div>
-        <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
-          <Calendar size={20} style={{ color: '#476540' }} />
-          Gestione Ferie
-        </h2>
-        <p className="text-sm text-stone-600 mt-0.5">
-          Inserisci e approva le ferie dei medici.
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
+            <Calendar size={20} style={{ color: '#476540' }} />
+            Gestione Ferie
+          </h2>
+          <p className="text-sm text-stone-600 mt-0.5">
+            Inserisci e approva le ferie dei medici.
+          </p>
+        </div>
+        {/* Indicatore real-time: verde quando il canale è SUBSCRIBED, grigio
+            altrimenti. Le richieste dei medici dalla pagina pubblica entrano
+            in lista in pochi ms senza ricaricare la pagina. */}
+        <span
+          className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full shrink-0"
+          style={realtimeOn
+            ? { background: '#d5e5d0', color: '#1f4a18', border: '1px solid #9ab488' }
+            : { background: '#f3f4f6', color: '#6b7280', border: '1px solid #d1d5db' }}
+          title={realtimeOn
+            ? 'In ascolto: le richieste dei medici compaiono qui in tempo reale'
+            : 'Realtime non attivo — clicca refresh manuale'}>
+          {realtimeOn
+            ? <><Wifi size={12} /> Live</>
+            : <><WifiOff size={12} /> Offline</>}
+        </span>
       </div>
 
       {errore && (
