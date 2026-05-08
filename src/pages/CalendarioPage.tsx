@@ -409,15 +409,15 @@ export function CalendarioPage() {
                   className="cal-th !px-0 !py-0.5 w-8"
                   style={{
                     position: 'sticky', top: 22, zIndex: 20,
-                    ...(isRedDay ? { background: '#fde0e0' } : {}),
+                    ...(isRedDay ? { background: '#fef3c7' } : {}),
                     ...(isLastOfMonth ? { borderRight: '2px solid #1a1a1a' } : {}),
                   }}
                   title={col.data}>
                   <div style={{ lineHeight: 1, padding: '1px 0' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: isRedDay ? '#9a2020' : undefined }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: isRedDay ? '#854d0e' : undefined }}>
                       {col.giorno}
                     </div>
-                    <div style={{ fontSize: 8, fontWeight: 600, marginTop: 1, color: isRedDay ? '#9a2020' : '#9ca3af' }}>
+                    <div style={{ fontSize: 8, fontWeight: 600, marginTop: 1, color: isRedDay ? '#854d0e' : '#9ca3af' }}>
                       {letter}
                     </div>
                   </div>
@@ -434,11 +434,11 @@ export function CalendarioPage() {
               <tr key={med.id}
                 onClick={() => setRigaSel(isSel ? null : med.id)}
                 className="cursor-pointer transition-colors"
-                style={{ background: isSel ? 'rgba(253,224,71,0.8)' : '' }}
+                style={{ background: isSel ? 'rgba(190,140,90,0.35)' : '' }}
                 onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = '#eae8e0' }}
                 onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = '' }}>
                 <td className="cal-td-nome"
-                  style={{ background: isSel ? 'rgba(253,224,71,0.85)' : undefined }}>
+                  style={{ background: isSel ? 'rgba(190,140,90,0.4)' : undefined }}>
                   {med.nome}
                 </td>
                 {colonne.map(col => {
@@ -469,15 +469,16 @@ export function CalendarioPage() {
                   } else if (tipo === 'clinica' && isFeriePending) {
                     bgBase = 'repeating-linear-gradient(-45deg, #d5e5d0 0, #d5e5d0 3px, #a8c4a0 3px, #a8c4a0 6px)'
                   } else if (col.isDomenica || col.isFestivo) {
-                    bgBase = '#fde0e0'
+                    bgBase = '#fef3c7'
                   } else if (tipo === 'ricerca' && valKey && CELL_COLORS[valKey]) {
                     bgBase = CELL_COLORS[valKey].bg
                   } else {
                     bgBase = '#faf8f3'  // neutro (anche per clinica con M/P/L/REP)
                   }
 
-                  const YELLOW_OVL = 'linear-gradient(rgba(253,224,71,0.8),rgba(253,224,71,0.8))'
-                  const bg = isSel ? `${YELLOW_OVL}, ${bgBase}` : bgBase
+                  // Overlay marrone chiaro semi-trasparente per la riga selezionata
+                  const SEL_OVL = 'linear-gradient(rgba(190,140,90,0.35),rgba(190,140,90,0.35))'
+                  const bg = isSel ? `${SEL_OVL}, ${bgBase}` : bgBase
 
                   return (
                     <td key={col.data}
@@ -660,7 +661,7 @@ export function CalendarioPage() {
           {/* Dom/Festivo */}
           <span className="flex items-center gap-1">
             <span className="inline-flex items-center justify-center rounded border"
-              style={{ width: 26, height: 18, background: '#fde0e0', borderColor: '#8a9882' }} />
+              style={{ width: 26, height: 18, background: '#fef3c7', borderColor: '#8a9882' }} />
             <span style={{ color: '#5a5a4a' }}>Dom / Festivo</span>
           </span>
 
@@ -687,7 +688,7 @@ export function CalendarioPage() {
           {/* Riga selezionata */}
           <span className="flex items-center gap-1">
             <span className="inline-flex items-center justify-center rounded border"
-              style={{ width: 26, height: 18, background: '#fef9c3', borderColor: '#8a9882', fontSize: 9, color: '#78630a', fontWeight: 700 }}>
+              style={{ width: 26, height: 18, background: 'rgba(190,140,90,0.35)', borderColor: '#8a9882', fontSize: 9, color: '#5a3d1a', fontWeight: 700 }}>
               ★
             </span>
             <span style={{ color: '#5a5a4a' }}>Riga selezionata</span>

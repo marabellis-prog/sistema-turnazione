@@ -232,10 +232,10 @@ function EditableCell({
   } else if (tipo === 'clinica' && isFeriePending) {
     bg = 'repeating-linear-gradient(-45deg, #d5e5d0 0, #d5e5d0 3px, #a8c4a0 3px, #a8c4a0 6px)'
   } else if (tipo === 'clinica') {
-    bg = isRedDay ? '#fde0e0' : '#fefefe'
+    bg = isRedDay ? '#fef3c7' : '#fefefe'
   } else {
     const first = tr.split('+')[0]
-    bg = CELL_COLORS[first]?.bg ?? (isRedDay ? '#fde0e0' : '#fefefe')
+    bg = CELL_COLORS[first]?.bg ?? (isRedDay ? '#fef3c7' : '#fefefe')
   }
 
   const modifiedShadow = isModified
@@ -692,8 +692,8 @@ export function ModificaTurniPage() {
               return (
                 <th key={c.data} style={{
                   width: 32, minWidth: 32,
-                  background: isRedDay ? '#fde0e0' : '#f0ece4',
-                  color: isRedDay ? '#7a2020' : '#3a3d30',
+                  background: isRedDay ? '#fef3c7' : '#f0ece4',
+                  color: isRedDay ? '#854d0e' : '#3a3d30',
                   fontSize: 10, padding: '2px 0',
                   border: '1px solid #c0b8a8',
                   lineHeight: 1.1,
