@@ -190,16 +190,16 @@ function EditableCell({
     setEditing(false)
   }
 
-  // Background della cella (priorità: ferie > festivo/neutro > tipo):
-  //   1. Ferie approvate → verde solido
-  //   2. Ferie pending   → verde a righe diagonali
-  //   3. CLINICA: NON colora in base a TC (su richiesta dell'utente).
-  //      Solo neutro (#fefefe) o rosa-rosso per festivi/domeniche.
-  //   4. RICERCA: colore basato su TR (CELL_COLORS), preserva il visual code
+  // Background della cella (priorità: ferie [solo clinica] > festivo > tipo):
+  //   - Ferie compaiono SOLO nella tabella Clinica per non duplicare il
+  //     visual signal (il medico non lavora quel giorno, segnalo una volta).
+  //   - CLINICA: NON colora in base a TC. Solo neutro (#fefefe) o rosa per
+  //     festivi/domeniche.
+  //   - RICERCA: colore basato su TR (CELL_COLORS), preserva il visual code.
   let bg: string
-  if (isFerieApproved) {
+  if (tipo === 'clinica' && isFerieApproved) {
     bg = '#d5e5d0'
-  } else if (isFeriePending) {
+  } else if (tipo === 'clinica' && isFeriePending) {
     bg = 'repeating-linear-gradient(-45deg, #d5e5d0 0, #d5e5d0 3px, #a8c4a0 3px, #a8c4a0 6px)'
   } else if (tipo === 'clinica') {
     bg = isRedDay ? '#fde0e0' : '#fefefe'
@@ -538,7 +538,7 @@ export function ModificaTurniPage() {
   // ── Tabella generica (clinica o ricerca) per un set di colonne ────
   function TabellaPeriodo({ cols, tipo }: { cols: ColonnaCal[]; tipo: TipoTabella }) {
     // Clinica: verde olive scuro · Ricerca: rosso vinaccia (burgundy)
-    const headerBg     = tipo === 'clinica' ? '#374f30' : '#7a2233'
+    const headerBg     = tipo === 'clinica' ? '#456b3a' : '#7a2233'
     const headerBorder = tipo === 'clinica' ? '#2b3c24' : '#5a1a26'
     return (
       <table className="border-collapse" style={{ tableLayout: 'fixed', borderSpacing: 0 }}>
@@ -670,7 +670,7 @@ export function ModificaTurniPage() {
             disabled={!hasUnsaved || saving}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             style={{ background: hasUnsaved && !saving ? '#476540' : '#9ca3af' }}
-            onMouseEnter={e => { if (hasUnsaved && !saving) (e.currentTarget as HTMLElement).style.background = '#374f30' }}
+            onMouseEnter={e => { if (hasUnsaved && !saving) (e.currentTarget as HTMLElement).style.background = '#456b3a' }}
             onMouseLeave={e => { if (hasUnsaved && !saving) (e.currentTarget as HTMLElement).style.background = '#476540' }}>
             <Save size={13} />
             {saving ? 'Salvataggio…' : 'Salva'}

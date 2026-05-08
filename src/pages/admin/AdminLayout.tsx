@@ -44,7 +44,7 @@ export function AdminLayout() {
               onClick={() => handleNav(to)}
               className="flex items-center gap-2 px-4 py-2.5 text-sm transition-colors text-left w-full"
               style={isActive
-                ? { background: '#374f30', color: '#fff' }
+                ? { background: '#456b3a', color: '#fff' }
                 : { color: '#9ab488' }}
               onMouseEnter={e => { if (!isActive) e.currentTarget.style.color = '#fff' }}
               onMouseLeave={e => { if (!isActive) e.currentTarget.style.color = '#9ab488' }}

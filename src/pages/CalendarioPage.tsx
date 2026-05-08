@@ -324,7 +324,7 @@ export function CalendarioPage() {
   // sei nella sua area; quando scrolli sotto, la ricerca prende il top.
   const renderTabella = (tipo: 'clinica' | 'ricerca') => {
     // Clinica: verde olive scuro · Ricerca: rosso vinaccia (burgundy)
-    const headerBg     = tipo === 'clinica' ? '#374f30' : '#7a2233'
+    const headerBg     = tipo === 'clinica' ? '#456b3a' : '#7a2233'
     const headerBorder = tipo === 'clinica' ? '#2b3c24' : '#5a1a26'
     const headerLabel  = tipo === 'clinica' ? 'Clinica' : 'Ricerca'
     return (
@@ -357,7 +357,7 @@ export function CalendarioPage() {
                   style={{
                     position: 'sticky', top: 22, zIndex: 20,
                     ...(isRedDay ? { background: '#fde0e0' } : {}),
-                    ...(isLastOfMonth ? { borderRight: '2px solid #7a9a6a' } : {}),
+                    ...(isLastOfMonth ? { borderRight: '2px solid #1a1a1a' } : {}),
                   }}
                   title={col.data}>
                   <div style={{ lineHeight: 1, padding: '1px 0' }}>
@@ -407,10 +407,13 @@ export function CalendarioPage() {
                   // nella label, sfondo sempre neutro.
                   const valKey = tipo === 'ricerca' ? tr.split('+')[0] : ''
 
+                  // Le ferie compaiono SOLO nella tabella Clinica (per non
+                  // duplicare l'informazione: il medico non lavora del tutto
+                  // quel giorno, evidenziarlo una sola volta basta).
                   let bgBase: string
-                  if (isFerieApproved) {
+                  if (tipo === 'clinica' && isFerieApproved) {
                     bgBase = '#d5e5d0'
-                  } else if (isFeriePending) {
+                  } else if (tipo === 'clinica' && isFeriePending) {
                     bgBase = 'repeating-linear-gradient(-45deg, #d5e5d0 0, #d5e5d0 3px, #a8c4a0 3px, #a8c4a0 6px)'
                   } else if (col.isDomenica || col.isFestivo) {
                     bgBase = '#fde0e0'
@@ -429,7 +432,7 @@ export function CalendarioPage() {
                       style={{
                         background:  bg,
                         borderColor: '#8a9882',
-                        ...(lastDaysOfMonth.has(col.data) ? { borderRight: '2px solid #7a9a6a' } : {}),
+                        ...(lastDaysOfMonth.has(col.data) ? { borderRight: '2px solid #1a1a1a' } : {}),
                       }}
                       title={cell?.note || undefined}>
                       {tipo === 'clinica'
@@ -518,7 +521,7 @@ export function CalendarioPage() {
           {/* Suggerimento landscape — visibile solo su touch portrait */}
           {isTouch && isPortrait && (
             <span className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full animate-pulse"
-              style={{ background: '#e0e8d8', color: '#374f30' }}
+              style={{ background: '#e0e8d8', color: '#456b3a' }}
               title="Ruota il dispositivo in orizzontale per una visione migliore">
               <RotateCw size={12} /> Orizzontale
             </span>
@@ -535,14 +538,22 @@ export function CalendarioPage() {
             <button onClick={() => setShowRichiediFerie(true)}
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-white shadow-sm transition-colors"
               style={{ background: '#476540' }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#374f30'}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#456b3a'}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#476540'}
               title={`Richiedi ferie per ${mioMedico.nome}`}>
               <Plane size={13} />
               <span className="hidden sm:inline">Richiedi ferie</span>
             </button>
           )}
-          <button onClick={() => config && mesi.length > 0 && caricaTurni(config, mesi)}
+          <button onClick={() => {
+              // Aggiorna esplicitamente TUTTO: turni (fetch manuale) + ferie + medici.
+              // Senza l'invalidate sui ferie-ranges, una richiesta cambiata di stato
+              // (es. respinta o approvata dall'admin) non si rifletterebbe nei colori.
+              if (config && mesi.length > 0) caricaTurni(config, mesi)
+              qc.invalidateQueries({ queryKey: ['ferie-ranges'] })
+              qc.invalidateQueries({ queryKey: ['medici'] })
+              qc.invalidateQueries({ queryKey: ['configurazione'] })
+            }}
             className="btn-secondary py-1 px-2 text-xs">
             <RefreshCw size={13} />
             <span className="hidden sm:inline ml-1">Aggiorna</span>

@@ -186,7 +186,7 @@ function MonthBlock({ year, month, approved, pending, changes, onDayClick, mode 
 
   return (
     <div style={{ minWidth: 190 }}>
-      <p className="text-xs font-bold text-center mb-2" style={{ color: '#374f30' }}>
+      <p className="text-xs font-bold text-center mb-2" style={{ color: '#456b3a' }}>
         {MESI_IT[month + 1].toUpperCase()} {year}
       </p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 26px)', gap: 2 }}>

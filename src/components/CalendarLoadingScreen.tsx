@@ -129,7 +129,7 @@ export function CalendarLoadingScreen({
             <div className="h-full rounded-full transition-all duration-400"
               style={{
                 width: `${Math.max(pct, 2)}%`,
-                background: 'linear-gradient(90deg, #374f30 0%, #6b8254 100%)',
+                background: 'linear-gradient(90deg, #456b3a 0%, #6b8254 100%)',
               }} />
           </div>
 

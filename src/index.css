@@ -133,7 +133,7 @@
     background-color: #476540;
     color: #fff;
   }
-  .btn-primary:hover:not(:disabled) { background-color: #374f30; }
+  .btn-primary:hover:not(:disabled) { background-color: #456b3a; }
   .btn-primary:focus { --tw-ring-color: #9ab488; }
 
   .btn-secondary {

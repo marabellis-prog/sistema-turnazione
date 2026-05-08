@@ -79,7 +79,7 @@ export function ConfirmModal({
                 : 'focus:ring-olive-300'
               }`}
             style={!danger ? { background: '#476540' } : undefined}
-            onMouseEnter={e => { if (!danger) (e.currentTarget as HTMLElement).style.background = '#374f30' }}
+            onMouseEnter={e => { if (!danger) (e.currentTarget as HTMLElement).style.background = '#456b3a' }}
             onMouseLeave={e => { if (!danger) (e.currentTarget as HTMLElement).style.background = '#476540' }}
             autoFocus
           >

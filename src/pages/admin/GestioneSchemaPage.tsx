@@ -540,7 +540,7 @@ export function GestioneSchemaPage() {
             <button key={n} onClick={() => { setSchemaNum(n); setGriglia({}) }}
               className="w-6 h-6 rounded text-xs font-bold border transition-colors"
               style={schemaNum === n
-                ? { background: '#476540', color: '#fff', borderColor: '#374f30' }
+                ? { background: '#476540', color: '#fff', borderColor: '#456b3a' }
                 : { background: '#faf8f3', color: '#3a3d30', borderColor: '#c0b8a8' }}>
               {n}
             </button>
@@ -564,7 +564,7 @@ export function GestioneSchemaPage() {
             }}
               className="px-2 py-0.5 rounded text-xs font-medium border transition-colors"
               style={tipoSchema === t
-                ? { background: '#476540', color: '#fff', borderColor: '#374f30' }
+                ? { background: '#476540', color: '#fff', borderColor: '#456b3a' }
                 : { background: '#faf8f3', color: '#3a3d30', borderColor: '#c0b8a8' }}>
               {t === 'weekly' ? '7 giorni' : 'Personalizzato'}
             </button>
@@ -664,8 +664,8 @@ export function GestioneSchemaPage() {
           className="ml-auto flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1
                      rounded-full border transition-colors shrink-0"
           style={showHelp
-            ? { background: '#374f30', color: '#fff', borderColor: '#2b3c24' }
-            : { background: '#e0e8d8', color: '#374f30', borderColor: '#9ab488' }}
+            ? { background: '#456b3a', color: '#fff', borderColor: '#2b3c24' }
+            : { background: '#e0e8d8', color: '#456b3a', borderColor: '#9ab488' }}
           onMouseEnter={e => {
             if (!showHelp) e.currentTarget.style.background = '#c8d8b8'
           }}
@@ -684,7 +684,7 @@ export function GestioneSchemaPage() {
 
             {/* ── Colonna sinistra: comandi ── */}
             <div>
-              <p className="font-bold uppercase tracking-wide mb-1.5" style={{ color: '#374f30', fontSize: 10 }}>
+              <p className="font-bold uppercase tracking-wide mb-1.5" style={{ color: '#456b3a', fontSize: 10 }}>
                 Comandi
               </p>
               <ul className="space-y-1 leading-snug">
@@ -699,7 +699,7 @@ export function GestioneSchemaPage() {
 
             {/* ── Colonna destra: logica rotazione ── */}
             <div>
-              <p className="font-bold uppercase tracking-wide mb-1.5" style={{ color: '#374f30', fontSize: 10 }}>
+              <p className="font-bold uppercase tracking-wide mb-1.5" style={{ color: '#456b3a', fontSize: 10 }}>
                 Logica della rotazione
               </p>
               <ul className="space-y-1 leading-snug">
@@ -759,7 +759,7 @@ export function GestioneSchemaPage() {
               if (slots.length === 0) return (
                 <tr key={`g${giorno}-e`}>
                   <td style={{
-                    background: '#374f30', color: '#fff', fontWeight: 700, fontSize: 11,
+                    background: '#456b3a', color: '#fff', fontWeight: 700, fontSize: 11,
                     padding: '3px 6px', border: '1px solid #1e40af', textAlign: 'center',
                   }}>
                     {GIORNI_IT[giorno].slice(0,3).toUpperCase()}
@@ -785,7 +785,7 @@ export function GestioneSchemaPage() {
                     {/* Cella giorno (rowspan) */}
                     {idx === 0 && (
                       <td rowSpan={slots.length} style={{
-                        background: '#374f30', color: '#fff', fontWeight: 700, fontSize: 11,
+                        background: '#456b3a', color: '#fff', fontWeight: 700, fontSize: 11,
                         padding: '3px 5px', border: '1px solid #1e40af',
                         textAlign: 'center', verticalAlign: 'middle',
                       }}>
@@ -909,7 +909,7 @@ export function GestioneSchemaPage() {
                 </span>
                 {/* Contatore */}
                 <span className="text-sm font-bold shrink-0 min-w-[20px] text-right"
-                  style={{ color: count > 0 ? '#374f30' : '#7a7a6a' }}>
+                  style={{ color: count > 0 ? '#456b3a' : '#7a7a6a' }}>
                   {count}
                 </span>
               </div>

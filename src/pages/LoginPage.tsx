@@ -17,7 +17,7 @@ export function LoginPage({ user, onSignIn }: Props) {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4"
-      style={{ background: 'linear-gradient(135deg, #1c2818 0%, #374f30 50%, #577a45 100%)' }}>
+      style={{ background: 'linear-gradient(135deg, #1c2818 0%, #456b3a 50%, #577a45 100%)' }}>
 
       <div className="rounded-2xl shadow-2xl p-8 w-full max-w-sm text-center"
         style={{ background: '#faf8f3' }}>

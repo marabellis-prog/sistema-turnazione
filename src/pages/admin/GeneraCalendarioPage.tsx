@@ -111,7 +111,7 @@ function AntepremaSchema({
       <thead>
         <tr>
           <th style={{
-            background: '#374f30', color: '#e0e8d8',
+            background: '#456b3a', color: '#e0e8d8',
             border: '1px solid #2b3c24', width: dayW, height: h,
             fontSize: Math.max(8, fontSize - 1), fontWeight: 700,
             textAlign: 'center', verticalAlign: 'middle', padding: '1px 2px',
@@ -120,7 +120,7 @@ function AntepremaSchema({
           </th>
           {LABELS.map(l => (
             <th key={l} style={{
-              background: '#374f30', color: '#e0e8d8',
+              background: '#456b3a', color: '#e0e8d8',
               border: '1px solid #2b3c24', width: w, height: h,
               fontSize: Math.max(8, fontSize - 1), fontWeight: 700,
               textAlign: 'center', verticalAlign: 'middle', padding: '1px 2px',
@@ -142,7 +142,7 @@ function AntepremaSchema({
                 {idx === 0 && (
                   <td rowSpan={slots.length} style={{
                     background: '#476540', color: '#fff', fontWeight: 700, fontSize,
-                    border: '1px solid #374f30', textAlign: 'center', verticalAlign: 'middle',
+                    border: '1px solid #456b3a', textAlign: 'center', verticalAlign: 'middle',
                     padding: '1px 2px',
                   }}>
                     {GIORNI_S[g]}
@@ -375,7 +375,7 @@ export function GeneraCalendarioPage() {
                   ${schemaNum === n
                     ? 'text-white shadow'
                     : 'text-stone-600 border-stone-300 hover:bg-cream-200'}`}
-                style={schemaNum === n ? { background: '#476540', borderColor: '#374f30' } : { background: '#faf8f3' }}
+                style={schemaNum === n ? { background: '#476540', borderColor: '#456b3a' } : { background: '#faf8f3' }}
               >
                 Schema {n}
                 <span className="block text-[10px] font-normal opacity-70 mt-0.5">
