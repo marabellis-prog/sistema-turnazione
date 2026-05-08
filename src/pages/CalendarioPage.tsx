@@ -534,10 +534,12 @@ export function CalendarioPage() {
                         bgBase = '#faf8f3'
                       }
 
-                      // Se selezionata: overlay giallo 80% sopra il colore base
-                      // → il colore sottostante (ferie, festivo…) trasparisce al 20%
+                      // Se selezionata: overlay giallo 80% sopra il colore base.
+                      // Si usa linear-gradient() perché rgba() da sola non è
+                      // un background-image valido in un multi-layer background.
+                      const YELLOW_OVL = 'linear-gradient(rgba(253,224,71,0.8),rgba(253,224,71,0.8))'
                       const bg = isSel
-                        ? `rgba(253,224,71,0.8), ${bgBase}`
+                        ? `${YELLOW_OVL}, ${bgBase}`
                         : bgBase
 
                       return (
