@@ -37,6 +37,31 @@ jobs:
           publish_dir: ./dist
           force_orphan: true
 
+      # Attende che la nuova versione sia effettivamente servita da GitHub Pages.
+      # peaceiris/actions-gh-pages fa solo commit su gh-pages: GitHub poi ha
+      # bisogno di tempo per propagare via Fastly (30-90s). Senza questa attesa
+      # il badge arriverebbe prima che il sito sia raggiungibile.
+      - name: Attende propagazione GitHub Pages
+        run: |
+          EXPECTED_SHA="${GITHUB_SHA:0:7}"
+          URL="https://marabellis-prog.github.io/sistema-turnazione/"
+          echo "Aspetto che '$EXPECTED_SHA' compaia sul sito..."
+          for i in $(seq 1 60); do
+            # Aggiunge query param univoco per bypassare cache CDN ad ogni tentativo
+            BODY=$(curl -fsS "$URL?_check=$(date +%s%N)" 2>/dev/null || true)
+            JS_URL=$(echo "$BODY" | grep -oE '/sistema-turnazione/assets/index-[A-Za-z0-9_-]+\.js' | head -1)
+            if [ -n "$JS_URL" ]; then
+              JS_BODY=$(curl -fsS "https://marabellis-prog.github.io$JS_URL?_check=$(date +%s%N)" 2>/dev/null || true)
+              if echo "$JS_BODY" | grep -q "$EXPECTED_SHA"; then
+                echo "✓ Versione $EXPECTED_SHA live dopo $((i*5))s"
+                exit 0
+              fi
+            fi
+            echo "  tentativo $i/60 — non ancora pronto, attendo 5s…"
+            sleep 5
+          done
+          echo "⚠ Timeout: notifico comunque (deploy potrebbe essere live a breve)"
+
       # Aggiorna app_version in Supabase → tutti i client connessi ricevono
       # la notifica real-time via WebSocket e mostrano il badge "Aggiornamento disponibile".
       # Richiede il secret SUPABASE_SERVICE_ROLE_KEY (Settings → Secrets → Actions).
