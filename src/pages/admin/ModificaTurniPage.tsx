@@ -175,12 +175,18 @@ interface EditableCellProps {
   readOnly?:        boolean       // se true, niente click/editing (es. tabella ricerca)
   onChangeClinico:  (tc: TurnoClinico) => void
   onChangeRicerca:  (tr: TurnoRicerca) => void
+  /**
+   * Chiamato quando il paste contiene multiple righe/colonne (tab o newline)
+   * — tipico paste da Excel. Il parent propaga il contenuto alle celle
+   * partendo da questa come ancora (in basso e a destra).
+   */
+  onPasteRange?:    (text: string) => void
 }
 
 function EditableCell({
   tipo, tc, tr, isModified, isFerieApproved, isFeriePending, isRedDay,
   isSub = false, isMed = false, readOnly = false,
-  onChangeClinico, onChangeRicerca,
+  onChangeClinico, onChangeRicerca, onPasteRange,
 }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   const [draft,   setDraft]   = useState('')
@@ -260,6 +266,18 @@ function EditableCell({
           onKeyDown={e => {
             if (e.key === 'Enter') { e.preventDefault(); commit() }
             else if (e.key === 'Escape') { e.preventDefault(); setEditing(false) }
+          }}
+          onPaste={e => {
+            // Paste da Excel: stringa TSV (tab fra colonne, \n fra righe).
+            // Se il testo contiene tab o newline → propaga al parent che
+            // riempirà le celle a destra e in basso. Altrimenti default
+            // (incolla nell'input come testo singolo).
+            const text = e.clipboardData.getData('text')
+            if (onPasteRange && (text.includes('\t') || text.includes('\n'))) {
+              e.preventDefault()
+              onPasteRange(text)
+              setEditing(false)
+            }
           }}
           maxLength={6}
           spellCheck={false}
@@ -482,6 +500,56 @@ export function ModificaTurniPage() {
     })
   }, [turniByKey])
 
+  // ── Paste multi-cella (clinica) ───────────────────────────────────
+  // Riceve il testo TSV dal clipboard di Excel + ancora (medico/data della
+  // cella in cui l'utente ha cliccato e fatto Ctrl+V). Itera righe×colonne
+  // e applica a ciascuna cella di destinazione il TC parsato dal testo,
+  // preservando il TR esistente. Le celle che escono dal range (medico
+  // mancante o data oltre il periodo) vengono ignorate.
+  const handlePasteRange = useCallback((medicoIdAncora: string, dataAncora: string, text: string) => {
+    const startRowIdx = medici.findIndex(m => m.id === medicoIdAncora)
+    const startColIdx = colonne.findIndex(c => c.data === dataAncora)
+    if (startRowIdx < 0 || startColIdx < 0) return
+
+    // Excel termina spesso il blocco con un newline finale → lo trimmo.
+    // \r\n di Windows → \n.
+    const rows = text.replace(/\r/g, '').replace(/\n+$/, '').split('\n')
+    let appliedCount = 0
+
+    setModifiche(prev => {
+      const next = new Map(prev)
+      for (let r = 0; r < rows.length; r++) {
+        const targetMedico = medici[startRowIdx + r]
+        if (!targetMedico) break
+        const cells = rows[r].split('\t')
+        for (let c = 0; c < cells.length; c++) {
+          const targetCol = colonne[startColIdx + c]
+          if (!targetCol) break
+          const newTc = parseClinico(cells[c])
+          // Preserva TR esistente leggendo dalla mappa correntemente
+          // visualizzata (modifica locale se presente, altrimenti DB).
+          const key = `${targetMedico.id}|${targetCol.data}`
+          const dbT = turniByKey.get(key)
+          const localCur = next.get(key)
+          const curTr = (localCur?.tr ?? dbT?.turno_ricerca ?? '') as TurnoRicerca
+          const dbTc = dbT?.turno_clinico ?? ''
+          const dbTr = dbT?.turno_ricerca ?? ''
+          // Se il nuovo (newTc, curTr) coincide col DB, rimuovi delta
+          if (newTc === dbTc && curTr === dbTr) {
+            next.delete(key)
+          } else {
+            next.set(key, { tc: newTc, tr: curTr })
+          }
+          appliedCount++
+        }
+      }
+      return next
+    })
+
+    setMsg(`✓ Incollati ${appliedCount} turn${appliedCount === 1 ? 'o' : 'i'} dal clipboard`)
+    setTimeout(() => setMsg(null), 3000)
+  }, [medici, colonne, turniByKey])
+
   // ── Totale turni clinici coperti in un giorno ─────────────────────
   // Conteggio per la riga "TURNI TOTALI" sotto la tabella clinica:
   //   M = 1, P = 1, L = 2 (= M+P), REP = 0, vuoto = 0
@@ -587,6 +655,11 @@ export function ModificaTurniPage() {
         readOnly={tipo === 'ricerca'}
         onChangeClinico={tcNew => updateCella(medicoId, col.data, tcNew, cur.tr)}
         onChangeRicerca={trNew => updateCella(medicoId, col.data, cur.tc, trNew)}
+        // Paste multi-cella SOLO per la clinica: copia da Excel di un
+        // blocco medici × giorni e si propaga a partire da questa cella.
+        onPasteRange={tipo === 'clinica'
+          ? (text) => handlePasteRange(medicoId, col.data, text)
+          : undefined}
       />
     )
   }
@@ -720,8 +793,9 @@ export function ModificaTurniPage() {
             Modifica Turni
           </h2>
           <p className="text-sm text-stone-600 mt-0.5">
-            <strong>Clinica</strong> (M / P / L / REP): clicca una cella per modificarla.
-            <strong className="ml-2">Ricerca</strong> (RM / RP): sola lettura, ricalcolata automaticamente.
+            <strong>Clinica</strong> (M / P / L / REP): clicca per modificare.
+            Da Excel puoi copiare un blocco e fare <kbd className="px-1 py-0.5 rounded text-[10px]" style={{background:'#f0ece4',border:'1px solid #d5ccb8'}}>Ctrl+V</kbd> sulla prima cella → riempie il range.
+            <strong className="ml-2">Ricerca</strong> (RM / RP): sola lettura.
             Bordo azzurro = diversa dallo schema originale.
           </p>
         </div>
