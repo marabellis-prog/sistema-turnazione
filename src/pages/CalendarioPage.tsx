@@ -392,9 +392,10 @@ export function CalendarioPage() {
 
                   // Colore base: se c'è un valore PER QUESTA TABELLA usa il bg del tipo,
                   // altrimenti neutro/festivo
-                  const valore = tipo === 'clinica' ? tc : tr
-                  // Per ricerca con RM+RP usiamo il bg del primo (mix non gestito)
-                  const valKey = tipo === 'ricerca' ? valore.split('+')[0] : valore
+                  // Solo la RICERCA conserva il bg color basato sul TR
+                  // (viola RM, magenta RP). La CLINICA mostra il turno solo
+                  // nella label, sfondo sempre neutro.
+                  const valKey = tipo === 'ricerca' ? tr.split('+')[0] : ''
 
                   let bgBase: string
                   if (isFerieApproved) {
@@ -403,12 +404,10 @@ export function CalendarioPage() {
                     bgBase = 'repeating-linear-gradient(-45deg, #d5e5d0 0, #d5e5d0 3px, #a8c4a0 3px, #a8c4a0 6px)'
                   } else if (col.isDomenica || col.isFestivo) {
                     bgBase = '#fde0e0'
-                  } else if (valKey && CELL_COLORS[valKey]) {
+                  } else if (tipo === 'ricerca' && valKey && CELL_COLORS[valKey]) {
                     bgBase = CELL_COLORS[valKey].bg
-                  } else if (tc || tr) {
-                    bgBase = '#e8e3d8'   // ha qualcosa nell'altra tabella → grigio neutro
                   } else {
-                    bgBase = '#faf8f3'
+                    bgBase = '#faf8f3'  // neutro (anche per clinica con M/P/L/REP)
                   }
 
                   const YELLOW_OVL = 'linear-gradient(rgba(253,224,71,0.8),rgba(253,224,71,0.8))'
