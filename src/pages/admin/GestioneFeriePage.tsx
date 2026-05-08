@@ -48,6 +48,13 @@ export function GestioneFeriePage() {
       if (error) throw error
       return data ?? []
     },
+    // Polling di fallback: ogni 15s rifetcha le ferie. Quando il realtime
+    // funziona è sostanzialmente irrilevante (gli aggiornamenti sono già
+    // istantanei via WebSocket); ma se il listener non riceve eventi (es.
+    // tabella non aggiunta a supabase_realtime publication), questo poll
+    // garantisce comunque che l'admin veda le richieste entro 15s.
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false, // sospende quando la tab è nascosta
   })
 
   // ── Realtime sulle ferie ─────────────────────────────────────
