@@ -1,8 +1,9 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Calendar, Check, X, Plus, Clock, Wifi, WifiOff } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
+import { useFerieRealtime } from '../../hooks/useFerieRealtime'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { FerieModal, expandRange, toRanges, type DayChange } from '../../components/FerieModal'
 import type { Medico, Ferie } from '../../types'
@@ -29,7 +30,7 @@ export function GestioneFeriePage() {
   const [modalMedico,    setModalMedico]    = useState<Medico | null>(null)
   const [insertMedicoId, setInsertMedicoId] = useState('')
   const [errore,         setErrore]         = useState('')
-  const [realtimeOn,     setRealtimeOn]     = useState(false)
+  const { realtimeOn } = useFerieRealtime()
 
   // ── Query ────────────────────────────────────────────────────
   const { data: medici = [] } = useQuery<Medico[]>({
@@ -62,32 +63,6 @@ export function GestioneFeriePage() {
     refetchInterval: 15_000,
     refetchIntervalInBackground: false, // sospende quando la tab è nascosta
   })
-
-  // ── Realtime sulle ferie ─────────────────────────────────────
-  // Sottoscrive ai cambiamenti sulla tabella `ferie` via Supabase Realtime
-  // (WebSocket). Quando un medico richiede ferie dalla pagina pubblica,
-  // o un'altra sessione admin approva/elimina, l'invalidate fa ricomparire
-  // la riga aggiornata in pochi millisecondi senza bisogno di ricaricare.
-  //
-  // Setup richiesto su Supabase (UNA VOLTA, da SQL Editor):
-  //   ALTER PUBLICATION supabase_realtime ADD TABLE public.ferie;
-  // Senza questa riga il listener si registra ma non riceve eventi.
-  useEffect(() => {
-    const channel = supabase
-      .channel('ferie-watch')
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'ferie' },
-        () => {
-          qc.invalidateQueries({ queryKey: ['ferie'] })
-          qc.invalidateQueries({ queryKey: ['ferie-ranges'] })
-        }
-      )
-      .subscribe(status => {
-        // 'SUBSCRIBED' = canale attivo e in ascolto
-        setRealtimeOn(status === 'SUBSCRIBED')
-      })
-    return () => { supabase.removeChannel(channel) }
-  }, [qc])
 
   // ── Ferie raggruppate per medico ─────────────────────────────
   const ferieByMedico = useMemo(() => {

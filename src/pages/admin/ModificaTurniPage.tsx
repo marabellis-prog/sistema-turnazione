@@ -32,6 +32,7 @@ import {
 } from '../../lib/algorithm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
+import { useFerieRealtime } from '../../hooks/useFerieRealtime'
 import type {
   Configurazione, Medico, SchemaModello, Turno, Ferie,
   TurnoClinico, TurnoRicerca, ColonnaCal,
@@ -271,6 +272,10 @@ export function ModificaTurniPage() {
   const navigate = useNavigate()
   const { registerNavGuard } = usePendingActions()
 
+  // Realtime sulle ferie: nuove richieste / approvazioni / cancellazioni
+  // si riflettono istantaneamente sul pattern verde delle celle.
+  useFerieRealtime()
+
   const [view,        setView]        = useState<'lineare' | 'mensile'>('mensile')
   const [navPending,  setNavPending]  = useState<string | null>(null)
   const [saving,      setSaving]      = useState(false)
@@ -330,6 +335,11 @@ export function ModificaTurniPage() {
       if (error) throw error
       return data ?? []
     },
+    // Cache always fresh + polling 15s di safety net (vedi useFerieRealtime)
+    staleTime:                   0,
+    refetchOnMount:              'always',
+    refetchInterval:             15_000,
+    refetchIntervalInBackground: false,
   })
 
   const ferieRanges = useMemo(() => {

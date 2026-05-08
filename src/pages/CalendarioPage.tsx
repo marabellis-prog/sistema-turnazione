@@ -6,6 +6,7 @@ import { generaColonne, MESI_IT } from '../lib/algorithm'
 import { CalendarLoadingScreen } from '../components/CalendarLoadingScreen'
 import { FerieModal, expandRange, toRanges, type DayChange } from '../components/FerieModal'
 import { useAuth } from '../hooks/useAuth'
+import { useFerieRealtime } from '../hooks/useFerieRealtime'
 import type {
   Medico, Turno, Ferie, Configurazione, ColonnaCal,
   TurnoClinico, TurnoRicerca,
@@ -130,6 +131,11 @@ export function CalendarioPage() {
   const qc = useQueryClient()
   const [showRichiediFerie, setShowRichiediFerie] = useState(false)
 
+  // Realtime sulle ferie: quando l'admin approva/respinge una richiesta
+  // (o un altro medico aggiunge le sue), il calendario pubblico aggiorna
+  // istantaneamente i pattern verde solido / verde a righe.
+  useFerieRealtime()
+
   // ── Query dati statici ───────────────────────────────────────────
   const { data: config, isLoading: lCfg } = useQuery<Configurazione | null>({
     queryKey: ['configurazione'],
@@ -177,6 +183,13 @@ export function CalendarioPage() {
       if (error) throw error
       return data ?? []
     },
+    // Sempre fresh: ogni mount/focus rifetcha + polling 15s per la safety
+    // net se Supabase Realtime non è configurato. Stessa logica delle altre
+    // pagine che mostrano ferie (vedi GestioneFeriePage).
+    staleTime:                   0,
+    refetchOnMount:              'always',
+    refetchInterval:             15_000,
+    refetchIntervalInBackground: false,
   })
 
   // Due mappe separate: approvate (verde pieno) vs in attesa (verde a righe)
