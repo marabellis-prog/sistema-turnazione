@@ -548,6 +548,9 @@ export function CalendarioPage() {
                           className={`cal-cell ${modif ? 'cal-cell-modificata' : ''}`}
                           style={{
                             background: bg,
+                            // Celle con turno: bordo più scuro e visibile
+                            ...((tc || tr) ? { borderColor: '#8a9882' } : {}),
+                            // Separatore fine mese: sovrascrive solo il lato destro
                             ...(lastDaysOfMonth.has(col.data) ? { borderRight: '2px solid #7a9a6a' } : {}),
                           }}
                           title={cell?.note || undefined}>
