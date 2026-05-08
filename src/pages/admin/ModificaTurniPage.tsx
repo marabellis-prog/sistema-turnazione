@@ -60,16 +60,30 @@ function dayLetter(dateStr: string): string {
   return DAY_LETTERS[new Date(y, m - 1, d).getDay()]
 }
 
-/** Etichetta del turno clinico (M / P / L / REP) */
-function LabelClinico({ tc }: { tc: string }) {
-  if (!tc) return null
+/** Etichetta del turno clinico (M / P / L / REP) con eventuali tag (sub)/(med) */
+function LabelClinico({ tc, isSub, isMed }: { tc: string; isSub?: boolean; isMed?: boolean }) {
+  if (!tc && !isSub && !isMed) return null
   return (
-    <span className="pointer-events-none select-none" style={{
-      fontSize:      tc === 'REP' ? 11 : 13,
-      fontWeight:    700,
-      color:         tc === 'REP' ? '#b91c1c' : (CELL_COLORS[tc]?.fg ?? '#3a3d30'),
-      letterSpacing: tc === 'REP' ? '-0.3px' : undefined,
-    }}>{tc}</span>
+    <div className="flex flex-col items-center leading-none gap-px pointer-events-none select-none">
+      {tc && (
+        <span style={{
+          fontSize:      tc === 'REP' ? 11 : 13,
+          fontWeight:    700,
+          color:         tc === 'REP' ? '#b91c1c' : (CELL_COLORS[tc]?.fg ?? '#3a3d30'),
+          letterSpacing: tc === 'REP' ? '-0.3px' : undefined,
+        }}>{tc}</span>
+      )}
+      {isSub && (
+        <span style={{ fontSize: 8, fontWeight: 800, color: '#dc2626', letterSpacing: '-0.2px' }}>
+          (sub)
+        </span>
+      )}
+      {isMed && (
+        <span style={{ fontSize: 8, fontWeight: 800, color: '#0284c7', letterSpacing: '-0.2px' }}>
+          (med)
+        </span>
+      )}
+    </div>
   )
 }
 
@@ -156,13 +170,16 @@ interface EditableCellProps {
   isFerieApproved:  boolean       // ferie approvate → bg verde solido
   isFeriePending:   boolean       // ferie in attesa → bg verde a righe diagonali
   isRedDay:         boolean       // domenica/festivo
+  isSub?:           boolean       // tag (sub) sotto il TC nella tabella clinica
+  isMed?:           boolean       // tag (med) sotto il TC nella tabella clinica
   readOnly?:        boolean       // se true, niente click/editing (es. tabella ricerca)
   onChangeClinico:  (tc: TurnoClinico) => void
   onChangeRicerca:  (tr: TurnoRicerca) => void
 }
 
 function EditableCell({
-  tipo, tc, tr, isModified, isFerieApproved, isFeriePending, isRedDay, readOnly = false,
+  tipo, tc, tr, isModified, isFerieApproved, isFeriePending, isRedDay,
+  isSub = false, isMed = false, readOnly = false,
   onChangeClinico, onChangeRicerca,
 }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
@@ -257,9 +274,9 @@ function EditableCell({
             padding: 0,
           }}
         />
-      ) : hasValue ? (
+      ) : hasValue || (tipo === 'clinica' && (isSub || isMed)) ? (
         tipo === 'clinica'
-          ? <LabelClinico tc={tc} />
+          ? <LabelClinico tc={tc} isSub={isSub} isMed={isMed} />
           : <LabelRicerca tr={tr} />
       ) : null}
     </td>
@@ -379,7 +396,7 @@ export function ModificaTurniPage() {
         for (const { di, df } of mesi) {
           const { data, error } = await supabase
             .from('turni')
-            .select('id, medico_id, data, turno_clinico, turno_ricerca, modificato_manualmente, is_ferie, note, created_at, updated_at')
+            .select('id, medico_id, data, turno_clinico, turno_ricerca, modificato_manualmente, is_ferie, is_sub, is_med, note, created_at, updated_at')
             .gte('data', di).lte('data', df)
           if (error) throw error
           all = [...all, ...((data ?? []) as Turno[])]
@@ -519,8 +536,10 @@ export function ModificaTurniPage() {
           turno_ricerca:           tr,
           modificato_manualmente,
           // Preserva campi non gestiti dalla pagina (altrimenti l'upsert
-          // li resetterebbe ai default: is_ferie=false, note=null)
+          // li resetterebbe ai default: is_ferie=false, note=null, ecc.)
           is_ferie: dbT?.is_ferie ?? false,
+          is_sub:   dbT?.is_sub   ?? false,
+          is_med:   dbT?.is_med   ?? false,
           note:     dbT?.note     ?? null,
         }
       })
@@ -550,6 +569,7 @@ export function ModificaTurniPage() {
       ? cur.tc !== orig.tc
       : cur.tr !== orig.tr
     const ferie = ferieStatus(medicoId, col.data)
+    const dbT = turniByKey.get(`${medicoId}|${col.data}`)
     return (
       <EditableCell
         key={`${medicoId}|${col.data}|${tipo}`}
@@ -559,6 +579,9 @@ export function ModificaTurniPage() {
         isFerieApproved={ferie === 'approved'}
         isFeriePending={ferie === 'pending'}
         isRedDay={col.isDomenica || col.isFestivo}
+        // Sub/med arrivano dal DB (settati dal generatore in base allo schema)
+        isSub={dbT?.is_sub ?? false}
+        isMed={dbT?.is_med ?? false}
         // Tabella RICERCA: read-only. I turni RM/RP saranno ricalcolati
         // automaticamente da una logica futura (vedi richiesta utente).
         readOnly={tipo === 'ricerca'}

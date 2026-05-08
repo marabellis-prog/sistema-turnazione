@@ -95,6 +95,8 @@ export function calcolaTurnoTeorico(
 
   let turno_clinico: TurnoClinico = ''
   let turno_ricerca: TurnoRicerca = ''
+  let is_sub = false
+  let is_med = false
 
   for (const slot of slots) {
     const inM  = slot.numero_medico_mattina    === calcNum
@@ -102,16 +104,22 @@ export function calcolaTurnoTeorico(
     const inRM = slot.numero_medico_rm         === calcNum
     const inRP = slot.numero_medico_rp         === calcNum
 
-    // Turno clinico (primo match vince)
+    // Turno clinico (primo match vince). is_sub / is_med ereditate
+    // dallo slot in cui il medico è assegnato come clinico.
     if (turno_clinico === '') {
+      let matched = false
       if (slot.is_reperibilita && inM) {
-        turno_clinico = 'REP'
+        turno_clinico = 'REP'; matched = true
       } else if (inM && inP) {
-        turno_clinico = 'L'
+        turno_clinico = 'L';   matched = true
       } else if (inM) {
-        turno_clinico = 'M'
+        turno_clinico = 'M';   matched = true
       } else if (inP) {
-        turno_clinico = 'P'
+        turno_clinico = 'P';   matched = true
+      }
+      if (matched) {
+        is_sub = !!slot.is_sub
+        is_med = !!slot.is_med
       }
     }
 
@@ -125,7 +133,7 @@ export function calcolaTurnoTeorico(
     }
   }
 
-  return { turno_clinico, turno_ricerca }
+  return { turno_clinico, turno_ricerca, is_sub, is_med }
 }
 
 // ─── Generazione calendario completo ──────────────────────────────
@@ -167,7 +175,7 @@ export function calcolaCalendarioCompleto(
     const schemiGiorno = schemaFiltrato.filter(s => s.giorno_settimana === dWeek)
 
     for (let n = 0; n < numMedici; n++) {
-      const { turno_clinico, turno_ricerca } = calcolaTurnoTeorico(
+      const { turno_clinico, turno_ricerca, is_sub, is_med } = calcolaTurnoTeorico(
         n,
         corrente,
         dataRifRotazione,   // ← primo lunedì, non giorno 1
@@ -180,6 +188,8 @@ export function calcolaCalendarioCompleto(
         data: dataISO,
         turno_clinico,
         turno_ricerca,
+        is_sub,
+        is_med,
       })
     }
 

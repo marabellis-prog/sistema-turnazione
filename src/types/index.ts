@@ -29,6 +29,8 @@ export interface SchemaModello {
   numero_medico_rm: number | null
   numero_medico_rp: number | null
   is_reperibilita: boolean    // true = questo slot è la reperibilità
+  is_sub: boolean             // true = il turno clinico di questo slot è in sub-intensiva
+  is_med: boolean             // true = il turno clinico di questo slot è in medicina
 }
 
 export interface Turno {
@@ -40,6 +42,8 @@ export interface Turno {
   note: string | null
   modificato_manualmente: boolean
   is_ferie: boolean
+  is_sub: boolean             // turno clinico in sub-intensiva (etichetta rossa)
+  is_med: boolean             // turno clinico in medicina      (etichetta azzurra)
   created_at: string
   updated_at: string
 }
@@ -73,6 +77,8 @@ export type TurnoRicerca = 'RM' | 'RP' | 'RM+RP' | ''
 export interface TurnoTeorico {
   turno_clinico: TurnoClinico
   turno_ricerca: TurnoRicerca
+  is_sub: boolean
+  is_med: boolean
 }
 
 export interface TurnoGenerato {
@@ -80,6 +86,8 @@ export interface TurnoGenerato {
   data: string
   turno_clinico: TurnoClinico
   turno_ricerca: TurnoRicerca
+  is_sub: boolean
+  is_med: boolean
 }
 
 // ─── Tipi per il calendario UI ─────────────────────────────────────
@@ -91,6 +99,8 @@ export interface CellaCal {
   note: string | null
   modificato_manualmente: boolean
   is_ferie: boolean
+  is_sub: boolean
+  is_med: boolean
 }
 
 export interface RigaCal {

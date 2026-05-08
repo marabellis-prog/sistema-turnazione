@@ -20,6 +20,8 @@ interface CellDisplay {
   note:                   string | null
   modificato_manualmente: boolean
   is_ferie:               boolean
+  is_sub:                 boolean
+  is_med:                 boolean
 }
 
 // Stessi colori del "Prova Schema" in GestioneSchemaPage
@@ -32,20 +34,35 @@ const CELL_COLORS: Record<string, { bg: string; fg: string }> = {
   RP:  { bg: '#ead8e2', fg: '#582840' },
 }
 
-/** Etichetta del turno clinico (M / P / L / REP) — più grande perché unico nella sua tabella */
-function LabelClinico({ tc }: { tc: string }) {
-  if (!tc) return null
+/** Etichetta del turno clinico (M / P / L / REP) — più grande perché unico nella sua tabella.
+ *  Mostra anche eventuali tag (sub) rosso o (med) azzurro sotto il TC. */
+function LabelClinico({ tc, isSub, isMed }: { tc: string; isSub?: boolean; isMed?: boolean }) {
+  if (!tc && !isSub && !isMed) return null
   return (
-    <span style={{
-      fontSize:      tc === 'REP' ? 11 : 13,
-      fontWeight:    700,
-      color:         tc === 'REP' ? '#b91c1c'
-                   : tc === 'M'   ? '#2e4a28'
-                   : tc === 'P'   ? '#253a4a'
-                   : tc === 'L'   ? '#4a3a1a'
-                   : '#3a3d30',
-      letterSpacing: tc === 'REP' ? '-0.3px' : undefined,
-    }}>{tc}</span>
+    <div className="flex flex-col items-center leading-none gap-px">
+      {tc && (
+        <span style={{
+          fontSize:      tc === 'REP' ? 11 : 13,
+          fontWeight:    700,
+          color:         tc === 'REP' ? '#b91c1c'
+                       : tc === 'M'   ? '#2e4a28'
+                       : tc === 'P'   ? '#253a4a'
+                       : tc === 'L'   ? '#4a3a1a'
+                       : '#3a3d30',
+          letterSpacing: tc === 'REP' ? '-0.3px' : undefined,
+        }}>{tc}</span>
+      )}
+      {isSub && (
+        <span style={{ fontSize: 8, fontWeight: 800, color: '#dc2626', letterSpacing: '-0.2px' }}>
+          (sub)
+        </span>
+      )}
+      {isMed && (
+        <span style={{ fontSize: 8, fontWeight: 800, color: '#0284c7', letterSpacing: '-0.2px' }}>
+          (med)
+        </span>
+      )}
+    </div>
   )
 }
 
@@ -293,6 +310,8 @@ export function CalendarioPage() {
         turno_clinico: t.turno_clinico, turno_ricerca: t.turno_ricerca,
         note: t.note, modificato_manualmente: t.modificato_manualmente,
         is_ferie: t.is_ferie,
+        is_sub: t.is_sub ?? false,
+        is_med: t.is_med ?? false,
       })
     }
     return map
@@ -469,7 +488,9 @@ export function CalendarioPage() {
                       }}
                       title={cell?.note || undefined}>
                       {tipo === 'clinica'
-                        ? (tc ? <LabelClinico tc={tc} /> : null)
+                        ? (tc || cell?.is_sub || cell?.is_med
+                            ? <LabelClinico tc={tc} isSub={cell?.is_sub} isMed={cell?.is_med} />
+                            : null)
                         : (tr ? <LabelRicerca tr={tr} /> : null)}
                     </td>
                   )

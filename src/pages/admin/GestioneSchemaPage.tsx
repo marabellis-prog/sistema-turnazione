@@ -45,16 +45,18 @@ interface SlotRow {
   slot: number
   vals: Record<string, number | null>
   REP:  boolean
+  SUB:  boolean
+  MED:  boolean
 }
 
 function emptySlot(slot: number, colonne: string[]): SlotRow {
   const vals: Record<string, number | null> = {}
   colonne.forEach(c => { vals[c] = null })
-  return { id: null, slot, vals, REP: false }
+  return { id: null, slot, vals, REP: false, SUB: false, MED: false }
 }
 
 function isSlotVuoto(r: SlotRow) {
-  return Object.values(r.vals).every(v => v === null) && !r.REP
+  return Object.values(r.vals).every(v => v === null) && !r.REP && !r.SUB && !r.MED
 }
 
 // ── Cella (drag source + drop target) ───────────────────────────
@@ -317,6 +319,8 @@ export function GestioneSchemaPage() {
         vals: { M: r.numero_medico_mattina, P: r.numero_medico_pomeriggio,
                 RM: r.numero_medico_rm,     RP: r.numero_medico_rp },
         REP: r.is_reperibilita,
+        SUB: r.is_sub ?? false,
+        MED: r.is_med ?? false,
       })
     })
     Object.values(g).forEach(rows => rows.sort((a,b) => a.slot - b.slot))
@@ -432,6 +436,24 @@ export function GestioneSchemaPage() {
     })
   }
 
+  function toggleSub(giorno: number, idx: number) {
+    markUnsaved()
+    setGriglia(prev => {
+      const rows = [...(prev[giorno] ?? [])]
+      rows[idx] = { ...rows[idx], SUB: !rows[idx].SUB }
+      return { ...prev, [giorno]: rows }
+    })
+  }
+
+  function toggleMed(giorno: number, idx: number) {
+    markUnsaved()
+    setGriglia(prev => {
+      const rows = [...(prev[giorno] ?? [])]
+      rows[idx] = { ...rows[idx], MED: !rows[idx].MED }
+      return { ...prev, [giorno]: rows }
+    })
+  }
+
   async function azzera() {
     const ok = await confirm({
       title:        'Azzera schema',
@@ -469,6 +491,8 @@ export function GestioneSchemaPage() {
             numero_medico_rm:         r.vals['RM'] ?? null,
             numero_medico_rp:         r.vals['RP'] ?? null,
             is_reperibilita:          r.REP,
+            is_sub:                   r.SUB,
+            is_med:                   r.MED,
           })
         })
       }
@@ -747,6 +771,22 @@ export function GestioneSchemaPage() {
                 REP
               </th>
               <th style={{
+                background: '#2b3c24', color: '#fca5a5', fontSize: 10, fontWeight: 700,
+                padding: '4px 2px', textAlign: 'center', width: 34,
+                border: '1px solid #1e40af', position: 'sticky', top: 0, zIndex: 10,
+              }}
+                title="Sub-intensiva: il turno clinico di questo slot sarà etichettato (sub) nei calendari">
+                SUB
+              </th>
+              <th style={{
+                background: '#2b3c24', color: '#7ec3e8', fontSize: 10, fontWeight: 700,
+                padding: '4px 2px', textAlign: 'center', width: 34,
+                border: '1px solid #1e40af', position: 'sticky', top: 0, zIndex: 10,
+              }}
+                title="Medicina: il turno clinico di questo slot sarà etichettato (med) nei calendari">
+                MED
+              </th>
+              <th style={{
                 background: '#2b3c24', width: 22,
                 border: '1px solid #1e40af', position: 'sticky', top: 0, zIndex: 10,
               }} />
@@ -764,7 +804,7 @@ export function GestioneSchemaPage() {
                   }}>
                     {GIORNI_IT[giorno].slice(0,3).toUpperCase()}
                   </td>
-                  <td colSpan={colonne.length + 2} style={{
+                  <td colSpan={colonne.length + 4} style={{
                     border: '1px solid #e5e7eb', padding: '3px 8px', color: '#9ca3af',
                   }}>
                     <button onClick={() => aggiungiSlot(giorno)}
@@ -848,6 +888,30 @@ export function GestioneSchemaPage() {
                         onChange={() => toggleRep(giorno, idx)}
                         style={{ accentColor: '#ef4444', width: 12, height: 12, cursor: 'pointer' }}
                         title="Reperibilità" />
+                    </td>
+
+                    {/* SUB checkbox — etichetta (sub) rossa nei calendari */}
+                    <td style={{
+                      width: 34, textAlign: 'center', verticalAlign: 'middle',
+                      borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb',
+                      background: isRep ? REP_BG : rowBg,
+                    }}>
+                      <input type="checkbox" checked={row.SUB}
+                        onChange={() => toggleSub(giorno, idx)}
+                        style={{ accentColor: '#dc2626', width: 12, height: 12, cursor: 'pointer' }}
+                        title="Sub-intensiva: aggiunge etichetta (sub) rossa al turno clinico" />
+                    </td>
+
+                    {/* MED checkbox — etichetta (med) azzurra nei calendari */}
+                    <td style={{
+                      width: 34, textAlign: 'center', verticalAlign: 'middle',
+                      borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb',
+                      background: isRep ? REP_BG : rowBg,
+                    }}>
+                      <input type="checkbox" checked={row.MED}
+                        onChange={() => toggleMed(giorno, idx)}
+                        style={{ accentColor: '#0ea5e9', width: 12, height: 12, cursor: 'pointer' }}
+                        title="Medicina: aggiunge etichetta (med) azzurra al turno clinico" />
                     </td>
 
                     {/* Elimina slot */}
