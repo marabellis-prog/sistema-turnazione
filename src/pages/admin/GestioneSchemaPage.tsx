@@ -898,10 +898,22 @@ export function GestioneSchemaPage() {
             const color = PASTEL[i % PASTEL.length]
             return (
               <div key={med.id} className="flex items-center gap-2 px-3 py-1.5">
-                {/* Badge colorato */}
-                <span className="w-6 h-6 rounded shrink-0 flex items-center justify-center
-                                 text-xs font-bold"
-                  style={{ background: color.bg, color: color.fg }}>
+                {/* Badge colorato — draggable come i badge nella strip */}
+                <span
+                  draggable
+                  onDragStart={e => {
+                    e.dataTransfer.effectAllowed = 'move'
+                    dragSource.current = { num: med.numero_ordine }
+                  }}
+                  onTouchStart={() => {
+                    dragSource.current = { num: med.numero_ordine }
+                    touchActiveSch.current = true
+                  }}
+                  className="w-6 h-6 rounded shrink-0 flex items-center justify-center
+                             text-xs font-bold select-none hover:scale-110 transition-transform"
+                  style={{ background: color.bg, color: color.fg, cursor: 'grab' }}
+                  title={`Trascina ${med.nome} (${med.numero_ordine}) in una cella`}
+                >
                   {med.numero_ordine}
                 </span>
                 {/* Nome */}
