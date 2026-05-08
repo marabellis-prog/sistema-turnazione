@@ -458,6 +458,22 @@ export function ModificaTurniPage() {
     })
   }, [turniByKey])
 
+  // ── Totale turni clinici coperti in un giorno ─────────────────────
+  // Conteggio per la riga "TURNI TOTALI" sotto la tabella clinica:
+  //   M = 1, P = 1, L = 2 (= M+P), REP = 0, vuoto = 0
+  // Si aggiorna in tempo reale mentre si modificano le celle (perché
+  // getCella legge prima dal Map modifiche locali, poi dal DB).
+  const calcolaTotaleClinici = useCallback((data: string): number => {
+    let total = 0
+    for (const m of medici) {
+      const { tc } = getCella(m.id, data)
+      if (tc === 'M' || tc === 'P') total += 1
+      else if (tc === 'L')          total += 2
+      // REP e stringa vuota non contano
+    }
+    return total
+  }, [medici, getCella])
+
   // ── beforeunload — blocca chiusura/refresh tab ─────────────────────
   useEffect(() => {
     if (!hasUnsaved) return
@@ -599,6 +615,41 @@ export function ModificaTurniPage() {
               {cols.map(c => renderCella(m.id, c, tipo))}
             </tr>
           ))}
+
+          {/* Riga totali turni — SOLO sotto la tabella Clinica.
+              Conteggio: M=1, P=1, L=2, REP=0, vuoto=0.
+              Sfondo azzurro pastello, testo bianco, refresh in tempo reale
+              mentre si edita perché getCella legge prima dal Map modifiche. */}
+          {tipo === 'clinica' && (
+            <tr>
+              <td style={{
+                width: 140, minWidth: 140,
+                position: 'sticky', left: 0, zIndex: 1,
+                background: '#7eb6d4', color: '#fff',
+                fontSize: 11, fontWeight: 800, padding: '4px 8px',
+                border: '1px solid #5d9bc1',
+                letterSpacing: '0.06em',
+                whiteSpace: 'nowrap',
+              }}>
+                TURNI TOTALI
+              </td>
+              {cols.map(c => {
+                const tot = calcolaTotaleClinici(c.data)
+                return (
+                  <td key={c.data} style={{
+                    width: 32, minWidth: 32, height: 24,
+                    background: '#7eb6d4', color: '#fff',
+                    fontSize: 12, fontWeight: 700,
+                    textAlign: 'center', verticalAlign: 'middle',
+                    border: '1px solid #5d9bc1',
+                    padding: 0,
+                  }}>
+                    {tot || ''}
+                  </td>
+                )
+              })}
+            </tr>
+          )}
         </tbody>
       </table>
     )
