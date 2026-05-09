@@ -40,9 +40,15 @@ export function GestioneFeriePage() {
   const { data: medici = [] } = useQuery<Medico[]>({
     queryKey: ['medici-tutti'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('medici').select('*').order('numero_ordine')
+      // Ordine alfabetico per la pagina Gestione Ferie: la rotazione
+      // (numero_ordine) qui non serve, è più utile trovare il medico
+      // a colpo d'occhio. Sort lato client con localeCompare 'it' per
+      // gestire correttamente accenti e maiuscole/minuscole.
+      const { data, error } = await supabase.from('medici').select('*')
       if (error) throw error
-      return data
+      return (data ?? []).sort((a, b) =>
+        a.nome.localeCompare(b.nome, 'it', { sensitivity: 'base' })
+      )
     },
   })
 
