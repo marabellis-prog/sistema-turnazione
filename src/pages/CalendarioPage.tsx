@@ -12,7 +12,7 @@ import { useFerieRealtime } from '../hooks/useFerieRealtime'
 import { useTurniRealtime } from '../hooks/useTurniRealtime'
 import type {
   Medico, Turno, Ferie, Configurazione, ColonnaCal,
-  TurnoClinico, TurnoRicerca,
+  TurnoClinico, TurnoRicerca, SlotPlacement,
 } from '../types'
 
 interface CellDisplay {
@@ -21,8 +21,8 @@ interface CellDisplay {
   note:                   string | null
   modificato_manualmente: boolean
   is_ferie:               boolean
-  is_sub:                 boolean
-  is_med:                 boolean
+  slot_mattina:           SlotPlacement
+  slot_pomeriggio:        SlotPlacement
 }
 
 // Stessi colori del "Prova Schema" in GestioneSchemaPage
@@ -35,10 +35,23 @@ const CELL_COLORS: Record<string, { bg: string; fg: string }> = {
   RP:  { bg: '#ead8e2', fg: '#582840' },
 }
 
+// Sfondo cerchio per i 2 placement
+const PLACEMENT_BG_PUB: Record<'SUB'|'MED'|'NONE', string> = {
+  SUB:  '#fecaca',
+  MED:  '#bae6fd',
+  NONE: 'transparent',
+}
+
 /** Etichetta del turno clinico (M / P / L / REP) — più grande perché unico
- *  nella sua tabella. Se isSub o isMed, il testo è avvolto in un cerchio
- *  pastello colorato (rosso = sub, azzurro = med, gradient = entrambi). */
-function LabelClinico({ tc, isSub, isMed }: { tc: string; isSub?: boolean; isMed?: boolean }) {
+ *  nella sua tabella. Cerchio pastello che riflette slot_mattina/pomeriggio:
+ *  - M: cerchio pieno colore di slot_mattina
+ *  - P: cerchio pieno colore di slot_pomeriggio
+ *  - L: cerchio diviso (sx mattina, dx pomeriggio) o pieno se uguali */
+function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
+  tc: string
+  slot_mattina?:    SlotPlacement
+  slot_pomeriggio?: SlotPlacement
+}) {
   if (!tc) return null
   const fontSize = tc === 'REP' ? 10 : 12
   const color    = tc === 'REP' ? '#b91c1c'
@@ -47,11 +60,20 @@ function LabelClinico({ tc, isSub, isMed }: { tc: string; isSub?: boolean; isMed
                  : tc === 'L'   ? '#4a3a1a'
                  : '#3a3d30'
 
-  // Sfondo del cerchietto: rosso/azzurro pastello, gradient se entrambi
   let bg: string | undefined
-  if (isSub && isMed) bg = 'linear-gradient(135deg,#fecaca 0%,#fecaca 50%,#bae6fd 50%,#bae6fd 100%)'
-  else if (isSub)     bg = '#fecaca'
-  else if (isMed)     bg = '#bae6fd'
+  if (tc === 'M' && slot_mattina) {
+    bg = PLACEMENT_BG_PUB[slot_mattina]
+  } else if (tc === 'P' && slot_pomeriggio) {
+    bg = PLACEMENT_BG_PUB[slot_pomeriggio]
+  } else if (tc === 'L' && (slot_mattina || slot_pomeriggio)) {
+    const colSX = PLACEMENT_BG_PUB[slot_mattina    ?? 'NONE']
+    const colDX = PLACEMENT_BG_PUB[slot_pomeriggio ?? 'NONE']
+    if (colSX === colDX && colSX !== 'transparent') {
+      bg = colSX
+    } else {
+      bg = `linear-gradient(90deg, ${colSX} 0%, ${colSX} 50%, ${colDX} 50%, ${colDX} 100%)`
+    }
+  }
 
   if (!bg) {
     return <span style={{ fontSize, fontWeight: 700, color, letterSpacing: tc === 'REP' ? '-0.3px' : undefined }}>{tc}</span>
@@ -312,9 +334,9 @@ export function CalendarioPage() {
       map.get(t.medico_id)!.set(t.data, {
         turno_clinico: t.turno_clinico, turno_ricerca: t.turno_ricerca,
         note: t.note, modificato_manualmente: t.modificato_manualmente,
-        is_ferie: t.is_ferie,
-        is_sub: t.is_sub ?? false,
-        is_med: t.is_med ?? false,
+        is_ferie:        t.is_ferie,
+        slot_mattina:    t.slot_mattina    ?? null,
+        slot_pomeriggio: t.slot_pomeriggio ?? null,
       })
     }
     return map
@@ -492,7 +514,7 @@ export function CalendarioPage() {
                       }}
                       title={cell?.note || undefined}>
                       {tipo === 'clinica'
-                        ? (tc ? <LabelClinico tc={tc} isSub={cell?.is_sub} isMed={cell?.is_med} /> : null)
+                        ? (tc ? <LabelClinico tc={tc} slot_mattina={cell?.slot_mattina} slot_pomeriggio={cell?.slot_pomeriggio} /> : null)
                         : (tr ? <LabelRicerca tr={tr} /> : null)}
                     </td>
                   )
@@ -707,9 +729,9 @@ export function CalendarioPage() {
                 getCellInfo={(mid, data) => {
                   const cell = turniMap.get(mid)?.get(data)
                   return {
-                    tc:    cell?.turno_clinico ?? '',
-                    isSub: cell?.is_sub ?? false,
-                    isMed: cell?.is_med ?? false,
+                    tc:              cell?.turno_clinico ?? '',
+                    slot_mattina:    cell?.slot_mattina    ?? null,
+                    slot_pomeriggio: cell?.slot_pomeriggio ?? null,
                   }
                 }}
               />

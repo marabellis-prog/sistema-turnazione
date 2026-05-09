@@ -40,7 +40,7 @@ import { useFerieRealtime } from '../../hooks/useFerieRealtime'
 import { useTurniRealtime } from '../../hooks/useTurniRealtime'
 import type {
   Configurazione, Medico, SchemaModello, Turno, Ferie,
-  TurnoClinico, TurnoRicerca, ColonnaCal,
+  TurnoClinico, TurnoRicerca, SlotPlacement, ColonnaCal,
 } from '../../types'
 
 // ════════════════════════════════════════════════════════════════════
@@ -63,17 +63,44 @@ function dayLetter(dateStr: string): string {
   return DAY_LETTERS[new Date(y, m - 1, d).getDay()]
 }
 
-/** Etichetta TC (M / P / L / REP). Se isSub/isMed, avvolge il testo in un
- *  cerchietto pastello (rosso = sub, azzurro = med, gradient = entrambi). */
-function LabelClinico({ tc, isSub, isMed }: { tc: string; isSub?: boolean; isMed?: boolean }) {
+// Colore pastello per ogni placement nel cerchio mezzo/mezzo
+const PLACEMENT_BG: Record<'SUB'|'MED'|'NONE', string> = {
+  SUB:  '#fecaca',
+  MED:  '#bae6fd',
+  NONE: 'transparent',
+}
+
+/** Etichetta TC (M / P / L / REP) con cerchio pastello che riflette
+ *  slot_mattina (metà sx) e slot_pomeriggio (metà dx).
+ *  - Se M: solo mattina conta → cerchio pieno del colore di slot_mattina
+ *  - Se P: solo pomeriggio conta → cerchio pieno del colore di slot_pomeriggio
+ *  - Se L: cerchio diviso (sx = mattina, dx = pomeriggio)
+ *  - Senza placement: testo nudo, no cerchio */
+function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
+  tc: string
+  slot_mattina?:    'SUB'|'MED'|null
+  slot_pomeriggio?: 'SUB'|'MED'|null
+}) {
   if (!tc) return null
   const fontSize = tc === 'REP' ? 10 : 12
   const color    = tc === 'REP' ? '#b91c1c' : (CELL_COLORS[tc]?.fg ?? '#3a3d30')
 
+  // Calcola lo sfondo del cerchio
   let bg: string | undefined
-  if (isSub && isMed) bg = 'linear-gradient(135deg,#fecaca 0%,#fecaca 50%,#bae6fd 50%,#bae6fd 100%)'
-  else if (isSub)     bg = '#fecaca'
-  else if (isMed)     bg = '#bae6fd'
+  if (tc === 'M' && slot_mattina) {
+    bg = PLACEMENT_BG[slot_mattina]
+  } else if (tc === 'P' && slot_pomeriggio) {
+    bg = PLACEMENT_BG[slot_pomeriggio]
+  } else if (tc === 'L' && (slot_mattina || slot_pomeriggio)) {
+    const colSX = PLACEMENT_BG[slot_mattina    ?? 'NONE']
+    const colDX = PLACEMENT_BG[slot_pomeriggio ?? 'NONE']
+    if (colSX === colDX && colSX !== 'transparent') {
+      bg = colSX   // entrambi uguali: cerchio pieno
+    } else {
+      // Cerchio diviso: sx | dx (verticale 50/50)
+      bg = `linear-gradient(90deg, ${colSX} 0%, ${colSX} 50%, ${colDX} 50%, ${colDX} 100%)`
+    }
+  }
 
   const baseProps = {
     className: 'pointer-events-none select-none',
@@ -177,8 +204,8 @@ interface EditableCellProps {
   isFerieApproved:  boolean       // ferie approvate → bg verde solido
   isFeriePending:   boolean       // ferie in attesa → bg verde a righe diagonali
   isRedDay:         boolean       // domenica/festivo
-  isSub?:           boolean       // tag (sub) sotto il TC nella tabella clinica
-  isMed?:           boolean       // tag (med) sotto il TC nella tabella clinica
+  slot_mattina?:    'SUB'|'MED'|null   // placement mattina (per cerchio sinistro)
+  slot_pomeriggio?: 'SUB'|'MED'|null   // placement pomeriggio (per cerchio destro)
   readOnly?:        boolean       // se true, niente click/editing (es. tabella ricerca)
   onChangeClinico:  (tc: TurnoClinico) => void
   onChangeRicerca:  (tr: TurnoRicerca) => void
@@ -197,7 +224,7 @@ interface EditableCellProps {
 
 function EditableCell({
   tipo, tc, tr, isModified, isFerieApproved, isFeriePending, isRedDay,
-  isSub = false, isMed = false, readOnly = false,
+  slot_mattina = null, slot_pomeriggio = null, readOnly = false,
   onChangeClinico, onChangeRicerca, onPasteRange, onDropFromLegend,
 }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
@@ -329,7 +356,7 @@ function EditableCell({
         />
       ) : hasValue ? (
         tipo === 'clinica'
-          ? <LabelClinico tc={tc} isSub={isSub} isMed={isMed} />
+          ? <LabelClinico tc={tc} slot_mattina={slot_mattina} slot_pomeriggio={slot_pomeriggio} />
           : <LabelRicerca tr={tr} />
       ) : null}
     </td>
@@ -451,7 +478,7 @@ export function ModificaTurniPage() {
         for (const { di, df } of mesi) {
           const { data, error } = await supabase
             .from('turni')
-            .select('id, medico_id, data, turno_clinico, turno_ricerca, modificato_manualmente, is_ferie, is_sub, is_med, note, created_at, updated_at')
+            .select('id, medico_id, data, turno_clinico, turno_ricerca, modificato_manualmente, is_ferie, is_sub, is_med, slot_mattina, slot_pomeriggio, note, created_at, updated_at')
             .gte('data', di).lte('data', df)
           if (error) throw error
           all = [...all, ...((data ?? []) as Turno[])]
@@ -503,8 +530,13 @@ export function ModificaTurniPage() {
     if (modifiche.has(key)) return modifiche.get(key)!
     const t = turniByKey.get(key)
     return t
-      ? { tc: t.turno_clinico, tr: t.turno_ricerca, isSub: t.is_sub, isMed: t.is_med }
-      : { tc: '', tr: '', isSub: false, isMed: false }
+      ? {
+          tc:              t.turno_clinico,
+          tr:              t.turno_ricerca,
+          slot_mattina:    t.slot_mattina    ?? null,
+          slot_pomeriggio: t.slot_pomeriggio ?? null,
+        }
+      : { tc: '', tr: '', slot_mattina: null, slot_pomeriggio: null }
   }, [modifiche, turniByKey])
 
   const getOriginale = useCallback((medicoId: string, data: string): { tc: TurnoClinico; tr: TurnoRicerca } => {
@@ -552,11 +584,16 @@ export function ModificaTurniPage() {
       s.schema_num === config.schema_attivo && s.giorno_settimana === dWeek
     )
 
+    // Capacità split mattina/pomeriggio: ogni slot is_sub contribuisce
+    // 1 a sub_m se ha numero_medico_mattina settato e 1 a sub_p se ha
+    // numero_medico_pomeriggio settato. Stesso per is_med.
     const capacita = {
-      rm:  schemiGiorno.filter(s => s.numero_medico_rm  !== null).length,
-      rp:  schemiGiorno.filter(s => s.numero_medico_rp  !== null).length,
-      sub: schemiGiorno.filter(s => s.is_sub).length,
-      med: schemiGiorno.filter(s => s.is_med).length,
+      rm:    schemiGiorno.filter(s => s.numero_medico_rm  !== null).length,
+      rp:    schemiGiorno.filter(s => s.numero_medico_rp  !== null).length,
+      sub_m: schemiGiorno.filter(s => s.is_sub && s.numero_medico_mattina    !== null).length,
+      sub_p: schemiGiorno.filter(s => s.is_sub && s.numero_medico_pomeriggio !== null).length,
+      med_m: schemiGiorno.filter(s => s.is_med && s.numero_medico_mattina    !== null).length,
+      med_p: schemiGiorno.filter(s => s.is_med && s.numero_medico_pomeriggio !== null).length,
     }
 
     // ── tcGiorno: TC corrente per ogni medico nel giorno target ───
@@ -576,20 +613,22 @@ export function ModificaTurniPage() {
       }
     }
 
-    // ── flagsOriginali: dallo slot teorico del giorno ─────────────
-    const flagsOriginali = new Map<string, { isSub: boolean; isMed: boolean }>()
+    // ── flagsOriginali: placement teorico del giorno ─────────────
+    const flagsOriginali = new Map<string, { slot_mattina: SlotPlacement; slot_pomeriggio: SlotPlacement }>()
     const dataInizioPeriodo = new Date(config.anno_inizio, config.mese_inizio - 1, 1)
     dataInizioPeriodo.setHours(0, 0, 0, 0)
     const dataRifRotazione = primoLunediDelPeriodo(dataInizioPeriodo)
     for (let i = 0; i < numMedici; i++) {
       const teorico = calcolaTurnoTeorico(i, dataObj, dataRifRotazione, numMedici, schemiGiorno)
       flagsOriginali.set(mediciAttivi[i].id, {
-        isSub: teorico.is_sub,
-        isMed: teorico.is_med,
+        slot_mattina:    teorico.slot_mattina,
+        slot_pomeriggio: teorico.slot_pomeriggio,
       })
     }
 
-    // ── contaPeriodo: count rm/rp/sub/med per ogni medico, ESCLUSO il giorno target
+    // ── contaPeriodo: count rm/rp + sub/med (somma metà) per ogni
+    // medico, ESCLUSO il giorno target. SUB/MED contano la SOMMA delle
+    // metà giornate (un L con SUB-SUB conta 2 SUB).
     const contaPeriodo = new Map<string, { rm: number; rp: number; sub: number; med: number }>()
     for (const m of mediciAttivi) contaPeriodo.set(m.id, { rm: 0, rp: 0, sub: 0, med: 0 })
     for (const col of colonne) {
@@ -598,14 +637,16 @@ export function ModificaTurniPage() {
         const key = `${m.id}|${col.data}`
         const cur = statoAttuale.get(key)
         const dbT = turniByKey.get(key)
-        const tr  = (cur?.tr  ?? dbT?.turno_ricerca ?? '') as TurnoRicerca
-        const isSub = cur?.isSub ?? dbT?.is_sub ?? false
-        const isMed = cur?.isMed ?? dbT?.is_med ?? false
+        const tr = (cur?.tr ?? dbT?.turno_ricerca ?? '') as TurnoRicerca
+        const sm = cur?.slot_mattina    ?? dbT?.slot_mattina    ?? null
+        const sp = cur?.slot_pomeriggio ?? dbT?.slot_pomeriggio ?? null
         const c = contaPeriodo.get(m.id)!
         if (tr === 'RM') c.rm++
         else if (tr === 'RP') c.rp++
-        if (isSub) c.sub++
-        if (isMed) c.med++
+        if (sm === 'SUB') c.sub++
+        if (sp === 'SUB') c.sub++
+        if (sm === 'MED') c.med++
+        if (sp === 'MED') c.med++
       }
     }
 
@@ -635,13 +676,14 @@ export function ModificaTurniPage() {
         const key = `${medId}|${data}`
         const dbT = turniByKey.get(key)
         const dbCur: RicalcCell = {
-          tc:    (dbT?.turno_clinico ?? '') as TurnoClinico,
-          tr:    (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
-          isSub: dbT?.is_sub ?? false,
-          isMed: dbT?.is_med ?? false,
+          tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
+          tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
+          slot_mattina:    dbT?.slot_mattina    ?? null,
+          slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
         }
         if (newCell.tc === dbCur.tc && newCell.tr === dbCur.tr &&
-            newCell.isSub === dbCur.isSub && newCell.isMed === dbCur.isMed) {
+            newCell.slot_mattina === dbCur.slot_mattina &&
+            newCell.slot_pomeriggio === dbCur.slot_pomeriggio) {
           next.delete(key)
         } else {
           next.set(key, newCell)
@@ -679,40 +721,61 @@ export function ModificaTurniPage() {
       const local = next.get(key)
       const dbT = turniByKey.get(key)
       const cur: RicalcCell = local ?? {
-        tc:    (dbT?.turno_clinico ?? '') as TurnoClinico,
-        tr:    (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
-        isSub: dbT?.is_sub ?? false,
-        isMed: dbT?.is_med ?? false,
+        tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
+        tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
+        slot_mattina:    dbT?.slot_mattina    ?? null,
+        slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
       }
+
       let updated: RicalcCell = cur
+
       if (payload === 'TR:RM') {
         updated = { ...cur, tr: cur.tr === 'RM' ? '' : 'RM' }
       } else if (payload === 'TR:RP') {
         updated = { ...cur, tr: cur.tr === 'RP' ? '' : 'RP' }
-      } else if (payload === 'FLAG:SUB') {
-        updated = { ...cur, isSub: !cur.isSub }
-      } else if (payload === 'FLAG:MED') {
-        updated = { ...cur, isMed: !cur.isMed }
+      } else if (payload === 'FLAG:SUB' || payload === 'FLAG:MED') {
+        const X: SlotPlacement = payload === 'FLAG:SUB' ? 'SUB' : 'MED'
+        // Logica drop:
+        //   1) se mattina == X     → toggle off (mattina = null)
+        //   2) elif pomeriggio==X  → toggle off (pomeriggio = null)
+        //   3) elif mattina null   → mattina = X (riempi)
+        //   4) elif pomeriggio null→ pomeriggio = X (riempi)
+        //   5) else (entrambe ≠ X) → mattina = X (sostituisci, riparte ciclo)
+        // Filtri di eligibilità: la mattina la posso settare solo se TC ∈ {M,L},
+        // il pomeriggio solo se TC ∈ {P,L}. REP/'' non possono ricevere flag.
+        const tc = cur.tc
+        const canM = tc === 'M' || tc === 'L'
+        const canP = tc === 'P' || tc === 'L'
+        let sm = cur.slot_mattina
+        let sp = cur.slot_pomeriggio
+        if (canM && sm === X) sm = null
+        else if (canP && sp === X) sp = null
+        else if (canM && sm === null) sm = X
+        else if (canP && sp === null) sp = X
+        else if (canM) sm = X    // entrambe piene di altro: sostituisci mattina
+        // Se !canM && !canP (REP, vuoto): nessun cambio
+        updated = { ...cur, slot_mattina: sm, slot_pomeriggio: sp }
       } else {
         return prev
       }
 
       // Smart delta: se = DB, rimuovi l'entry
       const dbCur: RicalcCell = {
-        tc:    (dbT?.turno_clinico ?? '') as TurnoClinico,
-        tr:    (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
-        isSub: dbT?.is_sub ?? false,
-        isMed: dbT?.is_med ?? false,
+        tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
+        tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
+        slot_mattina:    dbT?.slot_mattina    ?? null,
+        slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
       }
       if (updated.tc === dbCur.tc && updated.tr === dbCur.tr &&
-          updated.isSub === dbCur.isSub && updated.isMed === dbCur.isMed) {
+          updated.slot_mattina === dbCur.slot_mattina &&
+          updated.slot_pomeriggio === dbCur.slot_pomeriggio) {
         next.delete(key)
       } else {
         next.set(key, updated)
       }
       return next
     })
-  }, [modifiche, turniByKey, updateCella])
+  }, [turniByKey, updateCella])
 
   // ── Paste multi-cella (clinica) ───────────────────────────────────
   // Riceve il testo TSV dal clipboard di Excel + ancora (medico/data della
@@ -752,21 +815,21 @@ export function ModificaTurniPage() {
     }
 
     setModifiche(prev => {
-      let next = new Map(prev)
-      // Per ogni giorno toccato → applica overrides + ricalcolo redistribuivo
+      const next = new Map(prev)
       for (const [data, overrides] of overridePerGiorno) {
         const result = ricalcoloGiorno(data, overrides, next)
         for (const [medId, newCell] of result) {
           const key = `${medId}|${data}`
           const dbT = turniByKey.get(key)
           const dbCur: RicalcCell = {
-            tc:    (dbT?.turno_clinico ?? '') as TurnoClinico,
-            tr:    (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
-            isSub: dbT?.is_sub ?? false,
-            isMed: dbT?.is_med ?? false,
+            tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
+            tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
+            slot_mattina:    dbT?.slot_mattina    ?? null,
+            slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
           }
           if (newCell.tc === dbCur.tc && newCell.tr === dbCur.tr &&
-              newCell.isSub === dbCur.isSub && newCell.isMed === dbCur.isMed) {
+              newCell.slot_mattina === dbCur.slot_mattina &&
+              newCell.slot_pomeriggio === dbCur.slot_pomeriggio) {
             next.delete(key)
           } else {
             next.set(key, newCell)
@@ -822,22 +885,24 @@ export function ModificaTurniPage() {
     if (modifiche.size === 0) return
     setSaving(true); setErr(null); setMsg(null)
     try {
-      const updates = Array.from(modifiche.entries()).map(([key, { tc, tr, isSub, isMed }]) => {
+      const updates = Array.from(modifiche.entries()).map(([key, { tc, tr, slot_mattina, slot_pomeriggio }]) => {
         const [medico_id, data] = key.split('|')
         const orig = getOriginale(medico_id, data)
         const modificato_manualmente = (tc !== orig.tc) || (tr !== orig.tr)
         const dbT = turniByKey.get(key)
+        // is_sub / is_med calcolati come backward-compat (OR sui placement)
+        const is_sub = slot_mattina === 'SUB' || slot_pomeriggio === 'SUB'
+        const is_med = slot_mattina === 'MED' || slot_pomeriggio === 'MED'
         return {
           medico_id,
           data,
           turno_clinico:           tc,
           turno_ricerca:           tr,
           modificato_manualmente,
-          // is_sub/is_med ora vengono dal Map modifiche (sono ricalcolati
-          // automaticamente al cambio TC). is_ferie e note non sono
-          // gestiti dalla pagina, preservati dal DB.
-          is_sub:   isSub,
-          is_med:   isMed,
+          slot_mattina,
+          slot_pomeriggio,
+          is_sub,
+          is_med,
           is_ferie: dbT?.is_ferie ?? false,
           note:     dbT?.note     ?? null,
         }
@@ -877,10 +942,10 @@ export function ModificaTurniPage() {
         isFerieApproved={ferie === 'approved'}
         isFeriePending={ferie === 'pending'}
         isRedDay={col.isDomenica || col.isFestivo}
-        // Sub/med ora vengono dal Map modifiche (ricalcolati ad ogni
-        // cambio TC) o dal DB se non c'è una modifica locale.
-        isSub={cur.isSub}
-        isMed={cur.isMed}
+        // Placement mattina/pomeriggio dal Map modifiche (ricalcolati
+        // automatic ad ogni cambio TC) o dal DB se non c'è modifica locale.
+        slot_mattina={cur.slot_mattina}
+        slot_pomeriggio={cur.slot_pomeriggio}
         // Tabella RICERCA: read-only — RM/RP sono ricalcolati automatic
         // dal cambio TC (regola: RM solo a P, RP solo a M).
         readOnly={tipo === 'ricerca'}
@@ -1039,11 +1104,11 @@ export function ModificaTurniPage() {
             Modifica Turni
           </h2>
           <p className="text-sm text-stone-600 mt-0.5">
-            <strong>Clinica</strong>: clicca per modificare,
+            <strong>Clinica</strong>: clicca per modificare TC,
             <kbd className="px-1 py-0.5 rounded text-[10px]" style={{background:'#f0ece4',border:'1px solid #d5ccb8'}}>Ctrl+V</kbd> da Excel,
-            o trascina M / P / L / REP / Ⓢ / Ⓜ dalla legenda.
-            Al cambio TC, RM/SUB/MED si ricalcolano automatic.
-            <strong className="ml-2">Ricerca</strong>: sola lettura, ma puoi trascinare RM/RP dalla legenda.
+            o trascina M / P / L / REP dalla legenda. Per L con sub mattina + med pomeriggio (o viceversa),
+            il cerchio si divide a metà — primo drop di Ⓢ / Ⓜ = mattina, secondo = pomeriggio.
+            <strong className="ml-2">Ricerca</strong>: trascina RM (a chi fa P) o RP (a chi fa M).
           </p>
         </div>
 
@@ -1155,11 +1220,10 @@ export function ModificaTurniPage() {
               colonne={colonne}
               getCellInfo={(mid, data) => {
                 const cur = getCella(mid, data)
-                const dbT = turniByKey.get(`${mid}|${data}`)
                 return {
-                  tc:    cur.tc,
-                  isSub: dbT?.is_sub ?? false,
-                  isMed: dbT?.is_med ?? false,
+                  tc:              cur.tc,
+                  slot_mattina:    cur.slot_mattina,
+                  slot_pomeriggio: cur.slot_pomeriggio,
                 }
               }}
             />

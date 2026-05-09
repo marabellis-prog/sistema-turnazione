@@ -7,6 +7,7 @@ import type {
   TurnoGenerato,
   TurnoClinico,
   TurnoRicerca,
+  SlotPlacement,
   ColonnaCal,
 } from '../types'
 
@@ -95,8 +96,8 @@ export function calcolaTurnoTeorico(
 
   let turno_clinico: TurnoClinico = ''
   let turno_ricerca: TurnoRicerca = ''
-  let is_sub = false
-  let is_med = false
+  let slot_mattina:    SlotPlacement = null
+  let slot_pomeriggio: SlotPlacement = null
 
   for (const slot of slots) {
     const inM  = slot.numero_medico_mattina    === calcNum
@@ -104,24 +105,28 @@ export function calcolaTurnoTeorico(
     const inRM = slot.numero_medico_rm         === calcNum
     const inRP = slot.numero_medico_rp         === calcNum
 
-    // Turno clinico (primo match vince). is_sub / is_med ereditate
-    // dallo slot in cui il medico è assegnato come clinico.
+    // Turno clinico (primo match vince).
     if (turno_clinico === '') {
-      let matched = false
       if (slot.is_reperibilita && inM) {
-        turno_clinico = 'REP'; matched = true
+        turno_clinico = 'REP'
       } else if (inM && inP) {
-        turno_clinico = 'L';   matched = true
+        turno_clinico = 'L'
       } else if (inM) {
-        turno_clinico = 'M';   matched = true
+        turno_clinico = 'M'
       } else if (inP) {
-        turno_clinico = 'P';   matched = true
-      }
-      if (matched) {
-        is_sub = !!slot.is_sub
-        is_med = !!slot.is_med
+        turno_clinico = 'P'
       }
     }
+
+    // Slot placement: ogni slot ha al massimo uno fra is_sub e is_med.
+    // Per ogni medico assegnato (mattina o pomeriggio dello slot),
+    // ereditiamo il placement nella metà corrispondente. Slot diversi
+    // possono dare placement diversi sulle 2 metà di un L.
+    const placement: SlotPlacement = slot.is_sub ? 'SUB'
+                                   : slot.is_med ? 'MED'
+                                   : null
+    if (inM && slot_mattina    === null && placement) slot_mattina    = placement
+    if (inP && slot_pomeriggio === null && placement) slot_pomeriggio = placement
 
     // Turno ricerca
     if (inRM && inRP) {
@@ -133,7 +138,17 @@ export function calcolaTurnoTeorico(
     }
   }
 
-  return { turno_clinico, turno_ricerca, is_sub, is_med }
+  // REP non lavora attivamente in sub/med → azzera placements
+  if (turno_clinico === 'REP') {
+    slot_mattina = null
+    slot_pomeriggio = null
+  }
+
+  // Backward-compat: is_sub/is_med calcolati dai placement
+  const is_sub = slot_mattina === 'SUB' || slot_pomeriggio === 'SUB'
+  const is_med = slot_mattina === 'MED' || slot_pomeriggio === 'MED'
+
+  return { turno_clinico, turno_ricerca, slot_mattina, slot_pomeriggio, is_sub, is_med }
 }
 
 // ─── Generazione calendario completo ──────────────────────────────
@@ -175,10 +190,10 @@ export function calcolaCalendarioCompleto(
     const schemiGiorno = schemaFiltrato.filter(s => s.giorno_settimana === dWeek)
 
     for (let n = 0; n < numMedici; n++) {
-      const { turno_clinico, turno_ricerca, is_sub, is_med } = calcolaTurnoTeorico(
+      const teo = calcolaTurnoTeorico(
         n,
         corrente,
-        dataRifRotazione,   // ← primo lunedì, non giorno 1
+        dataRifRotazione,
         numMedici,
         schemiGiorno
       )
@@ -186,10 +201,12 @@ export function calcolaCalendarioCompleto(
       risultati.push({
         medico_id: mediciAttivi[n].id,
         data: dataISO,
-        turno_clinico,
-        turno_ricerca,
-        is_sub,
-        is_med,
+        turno_clinico:   teo.turno_clinico,
+        turno_ricerca:   teo.turno_ricerca,
+        slot_mattina:    teo.slot_mattina,
+        slot_pomeriggio: teo.slot_pomeriggio,
+        is_sub:          teo.is_sub,
+        is_med:          teo.is_med,
       })
     }
 
@@ -216,29 +233,33 @@ export function calcolaCalendarioCompleto(
 // 2) ordine alfabetico su medico.nome.
 
 export interface RicalcContext {
-  /** Capacità per il giorno (dallo schema) */
-  capacita: { rm: number; rp: number; sub: number; med: number }
-  /** Lista medici in scope. Verrà ordinata internamente per nome ai fini del tie-break. */
+  /** Capacità separate mattina/pomeriggio (dallo schema). RM/RP sono per slot; SUB/MED suddivisi nei 2 turni. */
+  capacita: {
+    rm: number; rp: number;
+    sub_m: number; sub_p: number;
+    med_m: number; med_p: number;
+  }
+  /** Lista medici in scope. */
   medici:   Medico[]
   /** TC corrente del medico in questo giorno (post-modifica utente) */
   tcGiorno: Map<string, TurnoClinico>
-  /** Flag SUB/MED ORIGINALI dello slot teorico per questo giorno (pre-modifica) */
-  flagsOriginali: Map<string, { isSub: boolean; isMed: boolean }>
-  /** Conteggi nel periodo ESCLUSO il giorno target — per tie-break */
+  /** Placement ORIGINALI dello slot teorico per questo giorno (pre-modifica) */
+  flagsOriginali: Map<string, { slot_mattina: SlotPlacement; slot_pomeriggio: SlotPlacement }>
+  /** Conteggi nel periodo ESCLUSO il giorno target — per tie-break.
+   *  sub e med contano la SOMMA delle metà giornate. */
   contaPeriodo: Map<string, { rm: number; rp: number; sub: number; med: number }>
 }
 
 export interface RicalcCell {
-  tc:    TurnoClinico
-  tr:    TurnoRicerca
-  isSub: boolean
-  isMed: boolean
+  tc:              TurnoClinico
+  tr:              TurnoRicerca
+  slot_mattina:    SlotPlacement
+  slot_pomeriggio: SlotPlacement
 }
 
 export function ricalcolaGiorno(ctx: RicalcContext): Map<string, RicalcCell> {
   const { capacita, medici, tcGiorno, flagsOriginali, contaPeriodo } = ctx
 
-  // Helper sort: meno (count tipo) prima, poi alfabetico nome.
   const cmpBy = (tipo: 'rm' | 'rp' | 'sub' | 'med') => (a: Medico, b: Medico) => {
     const ca = contaPeriodo.get(a.id)?.[tipo] ?? 0
     const cb = contaPeriodo.get(b.id)?.[tipo] ?? 0
@@ -246,57 +267,80 @@ export function ricalcolaGiorno(ctx: RicalcContext): Map<string, RicalcCell> {
     return a.nome.localeCompare(b.nome, 'it', { sensitivity: 'base' })
   }
 
-  // ── RM: TC=='P' → ordino per (count rm asc, nome asc), prendo primi N_RM ──
+  // ── RM: TC=='P' → ordino per (count rm asc, nome asc) ─────────────
   const eligibiliRM = medici.filter(m => tcGiorno.get(m.id) === 'P').sort(cmpBy('rm'))
   const assegnatiRM = new Set(eligibiliRM.slice(0, capacita.rm).map(m => m.id))
-
-  // ── RP: TC=='M' → idem ──────────────────────────────────────────────────
+  // ── RP: TC=='M' ────────────────────────────────────────────────────
   const eligibiliRP = medici.filter(m => tcGiorno.get(m.id) === 'M').sort(cmpBy('rp'))
   const assegnatiRP = new Set(eligibiliRP.slice(0, capacita.rp).map(m => m.id))
 
-  // ── SUB con logica ibrida ───────────────────────────────────────────────
-  const isLavorante = (id: string) => {
+  // ── Helper eligibilità per metà giornata ──────────────────────────
+  const lavoraMattina    = (id: string) => {
     const t = tcGiorno.get(id) ?? ''
-    return t === 'M' || t === 'P' || t === 'L'   // escluso REP e ''
+    return t === 'M' || t === 'L'
+  }
+  const lavoraPomeriggio = (id: string) => {
+    const t = tcGiorno.get(id) ?? ''
+    return t === 'P' || t === 'L'
   }
 
-  const assegnatiSUB = new Set<string>()
-  // a) Preserva: chi era isSub originale e lavora ancora → tiene il flag
+  // ── Inizializza i placement (preservando l'originale dove eligibile)
+  const slotM = new Map<string, SlotPlacement>()
+  const slotP = new Map<string, SlotPlacement>()
   for (const m of medici) {
-    if (flagsOriginali.get(m.id)?.isSub && isLavorante(m.id)) {
-      assegnatiSUB.add(m.id)
-    }
+    const orig = flagsOriginali.get(m.id)
+    if (orig?.slot_mattina    && lavoraMattina(m.id))    slotM.set(m.id, orig.slot_mattina)
+    if (orig?.slot_pomeriggio && lavoraPomeriggio(m.id)) slotP.set(m.id, orig.slot_pomeriggio)
   }
-  // b) Se mancano slot SUB, ridistribuisci tra eligibili non già assegnati
-  if (assegnatiSUB.size < capacita.sub) {
-    const candidati = medici
-      .filter(m => isLavorante(m.id) && !assegnatiSUB.has(m.id))
+
+  // Helper conta metà attualmente assegnate a un certo placement
+  const countSlot = (m: Map<string, SlotPlacement>, p: 'SUB' | 'MED'): number => {
+    let n = 0
+    for (const v of m.values()) if (v === p) n++
+    return n
+  }
+
+  // ── SUB-mattina ────────────────────────────────────────────────────
+  if (countSlot(slotM, 'SUB') < capacita.sub_m) {
+    const cand = medici
+      .filter(m => lavoraMattina(m.id) && slotM.get(m.id) !== 'SUB' && !slotM.has(m.id))
       .sort(cmpBy('sub'))
-    for (let i = 0; i < capacita.sub - assegnatiSUB.size && i < candidati.length; i++) {
-      assegnatiSUB.add(candidati[i].id)
+    for (let i = 0; i < capacita.sub_m - countSlot(slotM, 'SUB') && i < cand.length; i++) {
+      slotM.set(cand[i].id, 'SUB')
     }
   }
-  // c) Se assegnatiSUB > capacita.sub, niente rimozione: lasciamo coerenti
-  //    coi flag originali. Succede solo se l'utente cambia uno schema in
-  //    corsa (raro). I non-eligibili sono già esclusi al passo a).
 
-  // ── MED — identico a SUB ────────────────────────────────────────────────
-  const assegnatiMED = new Set<string>()
-  for (const m of medici) {
-    if (flagsOriginali.get(m.id)?.isMed && isLavorante(m.id)) {
-      assegnatiMED.add(m.id)
-    }
-  }
-  if (assegnatiMED.size < capacita.med) {
-    const candidati = medici
-      .filter(m => isLavorante(m.id) && !assegnatiMED.has(m.id))
+  // ── MED-mattina ────────────────────────────────────────────────────
+  if (countSlot(slotM, 'MED') < capacita.med_m) {
+    const cand = medici
+      .filter(m => lavoraMattina(m.id) && slotM.get(m.id) !== 'MED' && !slotM.has(m.id))
       .sort(cmpBy('med'))
-    for (let i = 0; i < capacita.med - assegnatiMED.size && i < candidati.length; i++) {
-      assegnatiMED.add(candidati[i].id)
+    for (let i = 0; i < capacita.med_m - countSlot(slotM, 'MED') && i < cand.length; i++) {
+      slotM.set(cand[i].id, 'MED')
     }
   }
 
-  // ── Costruisci output: una riga per ogni medico in scope ─────────────────
+  // ── SUB-pomeriggio ─────────────────────────────────────────────────
+  if (countSlot(slotP, 'SUB') < capacita.sub_p) {
+    const cand = medici
+      .filter(m => lavoraPomeriggio(m.id) && slotP.get(m.id) !== 'SUB' && !slotP.has(m.id))
+      .sort(cmpBy('sub'))
+    for (let i = 0; i < capacita.sub_p - countSlot(slotP, 'SUB') && i < cand.length; i++) {
+      slotP.set(cand[i].id, 'SUB')
+    }
+  }
+
+  // ── MED-pomeriggio ─────────────────────────────────────────────────
+  if (countSlot(slotP, 'MED') < capacita.med_p) {
+    const cand = medici
+      .filter(m => lavoraPomeriggio(m.id) && slotP.get(m.id) !== 'MED' && !slotP.has(m.id))
+      .sort(cmpBy('med'))
+    for (let i = 0; i < capacita.med_p - countSlot(slotP, 'MED') && i < cand.length; i++) {
+      slotP.set(cand[i].id, 'MED')
+    }
+  }
+
+  // ── Output ──────────────────────────────────────────────────────────
   const out = new Map<string, RicalcCell>()
   for (const m of medici) {
     const tc = tcGiorno.get(m.id) ?? ''
@@ -305,8 +349,8 @@ export function ricalcolaGiorno(ctx: RicalcContext): Map<string, RicalcCell> {
     else if (assegnatiRP.has(m.id)) tr = 'RP'
     out.set(m.id, {
       tc, tr,
-      isSub: assegnatiSUB.has(m.id),
-      isMed: assegnatiMED.has(m.id),
+      slot_mattina:    lavoraMattina(m.id)    ? (slotM.get(m.id) ?? null) : null,
+      slot_pomeriggio: lavoraPomeriggio(m.id) ? (slotP.get(m.id) ?? null) : null,
     })
   }
   return out

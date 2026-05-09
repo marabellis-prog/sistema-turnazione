@@ -34,6 +34,11 @@ export interface SchemaModello {
   is_med: boolean             // true = il turno clinico di questo slot è in medicina
 }
 
+/** Dove fisicamente lavora il medico in una mezza giornata.
+ *  null = non lavora in quella sessione (es. la mattina di un P) o
+ *  non specificato. */
+export type SlotPlacement = 'SUB' | 'MED' | null
+
 export interface Turno {
   id: string
   medico_id: string
@@ -43,8 +48,17 @@ export interface Turno {
   note: string | null
   modificato_manualmente: boolean
   is_ferie: boolean
-  is_sub: boolean             // turno clinico in sub-intensiva (etichetta rossa)
-  is_med: boolean             // turno clinico in medicina      (etichetta azzurra)
+  // Posizione del medico nella mattina/pomeriggio. Per L può variare:
+  // es. SUB mattina + MED pomeriggio. Per M solo mattina rilevante,
+  // per P solo pomeriggio, per REP/'' entrambi null.
+  slot_mattina:    SlotPlacement
+  slot_pomeriggio: SlotPlacement
+  // Mantenuti per backward-compat con altri pezzi del DB; ora sono
+  // calcolati come OR sui due slot:
+  //   is_sub = slot_mattina === 'SUB' || slot_pomeriggio === 'SUB'
+  //   is_med = slot_mattina === 'MED' || slot_pomeriggio === 'MED'
+  is_sub: boolean
+  is_med: boolean
   created_at: string
   updated_at: string
 }
@@ -78,8 +92,10 @@ export type TurnoRicerca = 'RM' | 'RP' | 'RM+RP' | ''
 export interface TurnoTeorico {
   turno_clinico: TurnoClinico
   turno_ricerca: TurnoRicerca
-  is_sub: boolean
-  is_med: boolean
+  slot_mattina:    SlotPlacement
+  slot_pomeriggio: SlotPlacement
+  is_sub: boolean   // calcolato (backward compat)
+  is_med: boolean   // calcolato (backward compat)
 }
 
 export interface TurnoGenerato {
@@ -87,6 +103,8 @@ export interface TurnoGenerato {
   data: string
   turno_clinico: TurnoClinico
   turno_ricerca: TurnoRicerca
+  slot_mattina:    SlotPlacement
+  slot_pomeriggio: SlotPlacement
   is_sub: boolean
   is_med: boolean
 }
@@ -100,6 +118,8 @@ export interface CellaCal {
   note: string | null
   modificato_manualmente: boolean
   is_ferie: boolean
+  slot_mattina:    SlotPlacement
+  slot_pomeriggio: SlotPlacement
   is_sub: boolean
   is_med: boolean
 }

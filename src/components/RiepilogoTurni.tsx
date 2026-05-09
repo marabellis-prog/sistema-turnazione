@@ -17,12 +17,12 @@
 
 import { useMemo } from 'react'
 import { getItalianHolidays } from './FerieModal'
-import type { Medico, ColonnaCal, TurnoClinico } from '../types'
+import type { Medico, ColonnaCal, TurnoClinico, SlotPlacement } from '../types'
 
 interface CellInfo {
-  tc:    TurnoClinico
-  isSub: boolean
-  isMed: boolean
+  tc:              TurnoClinico
+  slot_mattina:    SlotPlacement
+  slot_pomeriggio: SlotPlacement
 }
 
 interface Props {
@@ -61,21 +61,23 @@ export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId }:
     return list.map(m => {
       let M = 0, P = 0, L = 0, S = 0, D = 0, F = 0, SUB = 0, MED = 0
       for (const col of colonne) {
-        const { tc, isSub, isMed } = getCellInfo(m.id, col.data)
+        const { tc, slot_mattina, slot_pomeriggio } = getCellInfo(m.id, col.data)
         if (tc === 'M') M++
         else if (tc === 'P') P++
         else if (tc === 'L') L++
-        // S/D/F: il medico aveva un TC qualsiasi (incluso REP).
-        // REP = "essere di turno" anche se non copre la giornata operativa.
+        // S/D/F: il medico aveva un TC qualsiasi (escluso ''=riposo).
         // Priorità: domenica > festivo > sabato. Mai doppio conteggio.
         if (tc) {
           if (col.isDomenica) D++
           else if (festivi.has(col.data)) F++
           else if (new Date(col.data + 'T00:00:00').getDay() === 6) S++
-          // SUB/MED: contano qualsiasi turno (anche REP) con il flag attivo
-          if (isSub) SUB++
-          if (isMed) MED++
         }
+        // SUB/MED: contano la SOMMA delle metà giornate.
+        // Un L con SUB+SUB conta 2 SUB; un L con SUB+MED conta 1 SUB + 1 MED.
+        if (slot_mattina    === 'SUB') SUB++
+        if (slot_pomeriggio === 'SUB') SUB++
+        if (slot_mattina    === 'MED') MED++
+        if (slot_pomeriggio === 'MED') MED++
       }
       return { medico: m, M, P, L, S, D, F, SUB, MED, totale: (M + P) + 2 * L }
     })
