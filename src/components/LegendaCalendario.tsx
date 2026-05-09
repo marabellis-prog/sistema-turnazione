@@ -14,10 +14,36 @@ const CELL_FG: Record<string, string> = {
   REP: '#5a2a2a', RM: '#3a2858', RP: '#582840',
 }
 
+/**
+ * Payload del drag&drop dalla legenda. Codice testuale settato in
+ * dataTransfer (text/plain). Le pagine che accettano drop (es.
+ * ModificaTurniPage) lo leggono per capire cosa applicare alla cella.
+ *
+ * Formato: "<gruppo>:<valore>"
+ *   TC:M | TC:P | TC:L | TC:REP   → cambia turno clinico
+ *   TR:RM | TR:RP                  → toggle turno ricerca
+ *   FLAG:SUB | FLAG:MED            → toggle flag sub/med
+ */
+export const DRAG_MIME = 'application/x-turno-drag'
+
 interface Props {
   variant?: 'pubblica' | 'admin'
   className?: string
   style?: React.CSSProperties
+}
+
+/** Helper per attivare il drag su un elemento della legenda. */
+function dragHandlers(payload: string): React.HTMLAttributes<HTMLElement> {
+  return {
+    draggable: true,
+    onDragStart: (e: React.DragEvent) => {
+      e.dataTransfer.setData(DRAG_MIME, payload)
+      // Fallback per browser che non rispettano MIME custom
+      e.dataTransfer.setData('text/plain', payload)
+      e.dataTransfer.effectAllowed = 'copy'
+    },
+    style: { cursor: 'grab' as React.CSSProperties['cursor'] },
+  }
 }
 
 export function LegendaCalendario({ variant = 'pubblica', className, style }: Props) {
@@ -26,13 +52,24 @@ export function LegendaCalendario({ variant = 'pubblica', className, style }: Pr
       className={`flex flex-wrap gap-x-4 gap-y-1.5 px-3 py-2 text-xs items-center rounded ${className ?? ''}`}
       style={{ background: '#f0ece4', border: '1px solid #d5ccb8', ...style }}>
 
-      {/* Tipi di turno — sfondo crema, testo colorato per tipo */}
-      {([ ['M','Mattina'], ['P','Pomeriggio'], ['L','Lungo (M+P)'], ['REP','Reperibilità'],
-           ['RM','Ric. mat.'], ['RP','Ric. pom.'] ] as [string,string][]).map(([t, label]) => {
+      {/* Tipi di turno — chip draggabili, codice TC:* o TR:* in payload */}
+      {([
+        ['M',   'Mattina',     'TC:M'  ],
+        ['P',   'Pomeriggio',  'TC:P'  ],
+        ['L',   'Lungo (M+P)', 'TC:L'  ],
+        ['REP', 'Reperibilità','TC:REP'],
+        ['RM',  'Ric. mat.',   'TR:RM' ],
+        ['RP',  'Ric. pom.',   'TR:RP' ],
+      ] as [string,string,string][]).map(([t, label, payload]) => {
         const isRep = t === 'REP'
+        const dh = dragHandlers(payload)
         return (
           <span key={t} className="flex items-center gap-1">
-            <span className="inline-flex items-center justify-center rounded border"
+            <span
+              draggable={dh.draggable}
+              onDragStart={dh.onDragStart}
+              className="inline-flex items-center justify-center rounded border select-none"
+              title={`Trascina su una cella per applicare ${t}`}
               style={{
                 width: 26, height: 18,
                 background: '#e8e3d8',
@@ -41,6 +78,7 @@ export function LegendaCalendario({ variant = 'pubblica', className, style }: Pr
                 fontSize:   isRep ? 8 : (t.length > 1 ? 8 : 10),
                 fontWeight: isRep ? 800 : 700,
                 letterSpacing: isRep ? '-0.3px' : undefined,
+                cursor: 'grab',
               }}>
               {t}
             </span>
@@ -52,25 +90,35 @@ export function LegendaCalendario({ variant = 'pubblica', className, style }: Pr
       {/* Separatore */}
       <span style={{ width: 1, height: 14, background: '#c0b8a8', display: 'inline-block', margin: '0 2px' }} />
 
-      {/* SUB — cerchietto rosso pastello con S dentro */}
+      {/* SUB — cerchietto rosso pastello con S, draggabile */}
       <span className="flex items-center gap-1">
-        <span style={{
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: 22, height: 22, borderRadius: '50%',
-          background: '#fecaca', border: '1.5px solid #dc2626',
-          fontSize: 12, fontWeight: 800, color: '#9f1239', lineHeight: 1,
-        }}>S</span>
+        <span
+          {...dragHandlers('FLAG:SUB')}
+          className="select-none"
+          title="Trascina su una cella per attivare/disattivare il flag SUB"
+          style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 22, height: 22, borderRadius: '50%',
+            background: '#fecaca', border: '1.5px solid #dc2626',
+            fontSize: 12, fontWeight: 800, color: '#9f1239', lineHeight: 1,
+            cursor: 'grab',
+          }}>S</span>
         <span style={{ color: '#5a5a4a' }}>Sub-intensiva</span>
       </span>
 
-      {/* MED — cerchietto azzurro pastello con M dentro */}
+      {/* MED — cerchietto azzurro pastello con M, draggabile */}
       <span className="flex items-center gap-1">
-        <span style={{
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: 22, height: 22, borderRadius: '50%',
-          background: '#bae6fd', border: '1.5px solid #0284c7',
-          fontSize: 12, fontWeight: 800, color: '#0c4a6e', lineHeight: 1,
-        }}>M</span>
+        <span
+          {...dragHandlers('FLAG:MED')}
+          className="select-none"
+          title="Trascina su una cella per attivare/disattivare il flag MED"
+          style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 22, height: 22, borderRadius: '50%',
+            background: '#bae6fd', border: '1.5px solid #0284c7',
+            fontSize: 12, fontWeight: 800, color: '#0c4a6e', lineHeight: 1,
+            cursor: 'grab',
+          }}>M</span>
         <span style={{ color: '#5a5a4a' }}>Medicina</span>
       </span>
 

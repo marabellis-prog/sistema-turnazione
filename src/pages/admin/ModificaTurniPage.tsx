@@ -34,7 +34,7 @@ import {
 } from '../../lib/algorithm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { RiepilogoTurni } from '../../components/RiepilogoTurni'
-import { LegendaCalendario } from '../../components/LegendaCalendario'
+import { LegendaCalendario, DRAG_MIME } from '../../components/LegendaCalendario'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
 import { useTurniRealtime } from '../../hooks/useTurniRealtime'
@@ -188,15 +188,21 @@ interface EditableCellProps {
    * partendo da questa come ancora (in basso e a destra).
    */
   onPasteRange?:    (text: string) => void
+  /**
+   * Chiamato al drop di un elemento dalla legenda.
+   * Payload: 'TC:M' | 'TC:P' | 'TC:L' | 'TC:REP' | 'TR:RM' | 'TR:RP' | 'FLAG:SUB' | 'FLAG:MED'
+   */
+  onDropFromLegend?: (payload: string) => void
 }
 
 function EditableCell({
   tipo, tc, tr, isModified, isFerieApproved, isFeriePending, isRedDay,
   isSub = false, isMed = false, readOnly = false,
-  onChangeClinico, onChangeRicerca, onPasteRange,
+  onChangeClinico, onChangeRicerca, onPasteRange, onDropFromLegend,
 }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   const [draft,   setDraft]   = useState('')
+  const [dragOver, setDragOver] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -249,13 +255,35 @@ function EditableCell({
   const displayValue = tipo === 'clinica' ? tc : tr
   const hasValue     = !!displayValue
 
+  // Highlight visivo durante il drag-over: bordo azzurro+ombra giallo tenue
+  const dragOverShadow = dragOver
+    ? 'inset 0 0 0 2px #f59e0b, 0 0 6px 0 rgba(245,158,11,0.5)'
+    : modifiedShadow
+
   return (
     <td
       onClick={!editing && !readOnly ? startEdit : undefined}
+      onDragOver={e => {
+        if (!onDropFromLegend) return
+        const types = e.dataTransfer.types
+        if (!types.includes(DRAG_MIME) && !types.includes('text/plain')) return
+        e.preventDefault()                    // necessario per accettare il drop
+        e.dataTransfer.dropEffect = 'copy'
+        setDragOver(true)
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={e => {
+        if (!onDropFromLegend) return
+        e.preventDefault()
+        setDragOver(false)
+        const payload = e.dataTransfer.getData(DRAG_MIME) ||
+                        e.dataTransfer.getData('text/plain')
+        if (payload) onDropFromLegend(payload)
+      }}
       style={{
         width: 32, minWidth: 32, height: 28,
         background:    bg,
-        boxShadow:     modifiedShadow,
+        boxShadow:     dragOverShadow,
         cursor:        readOnly ? 'default' : (editing ? 'text' : 'pointer'),
         padding:       0,
         textAlign:     'center',
@@ -623,6 +651,69 @@ export function ModificaTurniPage() {
     })
   }, [ricalcoloGiorno, turniByKey])
 
+  // ── Drop dalla legenda ────────────────────────────────────────────
+  // Le icone della legenda sono draggabili. Drop su una cella applica:
+  //   TC:M / TC:P / TC:L / TC:REP  →  setta TC, ricalcola il giorno
+  //   TR:RM / TR:RP                →  toggle TR (set o svuota se uguale)
+  //   FLAG:SUB / FLAG:MED          →  toggle flag, niente ricalcolo
+  // Il drop di TC è equivalente a un editing manuale; gli altri sono
+  // override "manuali" che il prossimo ricalcolo del giorno potrebbe
+  // sovrascrivere se cambia un TC.
+  const handleDropFromLegend = useCallback((medicoId: string, data: string, payload: string) => {
+    if (payload.startsWith('TC:')) {
+      const newTc = payload.slice(3) as TurnoClinico
+      if (newTc === 'M' || newTc === 'P' || newTc === 'L' || newTc === 'REP') {
+        const k = `${medicoId}|${data}`
+        const local = modifiche.get(k)
+        const dbT = turniByKey.get(k)
+        const curTr = (local?.tr ?? dbT?.turno_ricerca ?? '') as TurnoRicerca
+        updateCella(medicoId, data, newTc, curTr)
+      }
+      return
+    }
+
+    // TR / FLAG: aggiornamento diretto della singola cella, no ricalcolo
+    setModifiche(prev => {
+      const next = new Map(prev)
+      const key = `${medicoId}|${data}`
+      const local = next.get(key)
+      const dbT = turniByKey.get(key)
+      const cur: RicalcCell = local ?? {
+        tc:    (dbT?.turno_clinico ?? '') as TurnoClinico,
+        tr:    (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
+        isSub: dbT?.is_sub ?? false,
+        isMed: dbT?.is_med ?? false,
+      }
+      let updated: RicalcCell = cur
+      if (payload === 'TR:RM') {
+        updated = { ...cur, tr: cur.tr === 'RM' ? '' : 'RM' }
+      } else if (payload === 'TR:RP') {
+        updated = { ...cur, tr: cur.tr === 'RP' ? '' : 'RP' }
+      } else if (payload === 'FLAG:SUB') {
+        updated = { ...cur, isSub: !cur.isSub }
+      } else if (payload === 'FLAG:MED') {
+        updated = { ...cur, isMed: !cur.isMed }
+      } else {
+        return prev
+      }
+
+      // Smart delta: se = DB, rimuovi l'entry
+      const dbCur: RicalcCell = {
+        tc:    (dbT?.turno_clinico ?? '') as TurnoClinico,
+        tr:    (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
+        isSub: dbT?.is_sub ?? false,
+        isMed: dbT?.is_med ?? false,
+      }
+      if (updated.tc === dbCur.tc && updated.tr === dbCur.tr &&
+          updated.isSub === dbCur.isSub && updated.isMed === dbCur.isMed) {
+        next.delete(key)
+      } else {
+        next.set(key, updated)
+      }
+      return next
+    })
+  }, [modifiche, turniByKey, updateCella])
+
   // ── Paste multi-cella (clinica) ───────────────────────────────────
   // Riceve il testo TSV dal clipboard di Excel + ancora (medico/data della
   // cella in cui l'utente ha cliccato e fatto Ctrl+V). Itera righe×colonne
@@ -800,6 +891,19 @@ export function ModificaTurniPage() {
         onPasteRange={tipo === 'clinica'
           ? (text) => handlePasteRange(medicoId, col.data, text)
           : undefined}
+        // Drop dalla legenda: TC e flag sub/med solo su clinica;
+        // TR (RM/RP) solo su ricerca. Filtriamo nel handler stesso.
+        onDropFromLegend={(payload) => {
+          // Drop di TC o FLAG: solo nella clinica
+          if (tipo === 'clinica' && (payload.startsWith('TC:') || payload.startsWith('FLAG:'))) {
+            handleDropFromLegend(medicoId, col.data, payload)
+          }
+          // Drop di TR: solo nella ricerca
+          else if (tipo === 'ricerca' && payload.startsWith('TR:')) {
+            handleDropFromLegend(medicoId, col.data, payload)
+          }
+          // Altri combinazioni: ignorate (drop si annulla silenziosamente)
+        }}
       />
     )
   }
@@ -935,11 +1039,11 @@ export function ModificaTurniPage() {
             Modifica Turni
           </h2>
           <p className="text-sm text-stone-600 mt-0.5">
-            <strong>Clinica</strong> (M / P / L / REP): clicca per modificare,
-            ad ogni cambio TR/SUB/MED del giorno si ricalcolano automatic
-            (RM solo a P, RP solo a M, tie-break: meno turni di quel tipo + alfabetico).
-            Da Excel <kbd className="px-1 py-0.5 rounded text-[10px]" style={{background:'#f0ece4',border:'1px solid #d5ccb8'}}>Ctrl+V</kbd> sulla prima cella per incollare un blocco.
-            <strong className="ml-2">Ricerca</strong>: sola lettura.
+            <strong>Clinica</strong>: clicca per modificare,
+            <kbd className="px-1 py-0.5 rounded text-[10px]" style={{background:'#f0ece4',border:'1px solid #d5ccb8'}}>Ctrl+V</kbd> da Excel,
+            o trascina M / P / L / REP / Ⓢ / Ⓜ dalla legenda.
+            Al cambio TC, RM/SUB/MED si ricalcolano automatic.
+            <strong className="ml-2">Ricerca</strong>: sola lettura, ma puoi trascinare RM/RP dalla legenda.
           </p>
         </div>
 
