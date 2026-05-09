@@ -16,6 +16,7 @@ export interface Configurazione {
   anno_fine: number
   mese_fine: number           // 1..12
   schema_attivo: number       // numero schema (1, 2, ...)
+  max_ferie_concomitanti: number   // quanti medici al massimo possono essere in ferie nello stesso giorno
   updated_at: string
 }
 

@@ -1,12 +1,12 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Calendar, Check, X, Plus, Clock, Wifi, WifiOff } from 'lucide-react'
+import { Calendar, Check, X, Plus, Clock, Wifi, WifiOff, Settings, Save } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { FerieModal, expandRange, toRanges, type DayChange } from '../../components/FerieModal'
-import type { Medico, Ferie } from '../../types'
+import type { Medico, Ferie, Configurazione } from '../../types'
 
 // ══════════════════════════════════════════════════════════════════
 // HELPER LOCALI
@@ -30,6 +30,10 @@ export function GestioneFeriePage() {
   const [modalMedico,    setModalMedico]    = useState<Medico | null>(null)
   const [insertMedicoId, setInsertMedicoId] = useState('')
   const [errore,         setErrore]         = useState('')
+  // Impostazioni: form locale + dirty tracking. Sync iniziale dal config DB.
+  const [maxFerieDraft,    setMaxFerieDraft]   = useState<string>('2')
+  const [maxFerieSaving,   setMaxFerieSaving]  = useState(false)
+  const [maxFerieMsg,      setMaxFerieMsg]     = useState<string | null>(null)
   const { realtimeOn } = useFerieRealtime()
 
   // ── Query ────────────────────────────────────────────────────
@@ -41,6 +45,24 @@ export function GestioneFeriePage() {
       return data
     },
   })
+
+  const { data: config } = useQuery<Configurazione | null>({
+    queryKey: ['configurazione'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('configurazione').select('*')
+        .order('updated_at', { ascending: false }).limit(1).maybeSingle()
+      if (error) throw error
+      return data
+    },
+  })
+
+  // Sync del draft quando il config arriva dal DB
+  useEffect(() => {
+    if (config?.max_ferie_concomitanti != null) {
+      setMaxFerieDraft(String(config.max_ferie_concomitanti))
+    }
+  }, [config?.max_ferie_concomitanti])
 
   const { data: ferie = [] } = useQuery<Ferie[]>({
     queryKey: ['ferie'],
@@ -182,6 +204,42 @@ export function GestioneFeriePage() {
   }
 
   const insertMedico = medici.find(m => m.id === insertMedicoId) ?? null
+
+  // ── Salva impostazioni ferie ─────────────────────────────────
+  async function salvaImpostazioniFerie() {
+    const n = parseInt(maxFerieDraft, 10)
+    if (isNaN(n) || n < 0) {
+      setMaxFerieMsg('⚠ Valore non valido (deve essere un intero ≥ 0)')
+      setTimeout(() => setMaxFerieMsg(null), 4000)
+      return
+    }
+    if (!config?.id) {
+      setMaxFerieMsg('⚠ Configurazione non trovata. Salva prima il calendario in "Genera Calendario".')
+      setTimeout(() => setMaxFerieMsg(null), 4000)
+      return
+    }
+    setMaxFerieSaving(true)
+    try {
+      const { error } = await supabase.from('configurazione')
+        .update({
+          max_ferie_concomitanti: n,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', config.id)
+      if (error) throw error
+      setMaxFerieMsg(`✓ Salvato — max ${n} ${n === 1 ? 'persona' : 'persone'} in ferie/giorno`)
+      qc.invalidateQueries({ queryKey: ['configurazione'] })
+      setTimeout(() => setMaxFerieMsg(null), 3000)
+    } catch (e) {
+      setMaxFerieMsg(`Errore: ${(e as Error).message}`)
+      setTimeout(() => setMaxFerieMsg(null), 5000)
+    } finally {
+      setMaxFerieSaving(false)
+    }
+  }
+
+  // Dirty: il draft è diverso dal valore salvato → bottone Salva attivo
+  const maxFerieDirty = String(config?.max_ferie_concomitanti ?? '') !== maxFerieDraft
 
   // ─────────────────────────────────────────────────────────────
   return (
@@ -348,6 +406,52 @@ export function GestioneFeriePage() {
           I giorni selezionati vengono salvati come <strong>richiesta</strong> (non ancora approvata) e
           appariranno in "Ferie da approvare" per conferma. Per approvare direttamente usa il pulsante
           nella sezione sopra.
+        </p>
+      </div>
+
+      {/* ══ 4 · IMPOSTAZIONI FERIE ════════════════════════════════ */}
+      <div className="card p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Settings size={14} style={{ color: '#476540' }} />
+          <h3 className="font-semibold text-stone-800 text-sm">Impostazioni Ferie</h3>
+        </div>
+
+        <div className="flex flex-wrap gap-3 items-center">
+          <label className="text-sm text-stone-600 flex items-center gap-2 flex-1 min-w-[260px]">
+            <span>Persone in ferie nello stesso giorno (max):</span>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={maxFerieDraft}
+              onChange={e => setMaxFerieDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') salvaImpostazioniFerie() }}
+              disabled={maxFerieSaving}
+              className="input w-20 text-sm text-center"
+              placeholder="2"
+            />
+          </label>
+          <button
+            onClick={salvaImpostazioniFerie}
+            disabled={!maxFerieDirty || maxFerieSaving || !config}
+            className="btn-primary py-1.5 px-4 text-sm gap-1.5 shrink-0">
+            <Save size={13} />
+            {maxFerieSaving ? 'Salvataggio…' : 'Salva'}
+          </button>
+        </div>
+
+        {maxFerieMsg && (
+          <div className="text-xs px-2 py-1.5 rounded"
+            style={maxFerieMsg.startsWith('✓')
+              ? { background: '#d5e5d0', color: '#2e5a28' }
+              : { background: '#fde0e0', color: '#7a2020' }}>
+            {maxFerieMsg}
+          </div>
+        )}
+
+        <p className="text-xs text-stone-500 leading-relaxed">
+          Numero massimo di medici che possono essere in ferie contemporaneamente nello
+          stesso giorno. Verrà usato per validare le richieste in arrivo.
         </p>
       </div>
     </div>
