@@ -512,19 +512,19 @@ export function CalendarioPage() {
                   // nella label, sfondo sempre neutro.
                   const valKey = tipo === 'ricerca' ? tr.split('+')[0] : ''
 
-                  // Magia 4-colori: applicato alle celle clinica del giorno
-                  // (esclusi i medici che sono ESSI STESSI in ferie — quelli
-                  // mantengono il verde della propria ferie). Priorità:
-                  // ferie medico singolo > 4-colori giorno > festivo > neutro.
+                  // Magia 4-colori: applicata SOLO alle celle dei medici
+                  // che SONO in ferie approvate quel giorno, sostituendo il
+                  // verde standard delle ferie. Le celle degli altri medici
+                  // restano col background normale.
                   const ferieGiorno = colorePerGiorno.get(col.data)?.color ?? null
 
                   let bgBase: string
-                  if (tipo === 'clinica' && isFerieApproved) {
-                    bgBase = '#d5e5d0'
+                  if (tipo === 'clinica' && isFerieApproved && ferieGiorno) {
+                    bgBase = COLORI_FERIE[ferieGiorno].bg
+                  } else if (tipo === 'clinica' && isFerieApproved) {
+                    bgBase = '#d5e5d0'   // fallback (no colore calcolato)
                   } else if (tipo === 'clinica' && isFeriePending) {
                     bgBase = 'repeating-linear-gradient(-45deg, #d5e5d0 0, #d5e5d0 3px, #a8c4a0 3px, #a8c4a0 6px)'
-                  } else if (tipo === 'clinica' && ferieGiorno) {
-                    bgBase = COLORI_FERIE[ferieGiorno].bg
                   } else if (col.isDomenica || col.isFestivo) {
                     bgBase = '#fef3c7'
                   } else if (tipo === 'ricerca' && valKey && CELL_COLORS[valKey]) {

@@ -260,21 +260,20 @@ function EditableCell({
     setEditing(false)
   }
 
-  // Background della cella (priorità clinica: ferie medico > 4-colori
-  // giorno > festivo > neutro):
-  //   - Cella di un medico in ferie → verde (priorità massima)
-  //   - Cella di un medico NON in ferie, in giorno con altri in ferie →
-  //     colore "magia 4 colori" (rosso/arancione/azzurro/verde)
-  //   - Festivo/domenica → giallo
-  //   - Altro → neutro
-  // Ricerca: solo bg basato su TR (priorità invariata).
+  // Background cella clinica:
+  //   - Medico in ferie APPROVATE → 4-colori del giorno (verde se ferie
+  //     gestite, azzurro/arancione/rosso secondo livello di criticità).
+  //     Se per qualche motivo il colore non è calcolato, fallback verde.
+  //   - Medico in ferie PENDING → verde a righe (info pending del singolo)
+  //   - Altri medici → festivo/domenica giallo o neutro
+  // Ricerca: bg basato su TR, invariato.
   let bg: string
-  if (tipo === 'clinica' && isFerieApproved) {
+  if (tipo === 'clinica' && isFerieApproved && ferieGiornoColore) {
+    bg = COLORI_FERIE[ferieGiornoColore].bg
+  } else if (tipo === 'clinica' && isFerieApproved) {
     bg = '#d5e5d0'
   } else if (tipo === 'clinica' && isFeriePending) {
     bg = 'repeating-linear-gradient(-45deg, #d5e5d0 0, #d5e5d0 3px, #a8c4a0 3px, #a8c4a0 6px)'
-  } else if (tipo === 'clinica' && ferieGiornoColore) {
-    bg = COLORI_FERIE[ferieGiornoColore].bg
   } else if (tipo === 'clinica') {
     bg = isRedDay ? '#fef3c7' : '#fefefe'
   } else {
