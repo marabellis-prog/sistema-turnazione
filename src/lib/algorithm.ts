@@ -199,6 +199,119 @@ export function calcolaCalendarioCompleto(
   return risultati
 }
 
+// ─── Ricalcolo redistributivo per UN giorno ──────────────────────────
+// Quando l'admin cambia manualmente il TC di un medico in Modifica Turni,
+// questa funzione ridistribuisce TR (RM/RP) e i flag SUB/MED del GIORNO
+// rispettando le regole di eligibilità + tie-break "chi ne ha meno + alfa".
+//
+// Regole:
+//   RM solo a chi ha TC=='P'   |   RP solo a chi ha TC=='M'
+//   (escluso L, REP, riposo — un medico non può avere RM e RP insieme)
+//
+//   SUB/MED applicabili solo a TC ∈ {M, P, L} (escluso REP e riposo)
+//   Logica ibrida: chi era flaggato dallo slot teorico mantiene il flag
+//   se ancora eligibile; capacità mancanti redistribuite per priorità.
+//
+// Tie-break (RM, RP, SUB, MED): 1) meno turni di quel tipo nel periodo,
+// 2) ordine alfabetico su medico.nome.
+
+export interface RicalcContext {
+  /** Capacità per il giorno (dallo schema) */
+  capacita: { rm: number; rp: number; sub: number; med: number }
+  /** Lista medici in scope. Verrà ordinata internamente per nome ai fini del tie-break. */
+  medici:   Medico[]
+  /** TC corrente del medico in questo giorno (post-modifica utente) */
+  tcGiorno: Map<string, TurnoClinico>
+  /** Flag SUB/MED ORIGINALI dello slot teorico per questo giorno (pre-modifica) */
+  flagsOriginali: Map<string, { isSub: boolean; isMed: boolean }>
+  /** Conteggi nel periodo ESCLUSO il giorno target — per tie-break */
+  contaPeriodo: Map<string, { rm: number; rp: number; sub: number; med: number }>
+}
+
+export interface RicalcCell {
+  tc:    TurnoClinico
+  tr:    TurnoRicerca
+  isSub: boolean
+  isMed: boolean
+}
+
+export function ricalcolaGiorno(ctx: RicalcContext): Map<string, RicalcCell> {
+  const { capacita, medici, tcGiorno, flagsOriginali, contaPeriodo } = ctx
+
+  // Helper sort: meno (count tipo) prima, poi alfabetico nome.
+  const cmpBy = (tipo: 'rm' | 'rp' | 'sub' | 'med') => (a: Medico, b: Medico) => {
+    const ca = contaPeriodo.get(a.id)?.[tipo] ?? 0
+    const cb = contaPeriodo.get(b.id)?.[tipo] ?? 0
+    if (ca !== cb) return ca - cb
+    return a.nome.localeCompare(b.nome, 'it', { sensitivity: 'base' })
+  }
+
+  // ── RM: TC=='P' → ordino per (count rm asc, nome asc), prendo primi N_RM ──
+  const eligibiliRM = medici.filter(m => tcGiorno.get(m.id) === 'P').sort(cmpBy('rm'))
+  const assegnatiRM = new Set(eligibiliRM.slice(0, capacita.rm).map(m => m.id))
+
+  // ── RP: TC=='M' → idem ──────────────────────────────────────────────────
+  const eligibiliRP = medici.filter(m => tcGiorno.get(m.id) === 'M').sort(cmpBy('rp'))
+  const assegnatiRP = new Set(eligibiliRP.slice(0, capacita.rp).map(m => m.id))
+
+  // ── SUB con logica ibrida ───────────────────────────────────────────────
+  const isLavorante = (id: string) => {
+    const t = tcGiorno.get(id) ?? ''
+    return t === 'M' || t === 'P' || t === 'L'   // escluso REP e ''
+  }
+
+  const assegnatiSUB = new Set<string>()
+  // a) Preserva: chi era isSub originale e lavora ancora → tiene il flag
+  for (const m of medici) {
+    if (flagsOriginali.get(m.id)?.isSub && isLavorante(m.id)) {
+      assegnatiSUB.add(m.id)
+    }
+  }
+  // b) Se mancano slot SUB, ridistribuisci tra eligibili non già assegnati
+  if (assegnatiSUB.size < capacita.sub) {
+    const candidati = medici
+      .filter(m => isLavorante(m.id) && !assegnatiSUB.has(m.id))
+      .sort(cmpBy('sub'))
+    for (let i = 0; i < capacita.sub - assegnatiSUB.size && i < candidati.length; i++) {
+      assegnatiSUB.add(candidati[i].id)
+    }
+  }
+  // c) Se assegnatiSUB > capacita.sub, niente rimozione: lasciamo coerenti
+  //    coi flag originali. Succede solo se l'utente cambia uno schema in
+  //    corsa (raro). I non-eligibili sono già esclusi al passo a).
+
+  // ── MED — identico a SUB ────────────────────────────────────────────────
+  const assegnatiMED = new Set<string>()
+  for (const m of medici) {
+    if (flagsOriginali.get(m.id)?.isMed && isLavorante(m.id)) {
+      assegnatiMED.add(m.id)
+    }
+  }
+  if (assegnatiMED.size < capacita.med) {
+    const candidati = medici
+      .filter(m => isLavorante(m.id) && !assegnatiMED.has(m.id))
+      .sort(cmpBy('med'))
+    for (let i = 0; i < capacita.med - assegnatiMED.size && i < candidati.length; i++) {
+      assegnatiMED.add(candidati[i].id)
+    }
+  }
+
+  // ── Costruisci output: una riga per ogni medico in scope ─────────────────
+  const out = new Map<string, RicalcCell>()
+  for (const m of medici) {
+    const tc = tcGiorno.get(m.id) ?? ''
+    let tr: TurnoRicerca = ''
+    if (assegnatiRM.has(m.id)) tr = 'RM'
+    else if (assegnatiRP.has(m.id)) tr = 'RP'
+    out.set(m.id, {
+      tc, tr,
+      isSub: assegnatiSUB.has(m.id),
+      isMed: assegnatiMED.has(m.id),
+    })
+  }
+  return out
+}
+
 // ─── Generazione colonne calendario (per la UI) ────────────────────
 
 /**

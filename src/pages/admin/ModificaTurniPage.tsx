@@ -28,7 +28,9 @@ import { useQuery } from '@tanstack/react-query'
 import { Calendar, Save, Layers, Rows3 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import {
-  calcolaCalendarioCompleto, generaColonne, MESI_IT,
+  calcolaCalendarioCompleto, calcolaTurnoTeorico, primoLunediDelPeriodo,
+  getDayOfWeek, ricalcolaGiorno, generaColonne, MESI_IT,
+  type RicalcCell,
 } from '../../lib/algorithm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { RiepilogoTurni } from '../../components/RiepilogoTurni'
@@ -329,9 +331,11 @@ export function ModificaTurniPage() {
   const [err,         setErr]         = useState<string | null>(null)
   const [msg,         setMsg]         = useState<string | null>(null)
 
-  // Map<key=`${medicoId}|${data}`, {tc, tr}> = modifiche locali non salvate
+  // Map<key=`${medicoId}|${data}`, RicalcCell> = modifiche locali non salvate.
+  // Ogni entry contiene tc, tr, isSub, isMed insieme: il ricalcolo
+  // automatico al cambio TC genera in blocco le modifiche del giorno.
   const [modifiche, setModifiche] =
-    useState<Map<string, { tc: TurnoClinico; tr: TurnoRicerca }>>(() => new Map())
+    useState<Map<string, RicalcCell>>(() => new Map())
 
   const hasUnsaved = modifiche.size > 0
 
@@ -466,11 +470,13 @@ export function ModificaTurniPage() {
   }, [colonne])
 
   // ── Helpers per leggere lo stato della singola cella ───────────────
-  const getCella = useCallback((medicoId: string, data: string): { tc: TurnoClinico; tr: TurnoRicerca } => {
+  const getCella = useCallback((medicoId: string, data: string): RicalcCell => {
     const key = `${medicoId}|${data}`
     if (modifiche.has(key)) return modifiche.get(key)!
     const t = turniByKey.get(key)
-    return t ? { tc: t.turno_clinico, tr: t.turno_ricerca } : { tc: '', tr: '' }
+    return t
+      ? { tc: t.turno_clinico, tr: t.turno_ricerca, isSub: t.is_sub, isMed: t.is_med }
+      : { tc: '', tr: '', isSub: false, isMed: false }
   }, [modifiche, turniByKey])
 
   const getOriginale = useCallback((medicoId: string, data: string): { tc: TurnoClinico; tr: TurnoRicerca } => {
@@ -490,20 +496,132 @@ export function ModificaTurniPage() {
     return null
   }, [turniByKey, ferieRanges])
 
-  // ── Update cella (delta vs DB) ─────────────────────────────────────
-  // Modifica un singolo "lato" della cella (TC o TR) preservando l'altro.
-  // Se il nuovo (tc, tr) coincide col DB, rimuoviamo l'entry dal Map.
-  const updateCella = useCallback((medicoId: string, data: string, tc: TurnoClinico, tr: TurnoRicerca) => {
-    const key = `${medicoId}|${data}`
-    const dbT = turniByKey.get(key)
-    const dbCur = dbT ? { tc: dbT.turno_clinico, tr: dbT.turno_ricerca } : { tc: '' as TurnoClinico, tr: '' as TurnoRicerca }
+  // ── Ricalcolo automatico per un giorno ────────────────────────────
+  // Riceve le modifiche TC pendenti per il giorno e produce un Map di
+  // delta (key→RicalcCell) per TUTTE le celle del giorno secondo le
+  // regole: RM solo a P, RP solo a M, SUB/MED ibride con tie-break
+  // (meno turni di quel tipo nel periodo + alfabetico). Il chiamante
+  // applica i delta al Map modifiche.
+  //
+  // ATTENZIONE: la funzione è "pura" lato closure. Per usarla da più
+  // entry-point (cambio singola cella, paste multi-cella) accetta lo
+  // stato corrente del Map come parametro.
+  const ricalcoloGiorno = useCallback((
+    data: string,
+    tcOverrides: Map<string, TurnoClinico>,
+    statoAttuale: Map<string, RicalcCell>,
+  ): Map<string, RicalcCell> => {
+    if (!config || schemi.length === 0 || medici.length === 0) return statoAttuale
+
+    const mediciAttivi = [...medici].filter(m => m.attivo)
+                                    .sort((a, b) => a.numero_ordine - b.numero_ordine)
+    const numMedici = mediciAttivi.length
+
+    // ── Schema del giorno_settimana di `data` ─────────────────────
+    const dataObj = new Date(data + 'T00:00:00')
+    const dWeek = getDayOfWeek(dataObj)   // 1..7
+    const schemiGiorno = schemi.filter(s =>
+      s.schema_num === config.schema_attivo && s.giorno_settimana === dWeek
+    )
+
+    const capacita = {
+      rm:  schemiGiorno.filter(s => s.numero_medico_rm  !== null).length,
+      rp:  schemiGiorno.filter(s => s.numero_medico_rp  !== null).length,
+      sub: schemiGiorno.filter(s => s.is_sub).length,
+      med: schemiGiorno.filter(s => s.is_med).length,
+    }
+
+    // ── tcGiorno: TC corrente per ogni medico nel giorno target ───
+    // Override > modifica locale > DB > vuoto
+    const tcGiorno = new Map<string, TurnoClinico>()
+    for (const m of mediciAttivi) {
+      if (tcOverrides.has(m.id)) {
+        tcGiorno.set(m.id, tcOverrides.get(m.id)!)
+        continue
+      }
+      const key = `${m.id}|${data}`
+      const cur = statoAttuale.get(key)
+      if (cur) tcGiorno.set(m.id, cur.tc)
+      else {
+        const dbT = turniByKey.get(key)
+        tcGiorno.set(m.id, (dbT?.turno_clinico ?? '') as TurnoClinico)
+      }
+    }
+
+    // ── flagsOriginali: dallo slot teorico del giorno ─────────────
+    const flagsOriginali = new Map<string, { isSub: boolean; isMed: boolean }>()
+    const dataInizioPeriodo = new Date(config.anno_inizio, config.mese_inizio - 1, 1)
+    dataInizioPeriodo.setHours(0, 0, 0, 0)
+    const dataRifRotazione = primoLunediDelPeriodo(dataInizioPeriodo)
+    for (let i = 0; i < numMedici; i++) {
+      const teorico = calcolaTurnoTeorico(i, dataObj, dataRifRotazione, numMedici, schemiGiorno)
+      flagsOriginali.set(mediciAttivi[i].id, {
+        isSub: teorico.is_sub,
+        isMed: teorico.is_med,
+      })
+    }
+
+    // ── contaPeriodo: count rm/rp/sub/med per ogni medico, ESCLUSO il giorno target
+    const contaPeriodo = new Map<string, { rm: number; rp: number; sub: number; med: number }>()
+    for (const m of mediciAttivi) contaPeriodo.set(m.id, { rm: 0, rp: 0, sub: 0, med: 0 })
+    for (const col of colonne) {
+      if (col.data === data) continue
+      for (const m of mediciAttivi) {
+        const key = `${m.id}|${col.data}`
+        const cur = statoAttuale.get(key)
+        const dbT = turniByKey.get(key)
+        const tr  = (cur?.tr  ?? dbT?.turno_ricerca ?? '') as TurnoRicerca
+        const isSub = cur?.isSub ?? dbT?.is_sub ?? false
+        const isMed = cur?.isMed ?? dbT?.is_med ?? false
+        const c = contaPeriodo.get(m.id)!
+        if (tr === 'RM') c.rm++
+        else if (tr === 'RP') c.rp++
+        if (isSub) c.sub++
+        if (isMed) c.med++
+      }
+    }
+
+    // ── Esegui il ricalcolo ────────────────────────────────────
+    return ricalcolaGiorno({
+      capacita,
+      medici: mediciAttivi,
+      tcGiorno,
+      flagsOriginali,
+      contaPeriodo,
+    })
+  }, [config, schemi, medici, turniByKey, colonne])
+
+  // ── Update cella (TC) → triggera ricalcolo del giorno ──────────────
+  // Cambia il TC di un medico in un giorno e ridistribuisce automaticamente
+  // TR/SUB/MED del giorno secondo le regole. Il delta vs DB viene calcolato
+  // per ogni cella del giorno: se il risultato coincide col DB l'entry è
+  // rimossa dal Map (no falso modificato).
+  const updateCella = useCallback((medicoId: string, data: string, tc: TurnoClinico, _tr: TurnoRicerca) => {
     setModifiche(prev => {
+      const overrides = new Map<string, TurnoClinico>()
+      overrides.set(medicoId, tc)
+      const result = ricalcoloGiorno(data, overrides, prev)
+
       const next = new Map(prev)
-      if (tc === dbCur.tc && tr === dbCur.tr) next.delete(key)
-      else next.set(key, { tc, tr })
+      for (const [medId, newCell] of result) {
+        const key = `${medId}|${data}`
+        const dbT = turniByKey.get(key)
+        const dbCur: RicalcCell = {
+          tc:    (dbT?.turno_clinico ?? '') as TurnoClinico,
+          tr:    (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
+          isSub: dbT?.is_sub ?? false,
+          isMed: dbT?.is_med ?? false,
+        }
+        if (newCell.tc === dbCur.tc && newCell.tr === dbCur.tr &&
+            newCell.isSub === dbCur.isSub && newCell.isMed === dbCur.isMed) {
+          next.delete(key)
+        } else {
+          next.set(key, newCell)
+        }
+      }
       return next
     })
-  }, [turniByKey])
+  }, [ricalcoloGiorno, turniByKey])
 
   // ── Paste multi-cella (clinica) ───────────────────────────────────
   // Riceve il testo TSV dal clipboard di Excel + ancora (medico/data della
@@ -519,33 +637,49 @@ export function ModificaTurniPage() {
     // Excel termina spesso il blocco con un newline finale → lo trimmo.
     // \r\n di Windows → \n.
     const rows = text.replace(/\r/g, '').replace(/\n+$/, '').split('\n')
+
+    // Raggruppa gli override per giorno: { data → Map<medicoId, newTc> }
+    // Così possiamo ricalcolare un giorno alla volta (ricalcoloGiorno è
+    // l'unità di lavoro: applicare i nuovi TC in blocco e poi
+    // ridistribuire RM/RP/SUB/MED).
+    const overridePerGiorno = new Map<string, Map<string, TurnoClinico>>()
     let appliedCount = 0
+    for (let r = 0; r < rows.length; r++) {
+      const targetMedico = medici[startRowIdx + r]
+      if (!targetMedico) break
+      const cells = rows[r].split('\t')
+      for (let c = 0; c < cells.length; c++) {
+        const targetCol = colonne[startColIdx + c]
+        if (!targetCol) break
+        const newTc = parseClinico(cells[c])
+        if (!overridePerGiorno.has(targetCol.data)) {
+          overridePerGiorno.set(targetCol.data, new Map())
+        }
+        overridePerGiorno.get(targetCol.data)!.set(targetMedico.id, newTc)
+        appliedCount++
+      }
+    }
 
     setModifiche(prev => {
-      const next = new Map(prev)
-      for (let r = 0; r < rows.length; r++) {
-        const targetMedico = medici[startRowIdx + r]
-        if (!targetMedico) break
-        const cells = rows[r].split('\t')
-        for (let c = 0; c < cells.length; c++) {
-          const targetCol = colonne[startColIdx + c]
-          if (!targetCol) break
-          const newTc = parseClinico(cells[c])
-          // Preserva TR esistente leggendo dalla mappa correntemente
-          // visualizzata (modifica locale se presente, altrimenti DB).
-          const key = `${targetMedico.id}|${targetCol.data}`
+      let next = new Map(prev)
+      // Per ogni giorno toccato → applica overrides + ricalcolo redistribuivo
+      for (const [data, overrides] of overridePerGiorno) {
+        const result = ricalcoloGiorno(data, overrides, next)
+        for (const [medId, newCell] of result) {
+          const key = `${medId}|${data}`
           const dbT = turniByKey.get(key)
-          const localCur = next.get(key)
-          const curTr = (localCur?.tr ?? dbT?.turno_ricerca ?? '') as TurnoRicerca
-          const dbTc = dbT?.turno_clinico ?? ''
-          const dbTr = dbT?.turno_ricerca ?? ''
-          // Se il nuovo (newTc, curTr) coincide col DB, rimuovi delta
-          if (newTc === dbTc && curTr === dbTr) {
+          const dbCur: RicalcCell = {
+            tc:    (dbT?.turno_clinico ?? '') as TurnoClinico,
+            tr:    (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
+            isSub: dbT?.is_sub ?? false,
+            isMed: dbT?.is_med ?? false,
+          }
+          if (newCell.tc === dbCur.tc && newCell.tr === dbCur.tr &&
+              newCell.isSub === dbCur.isSub && newCell.isMed === dbCur.isMed) {
             next.delete(key)
           } else {
-            next.set(key, { tc: newTc, tr: curTr })
+            next.set(key, newCell)
           }
-          appliedCount++
         }
       }
       return next
@@ -553,7 +687,7 @@ export function ModificaTurniPage() {
 
     setMsg(`✓ Incollati ${appliedCount} turn${appliedCount === 1 ? 'o' : 'i'} dal clipboard`)
     setTimeout(() => setMsg(null), 3000)
-  }, [medici, colonne, turniByKey])
+  }, [medici, colonne, turniByKey, ricalcoloGiorno])
 
   // ── Totale turni clinici coperti in un giorno ─────────────────────
   // Conteggio per la riga "TURNI TOTALI" sotto la tabella clinica:
@@ -597,7 +731,7 @@ export function ModificaTurniPage() {
     if (modifiche.size === 0) return
     setSaving(true); setErr(null); setMsg(null)
     try {
-      const updates = Array.from(modifiche.entries()).map(([key, { tc, tr }]) => {
+      const updates = Array.from(modifiche.entries()).map(([key, { tc, tr, isSub, isMed }]) => {
         const [medico_id, data] = key.split('|')
         const orig = getOriginale(medico_id, data)
         const modificato_manualmente = (tc !== orig.tc) || (tr !== orig.tr)
@@ -608,11 +742,12 @@ export function ModificaTurniPage() {
           turno_clinico:           tc,
           turno_ricerca:           tr,
           modificato_manualmente,
-          // Preserva campi non gestiti dalla pagina (altrimenti l'upsert
-          // li resetterebbe ai default: is_ferie=false, note=null, ecc.)
+          // is_sub/is_med ora vengono dal Map modifiche (sono ricalcolati
+          // automaticamente al cambio TC). is_ferie e note non sono
+          // gestiti dalla pagina, preservati dal DB.
+          is_sub:   isSub,
+          is_med:   isMed,
           is_ferie: dbT?.is_ferie ?? false,
-          is_sub:   dbT?.is_sub   ?? false,
-          is_med:   dbT?.is_med   ?? false,
           note:     dbT?.note     ?? null,
         }
       })
@@ -642,7 +777,6 @@ export function ModificaTurniPage() {
       ? cur.tc !== orig.tc
       : cur.tr !== orig.tr
     const ferie = ferieStatus(medicoId, col.data)
-    const dbT = turniByKey.get(`${medicoId}|${col.data}`)
     return (
       <EditableCell
         key={`${medicoId}|${col.data}|${tipo}`}
@@ -652,11 +786,12 @@ export function ModificaTurniPage() {
         isFerieApproved={ferie === 'approved'}
         isFeriePending={ferie === 'pending'}
         isRedDay={col.isDomenica || col.isFestivo}
-        // Sub/med arrivano dal DB (settati dal generatore in base allo schema)
-        isSub={dbT?.is_sub ?? false}
-        isMed={dbT?.is_med ?? false}
-        // Tabella RICERCA: read-only. I turni RM/RP saranno ricalcolati
-        // automaticamente da una logica futura (vedi richiesta utente).
+        // Sub/med ora vengono dal Map modifiche (ricalcolati ad ogni
+        // cambio TC) o dal DB se non c'è una modifica locale.
+        isSub={cur.isSub}
+        isMed={cur.isMed}
+        // Tabella RICERCA: read-only — RM/RP sono ricalcolati automatic
+        // dal cambio TC (regola: RM solo a P, RP solo a M).
         readOnly={tipo === 'ricerca'}
         onChangeClinico={tcNew => updateCella(medicoId, col.data, tcNew, cur.tr)}
         onChangeRicerca={trNew => updateCella(medicoId, col.data, cur.tc, trNew)}
@@ -800,10 +935,11 @@ export function ModificaTurniPage() {
             Modifica Turni
           </h2>
           <p className="text-sm text-stone-600 mt-0.5">
-            <strong>Clinica</strong> (M / P / L / REP): clicca per modificare.
-            Da Excel puoi copiare un blocco e fare <kbd className="px-1 py-0.5 rounded text-[10px]" style={{background:'#f0ece4',border:'1px solid #d5ccb8'}}>Ctrl+V</kbd> sulla prima cella → riempie il range.
-            <strong className="ml-2">Ricerca</strong> (RM / RP): sola lettura.
-            Bordo azzurro = diversa dallo schema originale.
+            <strong>Clinica</strong> (M / P / L / REP): clicca per modificare,
+            ad ogni cambio TR/SUB/MED del giorno si ricalcolano automatic
+            (RM solo a P, RP solo a M, tie-break: meno turni di quel tipo + alfabetico).
+            Da Excel <kbd className="px-1 py-0.5 rounded text-[10px]" style={{background:'#f0ece4',border:'1px solid #d5ccb8'}}>Ctrl+V</kbd> sulla prima cella per incollare un blocco.
+            <strong className="ml-2">Ricerca</strong>: sola lettura.
           </p>
         </div>
 
