@@ -35,6 +35,7 @@ import {
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { RiepilogoTurni } from '../../components/RiepilogoTurni'
 import { LegendaCalendario, DRAG_MIME } from '../../components/LegendaCalendario'
+import { calcolaColoreFerie, COLORI_FERIE, ETICHETTA_COLORE } from '../../lib/ferieColori'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
 import { useTurniRealtime } from '../../hooks/useTurniRealtime'
@@ -994,11 +995,33 @@ export function ModificaTurniPage() {
             </th>
             {cols.map(c => {
               const isRedDay = c.isDomenica || c.isFestivo
+
+              // Magia 4 colori per le ferie del giorno (priorità sul festivo)
+              const limite = config?.max_ferie_concomitanti ?? 2
+              const calc = calcolaColoreFerie({
+                data: c.data,
+                medici,
+                ferieApprovate: ferieRanges.approved,
+                getTurno: (mid, data) => {
+                  // Legge dallo stato CORRENTE (modifiche locali se presenti, altrimenti DB)
+                  const cur = getCella(mid, data)
+                  return { tc: cur.tc, tr: cur.tr }
+                },
+                limite,
+              })
+              const styleColor = calc.color
+                ? { background: COLORI_FERIE[calc.color].bg, color: COLORI_FERIE[calc.color].fg }
+                : isRedDay
+                  ? { background: '#fef3c7', color: '#854d0e' }
+                  : { background: '#f0ece4', color: '#3a3d30' }
+              const titleText = calc.color
+                ? `${c.data} — ${ETICHETTA_COLORE[calc.color]} (${calc.totInFerieOggi} ferie, ${calc.turniScoperti} scoperti, max ${limite})`
+                : c.data
+
               return (
-                <th key={c.data} style={{
+                <th key={c.data} title={titleText} style={{
                   width: 32, minWidth: 32,
-                  background: isRedDay ? '#fef3c7' : '#f0ece4',
-                  color: isRedDay ? '#854d0e' : '#3a3d30',
+                  ...styleColor,
                   fontSize: 10, padding: '2px 0',
                   border: '1px solid #c0b8a8',
                   lineHeight: 1.1,
