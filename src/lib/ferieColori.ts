@@ -71,10 +71,11 @@ export function calcolaColoreFerie(o: Opts): CalcoloColoreFerie {
 
 export const COLORI_FERIE: Record<ColoreFerie, { bg: string; fg: string }> = {
   verde:     { bg: '#c6efce', fg: '#1f4a18' },
-  // "azzurro" è una etichetta storica della "magia 4 colori" — il colore
-  // effettivo è ora un giallo scuro/oro per distinguerlo dall'azzurro
-  // della riga TURNI TOTALI e da altri elementi azzurri della UI.
-  azzurro:   { bg: '#d4a017', fg: '#3a2a08' },
+  // "azzurro" è etichetta storica del modello 4-colori; il colore reso
+  // è un giallo medio pastello, intermedio fra verde (gestito) e
+  // arancione (sovraffollamento), così la sequenza ha un gradiente
+  // visivo coerente.
+  azzurro:   { bg: '#fde68a', fg: '#713f12' },
   arancione: { bg: '#ffc896', fg: '#7c2d12' },
   rosso:     { bg: '#ff0000', fg: '#ffffff' },
 }
