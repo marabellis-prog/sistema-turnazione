@@ -122,6 +122,44 @@ export function LegendaCalendario({ variant = 'pubblica', className, style }: Pr
         <span style={{ color: '#5a5a4a' }}>Medicina</span>
       </span>
 
+      {/* L con SUB mattina + MED pomeriggio — cerchio diviso, NON draggabile */}
+      <span className="flex items-center gap-1">
+        <span
+          className="select-none"
+          title="Lunga: SUB la mattina, MED il pomeriggio"
+          style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 22, height: 22, borderRadius: '50%',
+            background: 'linear-gradient(90deg,#fecaca 0%,#fecaca 50%,#bae6fd 50%,#bae6fd 100%)',
+            border: '1.5px solid #6b7280',
+            position: 'relative',
+            color: '#1f2937', fontSize: 8, fontWeight: 800, lineHeight: 1,
+          }}>
+          <span style={{ position: 'absolute', left: 4, top: '50%', transform: 'translateY(-50%)', color: '#9f1239' }}>S</span>
+          <span style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', color: '#0c4a6e' }}>M</span>
+        </span>
+        <span style={{ color: '#5a5a4a' }}>L: sub matt. + med pom.</span>
+      </span>
+
+      {/* L con MED mattina + SUB pomeriggio — cerchio diviso speculare, NON draggabile */}
+      <span className="flex items-center gap-1">
+        <span
+          className="select-none"
+          title="Lunga: MED la mattina, SUB il pomeriggio"
+          style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 22, height: 22, borderRadius: '50%',
+            background: 'linear-gradient(90deg,#bae6fd 0%,#bae6fd 50%,#fecaca 50%,#fecaca 100%)',
+            border: '1.5px solid #6b7280',
+            position: 'relative',
+            color: '#1f2937', fontSize: 8, fontWeight: 800, lineHeight: 1,
+          }}>
+          <span style={{ position: 'absolute', left: 4, top: '50%', transform: 'translateY(-50%)', color: '#0c4a6e' }}>M</span>
+          <span style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', color: '#9f1239' }}>S</span>
+        </span>
+        <span style={{ color: '#5a5a4a' }}>L: med matt. + sub pom.</span>
+      </span>
+
       {/* Separatore */}
       <span style={{ width: 1, height: 14, background: '#c0b8a8', display: 'inline-block', margin: '0 2px' }} />
 
