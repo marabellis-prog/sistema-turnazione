@@ -205,6 +205,8 @@ interface EditableCellProps {
   isFerieApproved:  boolean       // ferie approvate → bg verde solido
   isFeriePending:   boolean       // ferie in attesa → bg verde a righe diagonali
   isRedDay:         boolean       // domenica/festivo
+  /** Colore "magia 4-colori" per la cella clinica (calcolato per giorno) */
+  ferieGiornoColore?: 'verde'|'azzurro'|'arancione'|'rosso'|null
   slot_mattina?:    'SUB'|'MED'|null   // placement mattina (per cerchio sinistro)
   slot_pomeriggio?: 'SUB'|'MED'|null   // placement pomeriggio (per cerchio destro)
   readOnly?:        boolean       // se true, niente click/editing (es. tabella ricerca)
@@ -225,6 +227,7 @@ interface EditableCellProps {
 
 function EditableCell({
   tipo, tc, tr, isModified, isFerieApproved, isFeriePending, isRedDay,
+  ferieGiornoColore = null,
   slot_mattina = null, slot_pomeriggio = null, readOnly = false,
   onChangeClinico, onChangeRicerca, onPasteRange, onDropFromLegend,
 }: EditableCellProps) {
@@ -257,17 +260,21 @@ function EditableCell({
     setEditing(false)
   }
 
-  // Background della cella (priorità: ferie [solo clinica] > festivo > tipo):
-  //   - Ferie compaiono SOLO nella tabella Clinica per non duplicare il
-  //     visual signal (il medico non lavora quel giorno, segnalo una volta).
-  //   - CLINICA: NON colora in base a TC. Solo neutro (#fefefe) o rosa per
-  //     festivi/domeniche.
-  //   - RICERCA: colore basato su TR (CELL_COLORS), preserva il visual code.
+  // Background della cella (priorità clinica: ferie medico > 4-colori
+  // giorno > festivo > neutro):
+  //   - Cella di un medico in ferie → verde (priorità massima)
+  //   - Cella di un medico NON in ferie, in giorno con altri in ferie →
+  //     colore "magia 4 colori" (rosso/arancione/azzurro/verde)
+  //   - Festivo/domenica → giallo
+  //   - Altro → neutro
+  // Ricerca: solo bg basato su TR (priorità invariata).
   let bg: string
   if (tipo === 'clinica' && isFerieApproved) {
     bg = '#d5e5d0'
   } else if (tipo === 'clinica' && isFeriePending) {
     bg = 'repeating-linear-gradient(-45deg, #d5e5d0 0, #d5e5d0 3px, #a8c4a0 3px, #a8c4a0 6px)'
+  } else if (tipo === 'clinica' && ferieGiornoColore) {
+    bg = COLORI_FERIE[ferieGiornoColore].bg
   } else if (tipo === 'clinica') {
     bg = isRedDay ? '#fef3c7' : '#fefefe'
   } else {
@@ -921,6 +928,28 @@ export function ModificaTurniPage() {
     }
   }
 
+  // Magia 4 colori per giorno — ricalcolato in tempo reale al cambio
+  // di TC/TR/modifiche locali. Viene applicato solo alle celle clinica
+  // (cell senza ferie del medico) per dare feedback visivo immediato.
+  const colorePerGiorno = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof calcolaColoreFerie>>()
+    if (!config) return m
+    const limite = config.max_ferie_concomitanti ?? 2
+    for (const col of colonne) {
+      m.set(col.data, calcolaColoreFerie({
+        data: col.data,
+        medici,
+        ferieApprovate: ferieRanges.approved,
+        getTurno: (mid, data) => {
+          const cur = getCella(mid, data)
+          return { tc: cur.tc, tr: cur.tr }
+        },
+        limite,
+      }))
+    }
+    return m
+  }, [config, colonne, medici, ferieRanges.approved, getCella])
+
   // ── Render di una singola cella ───────────────────────────────────
   // Il "tipo" determina quale parte della cella visualizzare/editare:
   //   - 'clinica'  → mostra/edita TC, lascia TR invariato
@@ -934,6 +963,7 @@ export function ModificaTurniPage() {
       ? cur.tc !== orig.tc
       : cur.tr !== orig.tr
     const ferie = ferieStatus(medicoId, col.data)
+    const ferieColore = colorePerGiorno.get(col.data)?.color ?? null
     return (
       <EditableCell
         key={`${medicoId}|${col.data}|${tipo}`}
@@ -943,6 +973,7 @@ export function ModificaTurniPage() {
         isFerieApproved={ferie === 'approved'}
         isFeriePending={ferie === 'pending'}
         isRedDay={col.isDomenica || col.isFestivo}
+        ferieGiornoColore={ferieColore}
         // Placement mattina/pomeriggio dal Map modifiche (ricalcolati
         // automatic ad ogni cambio TC) o dal DB se non c'è modifica locale.
         slot_mattina={cur.slot_mattina}
@@ -996,32 +1027,19 @@ export function ModificaTurniPage() {
             {cols.map(c => {
               const isRedDay = c.isDomenica || c.isFestivo
 
-              // Magia 4 colori per le ferie del giorno (priorità sul festivo)
+              // Tooltip header con stat ferie del giorno (no colorazione qui:
+              // i 4 colori vanno alle celle, non all'header)
               const limite = config?.max_ferie_concomitanti ?? 2
-              const calc = calcolaColoreFerie({
-                data: c.data,
-                medici,
-                ferieApprovate: ferieRanges.approved,
-                getTurno: (mid, data) => {
-                  // Legge dallo stato CORRENTE (modifiche locali se presenti, altrimenti DB)
-                  const cur = getCella(mid, data)
-                  return { tc: cur.tc, tr: cur.tr }
-                },
-                limite,
-              })
-              const styleColor = calc.color
-                ? { background: COLORI_FERIE[calc.color].bg, color: COLORI_FERIE[calc.color].fg }
-                : isRedDay
-                  ? { background: '#fef3c7', color: '#854d0e' }
-                  : { background: '#f0ece4', color: '#3a3d30' }
-              const titleText = calc.color
+              const calc = colorePerGiorno.get(c.data)
+              const titleText = calc?.color
                 ? `${c.data} — ${ETICHETTA_COLORE[calc.color]} (${calc.totInFerieOggi} ferie, ${calc.turniScoperti} scoperti, max ${limite})`
                 : c.data
 
               return (
                 <th key={c.data} title={titleText} style={{
                   width: 32, minWidth: 32,
-                  ...styleColor,
+                  background: isRedDay ? '#fef3c7' : '#f0ece4',
+                  color:      isRedDay ? '#854d0e' : '#3a3d30',
                   fontSize: 10, padding: '2px 0',
                   border: '1px solid #c0b8a8',
                   lineHeight: 1.1,

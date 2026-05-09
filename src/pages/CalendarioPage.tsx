@@ -405,6 +405,25 @@ export function CalendarioPage() {
     const headerBg     = tipo === 'clinica' ? '#456b3a' : '#7a2233'
     const headerBorder = tipo === 'clinica' ? '#2b3c24' : '#5a1a26'
     const headerLabel  = tipo === 'clinica' ? 'Clinica' : 'Ricerca'
+
+    // Precalcolo "magia 4 colori" per ogni giorno — usato nel rendering
+    // delle celle clinica (sostituisce il bg neutro/festivo) + nel tooltip
+    // dell'header. Solo clinica perché è l'unica dove ha senso visualizzare
+    // l'impatto delle ferie sul giorno.
+    const limite = config.max_ferie_concomitanti ?? 2
+    const colorePerGiorno = new Map<string, ReturnType<typeof calcolaColoreFerie>>()
+    for (const col of colonne) {
+      colorePerGiorno.set(col.data, calcolaColoreFerie({
+        data: col.data,
+        medici,
+        ferieApprovate: ferieRanges.approved,
+        getTurno: (mid, data) => {
+          const cell = turniMap.get(mid)?.get(data)
+          return cell ? { tc: cell.turno_clinico, tr: cell.turno_ricerca } : null
+        },
+        limite,
+      }))
+    }
     return (
       <table className="cal-table">
         <thead>
@@ -430,25 +449,10 @@ export function CalendarioPage() {
               const letter = dayLetter(col.data)
               const isRedDay = letter === 'D' || col.isFestivo
 
-              // Magia dei 4 colori per le ferie del giorno (priorità sul festivo)
+              // Tooltip header: stat ferie del giorno (no colorazione qui)
               const limite = config.max_ferie_concomitanti ?? 2
-              const calc = calcolaColoreFerie({
-                data: col.data,
-                medici,
-                ferieApprovate: ferieRanges.approved,
-                getTurno: (mid, data) => {
-                  const cell = turniMap.get(mid)?.get(data)
-                  return cell ? { tc: cell.turno_clinico, tr: cell.turno_ricerca } : null
-                },
-                limite,
-              })
-
-              const styleColor = calc.color
-                ? { background: COLORI_FERIE[calc.color].bg, color: COLORI_FERIE[calc.color].fg }
-                : isRedDay
-                  ? { background: '#fef3c7', color: '#854d0e' }
-                  : {}
-              const titleText = calc.color
+              const calc = colorePerGiorno.get(col.data)
+              const titleText = calc?.color
                 ? `${col.data} — ${ETICHETTA_COLORE[calc.color]} (${calc.totInFerieOggi} ferie, ${calc.turniScoperti} scoperti, max ${limite})`
                 : col.data
 
@@ -457,21 +461,15 @@ export function CalendarioPage() {
                   className="cal-th !px-0 !py-0.5 w-8"
                   style={{
                     position: 'sticky', top: 22, zIndex: 20,
-                    ...styleColor,
+                    ...(isRedDay ? { background: '#fef3c7' } : {}),
                     ...(isLastOfMonth ? { borderRight: '2px solid #1a1a1a' } : {}),
                   }}
                   title={titleText}>
                   <div style={{ lineHeight: 1, padding: '1px 0' }}>
-                    <div style={{
-                      fontSize: 10, fontWeight: 700,
-                      color: calc.color ? COLORI_FERIE[calc.color].fg : (isRedDay ? '#854d0e' : undefined),
-                    }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: isRedDay ? '#854d0e' : undefined }}>
                       {col.giorno}
                     </div>
-                    <div style={{
-                      fontSize: 8, fontWeight: 600, marginTop: 1,
-                      color: calc.color ? COLORI_FERIE[calc.color].fg : (isRedDay ? '#854d0e' : '#9ca3af'),
-                    }}>
+                    <div style={{ fontSize: 8, fontWeight: 600, marginTop: 1, color: isRedDay ? '#854d0e' : '#9ca3af' }}>
                       {letter}
                     </div>
                   </div>
@@ -514,14 +512,19 @@ export function CalendarioPage() {
                   // nella label, sfondo sempre neutro.
                   const valKey = tipo === 'ricerca' ? tr.split('+')[0] : ''
 
-                  // Le ferie compaiono SOLO nella tabella Clinica (per non
-                  // duplicare l'informazione: il medico non lavora del tutto
-                  // quel giorno, evidenziarlo una sola volta basta).
+                  // Magia 4-colori: applicato alle celle clinica del giorno
+                  // (esclusi i medici che sono ESSI STESSI in ferie — quelli
+                  // mantengono il verde della propria ferie). Priorità:
+                  // ferie medico singolo > 4-colori giorno > festivo > neutro.
+                  const ferieGiorno = colorePerGiorno.get(col.data)?.color ?? null
+
                   let bgBase: string
                   if (tipo === 'clinica' && isFerieApproved) {
                     bgBase = '#d5e5d0'
                   } else if (tipo === 'clinica' && isFeriePending) {
                     bgBase = 'repeating-linear-gradient(-45deg, #d5e5d0 0, #d5e5d0 3px, #a8c4a0 3px, #a8c4a0 6px)'
+                  } else if (tipo === 'clinica' && ferieGiorno) {
+                    bgBase = COLORI_FERIE[ferieGiorno].bg
                   } else if (col.isDomenica || col.isFestivo) {
                     bgBase = '#fef3c7'
                   } else if (tipo === 'ricerca' && valKey && CELL_COLORS[valKey]) {
