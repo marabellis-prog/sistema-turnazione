@@ -5,6 +5,9 @@ interface Props {
   user:              AuthUser | null
   loading:           boolean
   requireAdmin?:     boolean
+  /** Ruoli ammessi alla rotta. Default: ['admin','user'] (esclude ospite).
+   *  Per /settimanale passare ['admin','user','ospite']. */
+  allowedRoles?:     Array<AuthUser['ruolo']>
   /**
    * Componente da mostrare durante l'auth check. Se non specificato,
    * mostra uno spinner generico. Per /calendario passare <CalendarLoadingScreen />
@@ -15,7 +18,7 @@ interface Props {
 }
 
 export function ProtectedRoute({
-  user, loading, requireAdmin = false, loadingComponent, children,
+  user, loading, requireAdmin = false, allowedRoles, loadingComponent, children,
 }: Props) {
   if (loading) {
     if (loadingComponent) return <>{loadingComponent}</>
@@ -31,6 +34,11 @@ export function ProtectedRoute({
 
   if (!user) return <Navigate to="/login" replace />
   if (requireAdmin && user.ruolo !== 'admin') return <Navigate to="/" replace />
+
+  // Default: vietato agli ospiti (consentiti admin e user). Le rotte che
+  // ammettono ospiti devono dichiarare allowedRoles esplicitamente.
+  const roles = allowedRoles ?? ['admin', 'user']
+  if (!roles.includes(user.ruolo)) return <Navigate to="/" replace />
 
   return <>{children}</>
 }

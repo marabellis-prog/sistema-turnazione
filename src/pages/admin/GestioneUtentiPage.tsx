@@ -16,16 +16,16 @@ export function GestioneUtentiPage() {
   const [editId,    setEditId]    = useState<string | null>(null)
   const [editEmail, setEditEmail] = useState('')
   const [editNome,  setEditNome]  = useState('')
-  const [editRuolo, setEditRuolo] = useState<'user' | 'admin'>('user')
+  const [editRuolo, setEditRuolo] = useState<'user' | 'admin' | 'ospite'>('user')
 
   // ── Aggiunta veloce da medico ────────────────────────────────
   const [emailMedico, setEmailMedico] = useState<Record<string, string>>({})
-  const [ruoloMedico, setRuoloMedico] = useState<Record<string, 'user' | 'admin'>>({})
+  const [ruoloMedico, setRuoloMedico] = useState<Record<string, 'user' | 'admin' | 'ospite'>>({})
 
   // ── Aggiunta manuale ─────────────────────────────────────────
   const [email,  setEmail]  = useState('')
   const [nome,   setNome]   = useState('')
-  const [ruolo,  setRuolo]  = useState<'user' | 'admin'>('user')
+  const [ruolo,  setRuolo]  = useState<'user' | 'admin' | 'ospite'>('user')
 
   const [errore,  setErrore]  = useState('')
   const [saving,  setSaving]  = useState(false)
@@ -207,11 +207,12 @@ export function GestioneUtentiPage() {
                   <td className="px-2 py-1.5 text-center">
                     <select
                       value={editRuolo}
-                      onChange={e => setEditRuolo(e.target.value as 'user' | 'admin')}
+                      onChange={e => setEditRuolo(e.target.value as 'user' | 'admin' | 'ospite')}
                       className="input py-0.5 text-xs w-full"
                     >
                       <option value="user">User</option>
                       <option value="admin">Admin</option>
+                      <option value="ospite">Ospite</option>
                     </select>
                   </td>
                   <td className="px-2 py-1.5">
@@ -309,7 +310,7 @@ export function GestioneUtentiPage() {
                 />
                 <select
                   value={ruoloMedico[m.id] ?? 'user'}
-                  onChange={e => setRuoloMedico(prev => ({ ...prev, [m.id]: e.target.value as 'user' | 'admin' }))}
+                  onChange={e => setRuoloMedico(prev => ({ ...prev, [m.id]: e.target.value as 'user' | 'admin' | 'ospite' }))}
                   className="input text-sm py-1 w-24 shrink-0"
                 >
                   <option value="user">User</option>
@@ -347,10 +348,11 @@ export function GestioneUtentiPage() {
         <div className="flex items-end gap-3">
           <div>
             <label className="label text-xs">Ruolo</label>
-            <select value={ruolo} onChange={e => setRuolo(e.target.value as 'user' | 'admin')}
+            <select value={ruolo} onChange={e => setRuolo(e.target.value as 'user' | 'admin' | 'ospite')}
               className="input text-sm w-48">
               <option value="user">User – solo consultazione</option>
               <option value="admin">Admin – gestione completa</option>
+              <option value="ospite">Ospite – solo vista settimanale</option>
             </select>
           </div>
           <button onClick={aggiungiManuale} disabled={saving || !email.trim()} className="btn-primary text-sm">

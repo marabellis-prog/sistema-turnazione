@@ -76,7 +76,10 @@ export interface Ferie {
 export interface UtenteAutorizzato {
   id: string
   email: string
-  ruolo: 'admin' | 'user'
+  /** 'admin' = accesso completo;  'user' = vista pubblica + ferie;
+   *  'ospite' = SOLO vista settimanale (niente calendario completo,
+   *  niente ferie, niente riepilogo). */
+  ruolo: 'admin' | 'user' | 'ospite'
   nome: string | null
   attivo: boolean
   created_at: string
@@ -143,6 +146,6 @@ export interface ColonnaCal {
 export interface AuthUser {
   id: string
   email: string
-  ruolo: 'admin' | 'user'
+  ruolo: 'admin' | 'user' | 'ospite'
   nome: string | null
 }

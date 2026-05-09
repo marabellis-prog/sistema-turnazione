@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useLocation, useHref } from 'react-router-dom'
-import { LogOut, Calendar, Settings, Users, AlertTriangle, RefreshCw } from 'lucide-react'
+import { LogOut, Calendar, CalendarDays, Settings, Users, AlertTriangle, RefreshCw } from 'lucide-react'
 import { usePendingActions } from '../contexts/PendingActionsContext'
 import { useVersionCheck } from '../hooks/useVersionCheck'
 import type { AuthUser } from '../types'
@@ -13,16 +13,18 @@ interface Props {
 // Nomi unici delle window/tab — il target HTML usa questi per ritrovare
 // la tab già aperta invece di duplicarla. Nomi prefissati per evitare
 // collisioni con eventuali altre app aperte dall'utente.
-const TAB_CALENDARIO = 'sistema-turni-calendario'
-const TAB_ADMIN      = 'sistema-turni-admin'
+const TAB_CALENDARIO  = 'sistema-turni-calendario'
+const TAB_ADMIN       = 'sistema-turni-admin'
+const TAB_SETTIMANALE = 'sistema-turni-settimanale'
 
 export function NavBar({ user, onSignOut }: Props) {
   const loc = useLocation()
   const { needsRegen, needsRefresh } = usePendingActions()
   const { updateAvailable, applyUpdate } = useVersionCheck()
   // useHref → applica il basename "/sistema-turnazione" automaticamente
-  const hrefCalendario = useHref('/calendario')
-  const hrefAdmin      = useHref('/admin')
+  const hrefCalendario  = useHref('/calendario')
+  const hrefAdmin       = useHref('/admin')
+  const hrefSettimanale = useHref('/settimanale')
 
   // Auto-rinomina la tab corrente in base alla pagina su cui è.
   // Quando un'altra tab apre target="sistema-turni-calendario", il browser
@@ -32,6 +34,8 @@ export function NavBar({ user, onSignOut }: Props) {
       window.name = TAB_ADMIN
     } else if (loc.pathname.startsWith('/calendario')) {
       window.name = TAB_CALENDARIO
+    } else if (loc.pathname.startsWith('/settimanale')) {
+      window.name = TAB_SETTIMANALE
     }
   }, [loc.pathname])
 
@@ -159,11 +163,14 @@ export function NavBar({ user, onSignOut }: Props) {
           </a>
         )}
 
-        {/* Navigazione — Calendario e Admin in tab separate.
-            Se la tab esiste già, il browser ci salta sopra invece di duplicarla. */}
+        {/* Navigazione — Calendario / Settimanale / Admin in tab separate.
+            Se la tab esiste già, il browser ci salta sopra invece di duplicarla.
+            Gli ospiti vedono SOLO la voce Settimanale (è l'unica accessibile). */}
         {user && (
           <div className="flex items-center gap-1 ml-1">
-            {smartLink('/calendario', hrefCalendario, TAB_CALENDARIO, 'Calendario', Calendar)}
+            {user.ruolo !== 'ospite' &&
+              smartLink('/calendario',  hrefCalendario,  TAB_CALENDARIO,  'Calendario',  Calendar)}
+            {smartLink('/settimanale', hrefSettimanale, TAB_SETTIMANALE, 'Settimanale', CalendarDays)}
             {user.ruolo === 'admin' &&
               smartLink('/admin', hrefAdmin, TAB_ADMIN, 'Admin', Settings)}
           </div>

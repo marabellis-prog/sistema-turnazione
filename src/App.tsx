@@ -7,6 +7,7 @@ import { CalendarLoadingScreen } from './components/CalendarLoadingScreen'
 import { LoginPage }         from './pages/LoginPage'
 import { AuthCallbackPage }  from './pages/AuthCallbackPage'
 import { CalendarioPage }    from './pages/CalendarioPage'
+import { SettimanalePage }   from './pages/SettimanalePage'
 import { AdminLayout }       from './pages/admin/AdminLayout'
 import { GeneraCalendarioPage } from './pages/admin/GeneraCalendarioPage'
 import { GestioneMediciPage }   from './pages/admin/GestioneMediciPage'
@@ -69,6 +70,17 @@ function AppRoutes() {
           }
         />
 
+        {/* Vista settimanale — accessibile a tutti i loggati (anche ospiti) */}
+        <Route
+          path="/settimanale"
+          element={
+            <ProtectedRoute user={user} loading={loading}
+              allowedRoles={['admin', 'user', 'ospite']}>
+              <SettimanalePage />
+            </ProtectedRoute>
+          }
+        />
+
         {/* Admin (richiede login + admin) */}
         <Route
           path="/admin"
@@ -88,7 +100,9 @@ function AppRoutes() {
           <Route path="turni"   element={<ModificaTurniPage />} />
         </Route>
 
-        {/* Root → redirect (spinner durante loading, mai pagina bianca) */}
+        {/* Root → redirect (spinner durante loading, mai pagina bianca).
+            Ospiti vanno a /settimanale (è l'unica pagina che possono vedere),
+            tutti gli altri al /calendario. */}
         <Route
           path="/"
           element={
@@ -98,9 +112,11 @@ function AppRoutes() {
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-olive-600" />
                 </div>
               )
-              : user
-                ? <Navigate to="/calendario" replace />
-                : <Navigate to="/login" replace />
+              : !user
+                ? <Navigate to="/login" replace />
+                : user.ruolo === 'ospite'
+                  ? <Navigate to="/settimanale" replace />
+                  : <Navigate to="/calendario" replace />
           }
         />
 
