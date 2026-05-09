@@ -238,11 +238,24 @@ export function GestioneUtentiPage() {
                     {u.nome || '—'}
                   </td>
                   <td className="px-3 py-2 text-center">
-                    <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded font-medium
-                      ${u.ruolo === 'admin' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>
+                    <span
+                      className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded font-medium"
+                      style={
+                        u.ruolo === 'admin'
+                          ? { background: '#fef3c7', color: '#92400e' }
+                          : u.ruolo === 'ospite'
+                            // Pattern azzurro a bande diagonali per distinguere a colpo d'occhio
+                            ? {
+                                background: 'repeating-linear-gradient(-45deg, #bfdbfe 0, #bfdbfe 4px, #93c5fd 4px, #93c5fd 8px)',
+                                color: '#1e3a8a',
+                              }
+                            : { background: '#dbeafe', color: '#1e40af' }
+                      }>
                       {isPerm
                         ? <Lock size={10} />
-                        : u.ruolo === 'admin' ? <Shield size={10} /> : <User size={10} />
+                        : u.ruolo === 'admin'  ? <Shield size={10} />
+                        : u.ruolo === 'ospite' ? <User   size={10} />
+                        : <User size={10} />
                       }
                       {u.ruolo}
                     </span>

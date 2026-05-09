@@ -56,9 +56,12 @@ function medicoIdxForNum(testNum: number, sett: number, numMedici: number): numb
   return idx
 }
 
+type Vista = 'settimana' | 'mese'
+
 export function SettimanalePage() {
   // Settimana corrente (lunedì) come default
   const [anchorWeek, setAnchorWeek] = useState<Date>(() => startOfWeek(new Date()))
+  const [vista, setVista] = useState<Vista>('settimana')
 
   // ── Query dati ───────────────────────────────────────────────────
   const { data: config } = useQuery<Configurazione | null>({
@@ -91,10 +94,26 @@ export function SettimanalePage() {
     },
   })
 
-  // ── Settimana visualizzata: 7 date contigue (Lun → Dom) ────────────
+  // ── Giorni visualizzati ────────────────────────────────────────────
+  // Vista 'settimana': 7 giorni Lun → Dom dall'anchor.
+  // Vista 'mese':       Lun della settimana del 1° del mese di anchor →
+  //                     Dom della settimana dell'ultimo del mese.
   const giorni = useMemo(() => {
-    return Array.from({ length: 7 }, (_, i) => addDays(anchorWeek, i))
-  }, [anchorWeek])
+    if (vista === 'settimana') {
+      return Array.from({ length: 7 }, (_, i) => addDays(anchorWeek, i))
+    }
+    // Mese che contiene anchorWeek (riferimento: primo giorno della settimana)
+    const ref = anchorWeek
+    const primoMese = new Date(ref.getFullYear(), ref.getMonth(), 1)
+    const ultimoMese = new Date(ref.getFullYear(), ref.getMonth() + 1, 0)
+    const lunStart = startOfWeek(primoMese)
+    const lunEnd   = startOfWeek(ultimoMese)
+    const out: Date[] = []
+    for (let d = new Date(lunStart); d <= addDays(lunEnd, 6); d = addDays(d, 1)) {
+      out.push(new Date(d))
+    }
+    return out
+  }, [anchorWeek, vista])
 
   // ── Helper per calcolare il medico per un numero in una data ───────
   const mediciAttivi = useMemo(() =>
@@ -264,38 +283,79 @@ export function SettimanalePage() {
     )
   }
 
-  // ── Toolbar navigazione ───────────────────────────────────────────
-  const fineSettimana = addDays(anchorWeek, 6)
-  const labelSettimana = `${anchorWeek.getDate()} ${MESI_IT[anchorWeek.getMonth() + 1]} → ${fineSettimana.getDate()} ${MESI_IT[fineSettimana.getMonth() + 1]} ${fineSettimana.getFullYear()}`
+  // ── Toolbar navigazione + label range ───────────────────────────
+  const labelRange = (() => {
+    if (vista === 'settimana') {
+      const fine = addDays(anchorWeek, 6)
+      return `${anchorWeek.getDate()} ${MESI_IT[anchorWeek.getMonth() + 1]} → ${fine.getDate()} ${MESI_IT[fine.getMonth() + 1]} ${fine.getFullYear()}`
+    }
+    return `${MESI_IT[anchorWeek.getMonth() + 1]} ${anchorWeek.getFullYear()}`
+  })()
+
+  // Step di navigazione (settimana/mese): in mese si avanza/arretra di un mese
+  const passo = vista === 'settimana' ? 7 : 0
+  const goPrev = () => {
+    if (vista === 'settimana') setAnchorWeek(addDays(anchorWeek, -7))
+    else {
+      const prev = new Date(anchorWeek.getFullYear(), anchorWeek.getMonth() - 1, 1)
+      setAnchorWeek(startOfWeek(prev))
+    }
+  }
+  const goNext = () => {
+    if (vista === 'settimana') setAnchorWeek(addDays(anchorWeek, passo))
+    else {
+      const next = new Date(anchorWeek.getFullYear(), anchorWeek.getMonth() + 1, 1)
+      setAnchorWeek(startOfWeek(next))
+    }
+  }
 
   return (
-    <div className="flex flex-col gap-3 p-4">
+    <div className="flex flex-col gap-3 p-4 mx-auto" style={{ maxWidth: 1100, width: '100%' }}>
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
           <CalendarDays size={20} style={{ color: '#476540' }} />
-          Vista settimanale
+          Vista {vista === 'settimana' ? 'settimanale' : 'mensile'}
         </h2>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Toggle vista settimana / mese */}
+          <div className="flex rounded-lg overflow-hidden border border-stone-300">
+            <button
+              onClick={() => setVista('settimana')}
+              className="px-3 py-1.5 text-xs font-medium transition-colors"
+              style={vista === 'settimana'
+                ? { background: '#476540', color: '#fff' }
+                : { background: '#faf8f3', color: '#5a5a4a' }}>
+              Settimana
+            </button>
+            <button
+              onClick={() => setVista('mese')}
+              className="px-3 py-1.5 text-xs font-medium transition-colors"
+              style={vista === 'mese'
+                ? { background: '#476540', color: '#fff' }
+                : { background: '#faf8f3', color: '#5a5a4a' }}>
+              Mese
+            </button>
+          </div>
           <button
-            onClick={() => setAnchorWeek(addDays(anchorWeek, -7))}
+            onClick={goPrev}
             className="btn-secondary py-1 px-2 text-xs flex items-center gap-1"
-            title="Settimana precedente">
+            title={vista === 'settimana' ? 'Settimana precedente' : 'Mese precedente'}>
             <ChevronLeft size={14} /> Prec.
           </button>
-          <span className="text-sm font-semibold text-stone-700 min-w-[260px] text-center">
-            {labelSettimana}
+          <span className="text-sm font-semibold text-stone-700 min-w-[220px] text-center">
+            {labelRange}
           </span>
           <button
-            onClick={() => setAnchorWeek(addDays(anchorWeek, 7))}
+            onClick={goNext}
             className="btn-secondary py-1 px-2 text-xs flex items-center gap-1"
-            title="Settimana successiva">
+            title={vista === 'settimana' ? 'Settimana successiva' : 'Mese successivo'}>
             Succ. <ChevronRight size={14} />
           </button>
           <button
             onClick={() => setAnchorWeek(startOfWeek(new Date()))}
             className="btn-secondary py-1 px-2 text-xs"
-            title="Vai alla settimana corrente">
+            title="Vai a oggi">
             Oggi
           </button>
         </div>
