@@ -1077,9 +1077,9 @@ export function ModificaTurniPage() {
               <td style={{
                 width: 140, minWidth: 140,
                 position: 'sticky', left: 0, zIndex: 1,
-                background: '#7eb6d4', color: '#fff',
+                background: '#8b6b3d', color: '#fff',
                 fontSize: 11, fontWeight: 800, padding: '4px 8px',
-                border: '1px solid #5d9bc1',
+                border: '1px solid #5a4324',
                 letterSpacing: '0.06em',
                 whiteSpace: 'nowrap',
               }}>
@@ -1090,10 +1090,10 @@ export function ModificaTurniPage() {
                 return (
                   <td key={c.data} style={{
                     width: 32, minWidth: 32, height: 24,
-                    background: '#7eb6d4', color: '#fff',
+                    background: '#8b6b3d', color: '#fff',
                     fontSize: 12, fontWeight: 700,
                     textAlign: 'center', verticalAlign: 'middle',
-                    border: '1px solid #5d9bc1',
+                    border: '1px solid #5a4324',
                     padding: 0,
                   }}>
                     {tot || ''}
