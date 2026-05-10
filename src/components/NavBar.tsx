@@ -188,15 +188,17 @@ export function NavBar({ user, onSignOut }: Props) {
           </a>
         )}
 
-        {/* Navigazione — Calendario e Settimanale navigano nella tab corrente.
-            Solo Admin apre/focalizza una tab dedicata (così resti sul
-            calendario aperto in un'altra tab anche dopo aver lavorato in admin).
-            Gli ospiti vedono SOLO Settimanale (l'unica pagina accessibile a loro). */}
+        {/* Navigazione — Calendario / Settimanale / Settimanale Alt navigano
+            nella tab corrente. Solo Admin apre/focalizza una tab dedicata
+            (così resti sul calendario aperto in un'altra tab anche dopo
+            aver lavorato in admin). Gli ospiti vedono Settimanale e
+            Settimanale Alt (entrambe accessibili a loro). */}
         {user && (
           <div className="flex items-center gap-1 ml-1">
             {user.ruolo !== 'ospite' &&
               simpleLink('/calendario', 'Calendario', Calendar)}
-            {simpleLink('/settimanale', 'Settimanale', CalendarDays)}
+            {simpleLink('/settimanale',     'Settimanale',     CalendarDays)}
+            {simpleLink('/settimanale-alt', 'Settimanale Alt', CalendarDays)}
             {user.ruolo === 'admin' &&
               smartLink('/admin', hrefAdmin, TAB_ADMIN, 'Admin', Settings)}
           </div>

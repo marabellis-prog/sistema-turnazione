@@ -6,8 +6,9 @@ import { ProtectedRoute }    from './components/ProtectedRoute'
 import { CalendarLoadingScreen } from './components/CalendarLoadingScreen'
 import { LoginPage }         from './pages/LoginPage'
 import { AuthCallbackPage }  from './pages/AuthCallbackPage'
-import { CalendarioPage }    from './pages/CalendarioPage'
-import { SettimanalePage }   from './pages/SettimanalePage'
+import { CalendarioPage }     from './pages/CalendarioPage'
+import { SettimanalePage }    from './pages/SettimanalePage'
+import { SettimanaleAltPage } from './pages/SettimanaleAltPage'
 import { AdminLayout }       from './pages/admin/AdminLayout'
 import { GeneraCalendarioPage } from './pages/admin/GeneraCalendarioPage'
 import { GestioneMediciPage }   from './pages/admin/GestioneMediciPage'
@@ -77,6 +78,19 @@ function AppRoutes() {
             <ProtectedRoute user={user} loading={loading}
               allowedRoles={['admin', 'user', 'ospite']}>
               <SettimanalePage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Vista settimanale alternativa — colonne per orario (Mattina /
+            Pomeriggio / RM / RP / Reperibile). Accessibile a tutti come
+            la classica /settimanale. */}
+        <Route
+          path="/settimanale-alt"
+          element={
+            <ProtectedRoute user={user} loading={loading}
+              allowedRoles={['admin', 'user', 'ospite']}>
+              <SettimanaleAltPage />
             </ProtectedRoute>
           }
         />
