@@ -109,12 +109,16 @@ function shiftAnchor(anchor: Date, vista: Vista, dir: 1 | -1): Date {
 }
 
 interface MedDisplay {
-  medico:    Medico
-  /** Lettera del turno: M, P o L (per i lunghi). Le L compaiono sia in
-   *  mattina che in pomeriggio con il rispettivo placement. */
-  letter:    'M' | 'P' | 'L'
-  placement: SlotPlacement
-  inFerie:   boolean
+  medico: Medico
+  /** Lettera del turno: L (lungo), M (mattina), P (pomeriggio). */
+  letter: 'L' | 'M' | 'P'
+  /** Per i lunghi MISTI (slot_mattina ≠ slot_pomeriggio) indica quale
+   *  metà della giornata cade in questa colonna ("matt." o "pom.").
+   *  Per L puri (stessa placement entrambe le metà) e per M/P è null. */
+  half:   'matt' | 'pom' | null
+  inFerie: boolean
+  /** Ordine di visualizzazione: L=0, M=1, P=2. */
+  sortKey: number
 }
 
 interface RicercaDisplay {
@@ -126,19 +130,21 @@ interface RicercaDisplay {
 }
 
 interface DayDisplay {
-  data:               Date
-  dataISO:            string
-  /** Falso se la data è fuori dal periodo del calendario. In monthly view
-   *  alcune celle del bordo settimanale possono ricadere prima di
-   *  config.mese_inizio o dopo config.mese_fine. */
-  inPeriod:           boolean
-  mattina:            MedDisplay[]
-  pomeriggio:         MedDisplay[]
-  ricercaMattina:     RicercaDisplay[]
-  ricercaPomeriggio:  RicercaDisplay[]
-  reperibile:         { medico: Medico; inFerie: boolean } | null
-  /** Nel periodo ma con zero turni (caso tipico: domenica generata vuota). */
-  emptyByDesign:      boolean
+  data:    Date
+  dataISO: string
+  /** Falso se la data è fuori dal periodo del calendario. */
+  inPeriod: boolean
+  /** Medici che lavorano in SUB-INTENSIVA quel giorno (M/P/L con
+   *  placement SUB nella metà di giornata pertinente). Ordinati L→M→P. */
+  sub: MedDisplay[]
+  /** Medici che lavorano in MEDICINA quel giorno (M/P/L con placement
+   *  MED). Ordinati L→M→P. */
+  med: MedDisplay[]
+  ricercaMattina:    RicercaDisplay[]
+  ricercaPomeriggio: RicercaDisplay[]
+  reperibile:        { medico: Medico; inFerie: boolean } | null
+  /** Nel periodo ma con zero turni. */
+  emptyByDesign:     boolean
 }
 
 export function SettimanalePage() {
@@ -292,57 +298,95 @@ export function SettimanalePage() {
   }
 
   // ── Build display data per ogni giorno ─────────────────────────────
-  // Per ogni giorno, raggruppa i medici per TC/TR letti dal DB:
-  //   M  → mattina · P → pomeriggio · L → entrambe · REP → reperibile
-  //   TR contains RM / RP → ricerca mattina / pomeriggio
-  // Niente più medicoForNum: la rotazione teorica è ridondante quando
-  // abbiamo già lo stato salvato in `turni`.
+  // Le colonne SUB / MED non sono più "mattina/pomeriggio" ma "settore":
+  // ogni medico finisce nella colonna corrispondente al suo placement
+  // (slot_mattina / slot_pomeriggio = SUB | MED | null), separato dalla
+  // ricerca e dalla reperibilità. Ordinamento interno: L → M → P.
+  //
+  // Casi particolari per TC = L (lungo M+P):
+  //  - L "puro" — slot_mattina === slot_pomeriggio (entrambi SUB o MED):
+  //    una sola voce nella colonna corrispondente, senza suffisso.
+  //  - L "misto" — placement diverso fra mattina e pomeriggio:
+  //    DUE voci, una per colonna, ciascuna con suffisso "matt." / "pom."
+  //    a indicare quale metà della giornata appartiene a quella colonna.
   const giorniDisplay = useMemo<DayDisplay[]>(() => {
     if (!periodo) return []
     return giorni.map(data => {
       const dataISO = formatDate(data)
       const inPeriod = data >= periodo.min && data <= periodo.max
 
-      const mattina:           MedDisplay[]      = []
-      const pomeriggio:        MedDisplay[]      = []
-      const ricercaMattina:    RicercaDisplay[]  = []
-      const ricercaPomeriggio: RicercaDisplay[]  = []
+      const sub:               MedDisplay[]     = []
+      const med:               MedDisplay[]     = []
+      const ricercaMattina:    RicercaDisplay[] = []
+      const ricercaPomeriggio: RicercaDisplay[] = []
       let reperibile: DayDisplay['reperibile'] = null
 
       if (inPeriod) {
         // I medici sono già ordinati per numero_ordine dalla query →
-        // l'output finale ha lo stesso ordine consistente in tutti i giorni.
-        for (const med of medici) {
-          const t = turniByKey.get(`${med.id}|${dataISO}`)
+        // l'output finale ha ordine consistente fra giorni diversi.
+        for (const medico of medici) {
+          const t = turniByKey.get(`${medico.id}|${dataISO}`)
           if (!t) continue
           const tc = t.turno_clinico ?? ''
           const tr = t.turno_ricerca ?? ''
-          const inFerie = !!t.is_ferie || isInFerie(med.id, dataISO)
+          const sm = t.slot_mattina    ?? null
+          const sp = t.slot_pomeriggio ?? null
+          const inFerie = !!t.is_ferie || isInFerie(medico.id, dataISO)
 
-          if (tc === 'M') {
-            mattina.push({ medico: med, letter: 'M', placement: t.slot_mattina ?? null, inFerie })
-          } else if (tc === 'P') {
-            pomeriggio.push({ medico: med, letter: 'P', placement: t.slot_pomeriggio ?? null, inFerie })
-          } else if (tc === 'L') {
-            mattina.push(   { medico: med, letter: 'L', placement: t.slot_mattina    ?? null, inFerie })
-            pomeriggio.push({ medico: med, letter: 'L', placement: t.slot_pomeriggio ?? null, inFerie })
-          } else if (tc === 'REP') {
-            reperibile = { medico: med, inFerie }
+          // Helper: aggiunge una voce alla colonna giusta (sub o med)
+          // mettendola in ordine per sortKey (L=0, M=1, P=2).
+          const push = (
+            colPlacement: 'SUB' | 'MED',
+            letter: 'L' | 'M' | 'P',
+            half: 'matt' | 'pom' | null,
+          ) => {
+            const sortKey = letter === 'L' ? 0 : letter === 'M' ? 1 : 2
+            const arr = colPlacement === 'SUB' ? sub : med
+            arr.push({ medico, letter, half, inFerie, sortKey })
           }
 
-          if (tr.includes('RM')) ricercaMattina.push(   { medico: med, tcMain: tc, inFerie })
-          if (tr.includes('RP')) ricercaPomeriggio.push({ medico: med, tcMain: tc, inFerie })
+          if (tc === 'M') {
+            // Mattina-only: la colonna è determinata da slot_mattina.
+            if (sm === 'SUB') push('SUB', 'M', null)
+            else if (sm === 'MED') push('MED', 'M', null)
+          } else if (tc === 'P') {
+            // Pomeriggio-only: colonna da slot_pomeriggio.
+            if (sp === 'SUB') push('SUB', 'P', null)
+            else if (sp === 'MED') push('MED', 'P', null)
+          } else if (tc === 'L') {
+            // Lungo: se le due metà hanno lo stesso placement → una voce
+            // sola; altrimenti split fra le due colonne.
+            if (sm === sp) {
+              if (sm === 'SUB') push('SUB', 'L', null)
+              else if (sm === 'MED') push('MED', 'L', null)
+            } else {
+              if (sm === 'SUB') push('SUB', 'L', 'matt')
+              else if (sm === 'MED') push('MED', 'L', 'matt')
+              if (sp === 'SUB') push('SUB', 'L', 'pom')
+              else if (sp === 'MED') push('MED', 'L', 'pom')
+            }
+          } else if (tc === 'REP') {
+            reperibile = { medico, inFerie }
+          }
+
+          if (tr.includes('RM')) ricercaMattina.push(   { medico, tcMain: tc, inFerie })
+          if (tr.includes('RP')) ricercaPomeriggio.push({ medico, tcMain: tc, inFerie })
         }
+
+        // Ordina ogni colonna L → M → P (numero_ordine come tiebreaker
+        // implicito dato l'ordine del loop).
+        sub.sort((a, b) => a.sortKey - b.sortKey)
+        med.sort((a, b) => a.sortKey - b.sortKey)
       }
 
       const emptyByDesign = inPeriod &&
-        mattina.length === 0 && pomeriggio.length === 0 &&
+        sub.length === 0 && med.length === 0 &&
         ricercaMattina.length === 0 && ricercaPomeriggio.length === 0 &&
         !reperibile
 
       return {
         data, dataISO, inPeriod,
-        mattina, pomeriggio, ricercaMattina, ricercaPomeriggio, reperibile,
+        sub, med, ricercaMattina, ricercaPomeriggio, reperibile,
         emptyByDesign,
       }
     })
@@ -406,11 +450,15 @@ export function SettimanalePage() {
     )
   }
 
-  /** Riga di un medico in cella Mattina / Pomeriggio: chip + cognome
-   *  (barrato se in ferie) + suffisso (F) arancione. Quando il medico è
-   *  in ferie la riga ha sfondo a strisce bianco/arancio + tooltip per
-   *  segnalare che il turno non è ancora coperto. */
-  function MedRow({ medico, letter, placement, inFerie }: MedDisplay) {
+  /** Riga di un medico in colonna SUB / MED: chip colorato (col placement
+   *  della colonna) + cognome + eventuale suffisso "matt./pom." per i
+   *  lunghi misti + (F) se in ferie. Quando in ferie il wrap ha stripe
+   *  bianco/arancio + tooltip "turno non coperto". */
+  function MedRow({
+    item, columnPlacement,
+  }: { item: MedDisplay; columnPlacement: 'SUB' | 'MED' }) {
+    const { medico, letter, half, inFerie } = item
+    const halfLabel = half === 'matt' ? 'matt.' : half === 'pom' ? 'pom.' : null
     return (
       <div
         title={inFerie ? FERIE_TOOLTIP : undefined}
@@ -421,11 +469,16 @@ export function SettimanalePage() {
           borderRadius: inFerie ? 4 : 0,
           background: inFerie ? FERIE_STRIPE : undefined,
         }}>
-        <Chip letter={letter} placement={placement} />
+        <Chip letter={letter} placement={columnPlacement} />
         <span style={{
           fontSize: 11, fontWeight: 600,
           ...(inFerie ? { textDecoration: 'line-through', color: '#9ca3af' } : {}),
         }}>{nomeBreve(medico)}</span>
+        {halfLabel && (
+          <span style={{
+            fontSize: 9, fontWeight: 700, color: '#6b7280', fontStyle: 'italic',
+          }}>· {halfLabel}</span>
+        )}
         {inFerie && (
           <span style={{ marginLeft: 2, color: '#b45309', fontWeight: 800, fontSize: 9 }}>(F)</span>
         )}
@@ -511,28 +564,33 @@ export function SettimanalePage() {
           </td>
         ) : (
           <>
-            {/* MATTINA — colore di sfondo bianco per leggibilità sui chip */}
+            {/* SUB INTENSIVA — sfondo rosa molto tenue per richiamare il
+                colore dei chip SUB senza sovrapporsi alla loro leggibilità */}
             <td style={{
               padding: '4px 8px', verticalAlign: 'top',
-              border: '1px solid #6b7280', background: '#fff', minWidth: 200,
+              border: '1px solid #6b7280', background: '#fff5f5', minWidth: 200,
             }}>
-              {d.mattina.length === 0
+              {d.sub.length === 0
                 ? <span style={{ color: '#cbd5e1', fontSize: 11 }}>—</span>
-                : d.mattina.map(m => <MedRow key={m.medico.id} {...m} />)}
+                : d.sub.map((m, i) => (
+                    <MedRow key={`${m.medico.id}-${m.half ?? i}`} item={m} columnPlacement="SUB" />
+                  ))}
             </td>
-            {/* POMERIGGIO */}
+            {/* MEDICINA — sfondo azzurro molto tenue */}
             <td style={{
               padding: '4px 8px', verticalAlign: 'top',
-              border: '1px solid #6b7280', background: '#fff', minWidth: 200,
+              border: '1px solid #6b7280', background: '#f0f9ff', minWidth: 200,
             }}>
-              {d.pomeriggio.length === 0
+              {d.med.length === 0
                 ? <span style={{ color: '#cbd5e1', fontSize: 11 }}>—</span>
-                : d.pomeriggio.map(m => <MedRow key={m.medico.id} {...m} />)}
+                : d.med.map((m, i) => (
+                    <MedRow key={`${m.medico.id}-${m.half ?? i}`} item={m} columnPlacement="MED" />
+                  ))}
             </td>
             {/* RICERCA */}
             <td style={{
               padding: '4px 8px', verticalAlign: 'top',
-              border: '1px solid #6b7280', background: '#f9fafb', minWidth: 160,
+              border: '1px solid #6b7280', background: '#fdf4f5', minWidth: 160,
             }}>
               <RicercaRow label="RM" items={d.ricercaMattina} />
               <RicercaRow label="RP" items={d.ricercaPomeriggio} />
@@ -654,36 +712,54 @@ export function SettimanalePage() {
 
       {/* ── Legenda nascondibile sopra il calendario ────────────── */}
       {mostraLegenda && (
-        <div className="rounded-lg border border-stone-300 bg-stone-50 px-3 py-2"
+        <div className="rounded-lg border px-3 py-2"
           style={{ background: '#f0ece4', borderColor: '#d5ccb8' }}>
           <div className="flex flex-wrap gap-x-4 gap-y-1.5 items-center text-xs"
             style={{ color: '#5a5a4a' }}>
 
-            {/* Chip M / SUB */}
+            {/* Lettere turno: L → M → P (stesso ordine usato nelle colonne) */}
+            <span className="flex items-center gap-1.5">
+              <Chip letter="L" placement="SUB" />
+              <span>Lungo (M+P)</span>
+            </span>
             <span className="flex items-center gap-1.5">
               <Chip letter="M" placement="SUB" />
-              <span>Mattina · sub-intensiva</span>
+              <span>Mattina</span>
             </span>
-            {/* Chip M / MED */}
-            <span className="flex items-center gap-1.5">
-              <Chip letter="M" placement="MED" />
-              <span>Mattina · medicina</span>
-            </span>
-            {/* Chip P (placeholder generico) */}
             <span className="flex items-center gap-1.5">
               <Chip letter="P" placement="SUB" />
               <span>Pomeriggio</span>
-            </span>
-            {/* Chip L */}
-            <span className="flex items-center gap-1.5">
-              <Chip letter="L" placement="MED" />
-              <span>Lungo (M+P)</span>
             </span>
 
             {/* Separatore */}
             <span style={{ width: 1, height: 14, background: '#c0b8a8', display: 'inline-block' }} />
 
-            {/* RM badge */}
+            {/* Colore chip = colore della colonna (rosa SUB / azzurro MED) */}
+            <span className="flex items-center gap-1.5">
+              <span style={{
+                display: 'inline-block', width: 14, height: 14, borderRadius: '50%',
+                background: '#fecaca', border: '1px solid #dc2626',
+              }} />
+              <span>Sub-intensiva</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span style={{
+                display: 'inline-block', width: 14, height: 14, borderRadius: '50%',
+                background: '#bae6fd', border: '1px solid #0284c7',
+              }} />
+              <span>Medicina</span>
+            </span>
+
+            {/* Suffisso "matt./pom." per i lunghi misti */}
+            <span className="flex items-center gap-1">
+              <span style={{ color: '#6b7280', fontStyle: 'italic', fontWeight: 700 }}>· matt. / pom.</span>
+              <span>= L con metà giornata in altra colonna</span>
+            </span>
+
+            {/* Separatore */}
+            <span style={{ width: 1, height: 14, background: '#c0b8a8', display: 'inline-block' }} />
+
+            {/* RM / RP / ·L */}
             <span className="flex items-center gap-1.5">
               <span style={{
                 fontSize: 9, fontWeight: 800, color: '#3a2858',
@@ -691,7 +767,6 @@ export function SettimanalePage() {
               }}>RM</span>
               <span>Ricerca mattina</span>
             </span>
-            {/* RP badge */}
             <span className="flex items-center gap-1.5">
               <span style={{
                 fontSize: 9, fontWeight: 800, color: '#3a2858',
@@ -699,7 +774,6 @@ export function SettimanalePage() {
               }}>RP</span>
               <span>Ricerca pomeriggio</span>
             </span>
-            {/* Suffisso ·L */}
             <span className="flex items-center gap-1">
               <span style={{ color: '#7a2233', fontWeight: 700 }}>·L</span>
               <span>= anche in turno lungo</span>
@@ -738,7 +812,7 @@ export function SettimanalePage() {
 
       {config && medici.length > 0 && (
         <div className="overflow-auto rounded-lg border border-stone-300 bg-white">
-          <table className="border-collapse text-xs" style={{ borderSpacing: 0, width: '100%', minWidth: 850 }}>
+          <table className="border-collapse text-xs" style={{ borderSpacing: 0, width: '100%', minWidth: 900 }}>
             <thead>
               <tr>
                 <th style={{
@@ -751,25 +825,29 @@ export function SettimanalePage() {
                   background: '#374151', color: '#fff',
                   border: '1px solid #1f2937',
                 }}>Giorno</th>
+                {/* SUB INTENSIVA — rosso (stesso colore del bordo del pallino SUB) */}
                 <th style={{
                   width: 200, padding: '6px 4px',
-                  background: '#456b3a', color: '#fff',
-                  border: '1px solid #2b3c24',
-                }}>Mattina</th>
+                  background: '#dc2626', color: '#fff',
+                  border: '1px solid #991b1b', letterSpacing: '0.02em',
+                }}>Sub Intensiva</th>
+                {/* MEDICINA — azzurro (stesso colore del bordo del pallino MED) */}
                 <th style={{
                   width: 200, padding: '6px 4px',
-                  background: '#456b3a', color: '#fff',
-                  border: '1px solid #2b3c24',
-                }}>Pomeriggio</th>
+                  background: '#0284c7', color: '#fff',
+                  border: '1px solid #075985', letterSpacing: '0.02em',
+                }}>Medicina</th>
+                {/* RICERCA — bordeaux */}
                 <th style={{
                   width: 160, padding: '6px 4px',
                   background: '#7a2233', color: '#fff',
-                  border: '1px solid #5a1a26',
+                  border: '1px solid #5a1a26', letterSpacing: '0.02em',
                 }}>Ricerca</th>
+                {/* REPERIBILE — verde */}
                 <th style={{
                   width: 140, padding: '6px 4px',
-                  background: '#dc2626', color: '#fff',
-                  border: '1px solid #7f1d1d',
+                  background: '#16a34a', color: '#fff',
+                  border: '1px solid #14532d', letterSpacing: '0.02em',
                 }}>Reperibile</th>
               </tr>
             </thead>
