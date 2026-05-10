@@ -58,6 +58,21 @@ export function LoginPage({ user, onSignIn }: Props) {
           Accedi con Google
         </button>
 
+        {/* Link secondario "altro account": chiama lo stesso onSignIn — Google
+            apre comunque la schermata di scelta account perché signInWithGoogle
+            usa prompt: 'select_account'. Questo bottone rende esplicito
+            all'utente che può scegliere un account diverso da quello
+            attualmente loggato in Chrome. */}
+        <button
+          onClick={onSignIn}
+          className="mt-3 text-xs underline transition-colors"
+          style={{ color: '#6b6b5a' }}
+          onMouseEnter={e => (e.currentTarget.style.color = '#3a3d30')}
+          onMouseLeave={e => (e.currentTarget.style.color = '#6b6b5a')}
+        >
+          Accedi con un altro account
+        </button>
+
         <p className="mt-6 text-xs" style={{ color: '#6b6b5a' }}>
           Solo gli account autorizzati possono accedere.
         </p>
