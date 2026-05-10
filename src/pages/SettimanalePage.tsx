@@ -20,7 +20,7 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarDays, Info } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { getDayOfWeek, formatDate, MESI_IT } from '../lib/algorithm'
 import { useTurniRealtime } from '../hooks/useTurniRealtime'
@@ -37,6 +37,13 @@ const PLACEMENT_BG: Record<'SUB'|'MED'|'NONE', string> = {
   MED:  '#bae6fd',
   NONE: '#f3f4f6',
 }
+
+/** Stripe bianco + arancio chiaro per evidenziare il "buco":
+ *  un turno operativo (M/P/L/REP) che cade su un giorno di ferie approvate
+ *  significa che NESSUNO copre quel turno (l'algoritmo non ha rigenerato
+ *  dopo l'approvazione delle ferie). */
+const FERIE_STRIPE = 'repeating-linear-gradient(45deg, #ffffff 0, #ffffff 7px, #fed7aa 7px, #fed7aa 14px)'
+const FERIE_TOOLTIP = 'Turno non ancora coperto per turnista in ferie'
 
 function startOfWeek(d: Date): Date {
   const r = new Date(d)
@@ -140,6 +147,11 @@ export function SettimanalePage() {
   // mese corrispondente (vedi normalizeAnchor).
   const [vista, setVista] = useState<Vista>('settimana')
   const [anchorWeek, setAnchorWeek] = useState<Date>(() => startOfWeek(new Date()))
+  // Legenda: aperta di default su desktop (≥640px), chiusa su mobile.
+  // Toggle dal bottone "Legenda" nella toolbar.
+  const [mostraLegenda, setMostraLegenda] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 640px)').matches,
+  )
 
   // ── Realtime: invalidate automatico delle query 'turni' / 'ferie-ranges'.
   useTurniRealtime()
@@ -395,10 +407,20 @@ export function SettimanalePage() {
   }
 
   /** Riga di un medico in cella Mattina / Pomeriggio: chip + cognome
-   *  (barrato se in ferie) + suffisso (F) arancione. */
+   *  (barrato se in ferie) + suffisso (F) arancione. Quando il medico è
+   *  in ferie la riga ha sfondo a strisce bianco/arancio + tooltip per
+   *  segnalare che il turno non è ancora coperto. */
   function MedRow({ medico, letter, placement, inFerie }: MedDisplay) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '1px 0' }}>
+      <div
+        title={inFerie ? FERIE_TOOLTIP : undefined}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 5,
+          padding: inFerie ? '2px 4px' : '1px 0',
+          margin: inFerie ? '1px 0' : 0,
+          borderRadius: inFerie ? 4 : 0,
+          background: inFerie ? FERIE_STRIPE : undefined,
+        }}>
         <Chip letter={letter} placement={placement} />
         <span style={{
           fontSize: 11, fontWeight: 600,
@@ -412,7 +434,9 @@ export function SettimanalePage() {
   }
 
   /** Riga RM o RP: badge a sinistra + lista cognomi separati da virgola.
-   *  "·L" dopo il cognome se il medico è anche in turno lungo quel giorno. */
+   *  "·L" dopo il cognome se il medico è anche in turno lungo quel giorno.
+   *  I singoli medici in ferie sono avvolti in un wrap con sfondo a strisce
+   *  bianco/arancio + tooltip — stesso linguaggio visivo delle celle M/P. */
   function RicercaRow({ label, items }: { label: 'RM' | 'RP'; items: RicercaDisplay[] }) {
     if (items.length === 0) return null
     return (
@@ -422,7 +446,14 @@ export function SettimanalePage() {
           background: '#ddd8ea', padding: '1px 4px', borderRadius: 3, flexShrink: 0,
         }}>{label}</span>
         {items.map((r, i) => (
-          <span key={r.medico.id} style={{ fontSize: 11, fontWeight: 600 }}>
+          <span key={r.medico.id}
+            title={r.inFerie ? FERIE_TOOLTIP : undefined}
+            style={{
+              fontSize: 11, fontWeight: 600,
+              ...(r.inFerie
+                ? { background: FERIE_STRIPE, padding: '0 4px', borderRadius: 3 }
+                : {}),
+            }}>
             <span style={r.inFerie ? { textDecoration: 'line-through', color: '#9ca3af' } : undefined}>
               {nomeBreve(r.medico)}
             </span>
@@ -432,7 +463,7 @@ export function SettimanalePage() {
             {r.inFerie && (
               <span style={{ marginLeft: 2, color: '#b45309', fontWeight: 800, fontSize: 9 }}>(F)</span>
             )}
-            {i < items.length - 1 && <span style={{ color: '#9ca3af' }}>,&nbsp;</span>}
+            {i < items.length - 1 && !r.inFerie && <span style={{ color: '#9ca3af' }}>,&nbsp;</span>}
           </span>
         ))}
       </div>
@@ -509,7 +540,8 @@ export function SettimanalePage() {
                 <span style={{ color: '#cbd5e1', fontSize: 11 }}>—</span>
               )}
             </td>
-            {/* REPERIBILE */}
+            {/* REPERIBILE — stesso linguaggio visivo degli altri:
+                stripe + tooltip se il reperibile è in ferie. */}
             <td style={{
               background: bgGiorno,
               fontWeight: 800, fontSize: 12,
@@ -519,12 +551,20 @@ export function SettimanalePage() {
               color: d.reperibile ? '#1f2937' : '#9ca3af',
             }}>
               {d.reperibile ? (
-                <span style={d.reperibile.inFerie
-                  ? { textDecoration: 'line-through', color: '#9ca3af' }
-                  : undefined}>
-                  {nomeBreve(d.reperibile.medico)}
+                <span
+                  title={d.reperibile.inFerie ? FERIE_TOOLTIP : undefined}
+                  style={d.reperibile.inFerie
+                    ? { display: 'inline-flex', alignItems: 'center', gap: 3,
+                        padding: '2px 6px', borderRadius: 4,
+                        background: FERIE_STRIPE }
+                    : undefined}>
+                  <span style={d.reperibile.inFerie
+                    ? { textDecoration: 'line-through', color: '#9ca3af' }
+                    : undefined}>
+                    {nomeBreve(d.reperibile.medico)}
+                  </span>
                   {d.reperibile.inFerie && (
-                    <span style={{ marginLeft: 2, color: '#b45309', fontWeight: 800, fontSize: 9 }}>(F)</span>
+                    <span style={{ color: '#b45309', fontWeight: 800, fontSize: 9 }}>(F)</span>
                   )}
                 </span>
               ) : '—'}
@@ -600,8 +640,93 @@ export function SettimanalePage() {
             title={todayInRange ? 'Vai a oggi' : 'Oggi è fuori dal periodo del calendario'}>
             Oggi
           </button>
+          <button
+            onClick={() => setMostraLegenda(v => !v)}
+            className="btn-secondary py-1 px-2 text-xs flex items-center gap-1"
+            style={mostraLegenda
+              ? { background: '#e0e8d8', borderColor: '#9ab488' }
+              : undefined}
+            title={mostraLegenda ? 'Nascondi legenda' : 'Mostra legenda'}>
+            <Info size={13} /> Legenda
+          </button>
         </div>
       </div>
+
+      {/* ── Legenda nascondibile sopra il calendario ────────────── */}
+      {mostraLegenda && (
+        <div className="rounded-lg border border-stone-300 bg-stone-50 px-3 py-2"
+          style={{ background: '#f0ece4', borderColor: '#d5ccb8' }}>
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5 items-center text-xs"
+            style={{ color: '#5a5a4a' }}>
+
+            {/* Chip M / SUB */}
+            <span className="flex items-center gap-1.5">
+              <Chip letter="M" placement="SUB" />
+              <span>Mattina · sub-intensiva</span>
+            </span>
+            {/* Chip M / MED */}
+            <span className="flex items-center gap-1.5">
+              <Chip letter="M" placement="MED" />
+              <span>Mattina · medicina</span>
+            </span>
+            {/* Chip P (placeholder generico) */}
+            <span className="flex items-center gap-1.5">
+              <Chip letter="P" placement="SUB" />
+              <span>Pomeriggio</span>
+            </span>
+            {/* Chip L */}
+            <span className="flex items-center gap-1.5">
+              <Chip letter="L" placement="MED" />
+              <span>Lungo (M+P)</span>
+            </span>
+
+            {/* Separatore */}
+            <span style={{ width: 1, height: 14, background: '#c0b8a8', display: 'inline-block' }} />
+
+            {/* RM badge */}
+            <span className="flex items-center gap-1.5">
+              <span style={{
+                fontSize: 9, fontWeight: 800, color: '#3a2858',
+                background: '#ddd8ea', padding: '1px 4px', borderRadius: 3,
+              }}>RM</span>
+              <span>Ricerca mattina</span>
+            </span>
+            {/* RP badge */}
+            <span className="flex items-center gap-1.5">
+              <span style={{
+                fontSize: 9, fontWeight: 800, color: '#3a2858',
+                background: '#ddd8ea', padding: '1px 4px', borderRadius: 3,
+              }}>RP</span>
+              <span>Ricerca pomeriggio</span>
+            </span>
+            {/* Suffisso ·L */}
+            <span className="flex items-center gap-1">
+              <span style={{ color: '#7a2233', fontWeight: 700 }}>·L</span>
+              <span>= anche in turno lungo</span>
+            </span>
+
+            {/* Separatore */}
+            <span style={{ width: 1, height: 14, background: '#c0b8a8', display: 'inline-block' }} />
+
+            {/* Stripe (F) — turno scoperto */}
+            <span className="flex items-center gap-1.5"
+              title={FERIE_TOOLTIP}>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 3,
+                padding: '2px 6px', borderRadius: 4,
+                background: FERIE_STRIPE,
+                border: '1px solid #fed7aa',
+              }}>
+                <span style={{ textDecoration: 'line-through', color: '#9ca3af', fontSize: 10, fontWeight: 600 }}>
+                  ROSSI
+                </span>
+                <span style={{ color: '#b45309', fontWeight: 800, fontSize: 9 }}>(F)</span>
+              </span>
+              <span>Turno non ancora coperto (medico in ferie)</span>
+            </span>
+          </div>
+        </div>
+      )}
 
       {!config && (
         <p className="text-sm text-stone-500">Caricamento configurazione…</p>
