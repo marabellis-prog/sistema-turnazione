@@ -225,9 +225,34 @@ export function calcolaCalendarioCompleto(
 //   RM solo a chi ha TC=='P'   |   RP solo a chi ha TC=='M'
 //   (escluso L, REP, riposo — un medico non può avere RM e RP insieme)
 //
-//   SUB/MED applicabili solo a TC ∈ {M, P, L} (escluso REP e riposo)
-//   Logica ibrida: chi era flaggato dallo slot teorico mantiene il flag
-//   se ancora eligibile; capacità mancanti redistribuite per priorità.
+//   SUB/MED applicabili solo a TC ∈ {M, P, L} (escluso REP e riposo).
+//
+// Capacità SUB/MED — DINAMICA, non statica dallo schema:
+//   total_halves = (#L × 2) + #M + #P  (somma delle metà giornate occupate)
+//   total_sub    = ⌊total_halves / 2⌋  (target globale: 50% SUB / 50% MED)
+//   total_med    = total_halves - total_sub
+//   target_sub_m = ⌊n_mattina / 2⌋     (mattina ≈ metà SUB metà MED)
+//   target_sub_p = total_sub - target_sub_m  (compensa il pomeriggio per
+//                                              tenere il bilanciamento globale)
+//   target_med_m = n_mattina   - target_sub_m
+//   target_med_p = n_pomerigg. - target_sub_p
+//
+// Esempio "standard" 2L+2M+2P → n_m=4, n_p=4, total=8, target_sub=4 →
+//   target_sub_m=2, target_sub_p=2, target_med_m=2, target_med_p=2
+// Esempio "L extra" 3L+1M+1P → n_m=4, n_p=4, total=8, target_sub=4 →
+//   stesso 2/2/2/2: i 3 lunghi devono dividersi SUB e MED tra mattine
+//   e pomeriggi (uno dei lunghi farà SUB-matt + MED-pom o viceversa).
+// Esempio "transitorio" 3L+2M+1P (durante un editing in corso) →
+//   n_m=5, n_p=4, total=9, target_sub=4 → target_sub_m=2, target_sub_p=2,
+//   target_med_m=3, target_med_p=2. Tutti i 5 in mattina ricevono un
+//   placement (cosa che il vecchio algoritmo statico NON garantiva).
+//
+// Init: chi era flaggato dallo slot teorico mantiene il flag se ancora
+// eligibile (preserva la preferenza schema). Fill greedy con tie-break.
+// Una "Fase 5" di safety net copre eventuali avanzi (medici lavoranti
+// senza placement, es. quando le preferenze schema non bastano a coprire
+// il fabbisogno) preferendo coerenza interna del L (stessa metà → stessa
+// classe, se l'altra è settata).
 //
 // Tie-break (RM, RP, SUB, MED): 1) meno turni di quel tipo nel periodo,
 // 2) ordine alfabetico su medico.nome.
@@ -284,6 +309,23 @@ export function ricalcolaGiorno(ctx: RicalcContext): Map<string, RicalcCell> {
     return t === 'P' || t === 'L'
   }
 
+  // ── Capacità SUB/MED dinamica ────────────────────────────────────
+  // Calcoliamo i target a partire dal numero EFFETTIVO di medici eligibili
+  // per metà giornata (vedi commento sopra alla firma per i dettagli).
+  // Il vecchio algoritmo usava direttamente `capacita.sub_m` ecc. dallo
+  // schema, fallendo quando i medici eligibili eccedevano la capacità
+  // statica (alcuni rimanevano senza placement → chip diviso bianco/colore).
+  const n_m = medici.filter(m => lavoraMattina(m.id)).length
+  const n_p = medici.filter(m => lavoraPomeriggio(m.id)).length
+  const totSubGlobale = Math.floor((n_m + n_p) / 2)
+  // Distribuiamo SUB tra le due metà bilanciando il globale: la mattina
+  // prende ⌊n_m/2⌋, il pomeriggio compensa per centrare totSubGlobale.
+  // I clamp [0, n_X] proteggono da edge case (es. n_p = 0).
+  const target_sub_m = Math.min(n_m, Math.max(0, Math.floor(n_m / 2)))
+  const target_sub_p = Math.min(n_p, Math.max(0, totSubGlobale - target_sub_m))
+  const target_med_m = n_m - target_sub_m
+  const target_med_p = n_p - target_sub_p
+
   // ── Inizializza i placement (preservando l'originale dove eligibile)
   const slotM = new Map<string, SlotPlacement>()
   const slotP = new Map<string, SlotPlacement>()
@@ -301,42 +343,85 @@ export function ricalcolaGiorno(ctx: RicalcContext): Map<string, RicalcCell> {
   }
 
   // ── SUB-mattina ────────────────────────────────────────────────────
-  if (countSlot(slotM, 'SUB') < capacita.sub_m) {
+  if (countSlot(slotM, 'SUB') < target_sub_m) {
     const cand = medici
       .filter(m => lavoraMattina(m.id) && slotM.get(m.id) !== 'SUB' && !slotM.has(m.id))
       .sort(cmpBy('sub'))
-    for (let i = 0; i < capacita.sub_m - countSlot(slotM, 'SUB') && i < cand.length; i++) {
+    for (let i = 0; i < target_sub_m - countSlot(slotM, 'SUB') && i < cand.length; i++) {
       slotM.set(cand[i].id, 'SUB')
     }
   }
 
   // ── MED-mattina ────────────────────────────────────────────────────
-  if (countSlot(slotM, 'MED') < capacita.med_m) {
+  if (countSlot(slotM, 'MED') < target_med_m) {
     const cand = medici
       .filter(m => lavoraMattina(m.id) && slotM.get(m.id) !== 'MED' && !slotM.has(m.id))
       .sort(cmpBy('med'))
-    for (let i = 0; i < capacita.med_m - countSlot(slotM, 'MED') && i < cand.length; i++) {
+    for (let i = 0; i < target_med_m - countSlot(slotM, 'MED') && i < cand.length; i++) {
       slotM.set(cand[i].id, 'MED')
     }
   }
 
   // ── SUB-pomeriggio ─────────────────────────────────────────────────
-  if (countSlot(slotP, 'SUB') < capacita.sub_p) {
+  if (countSlot(slotP, 'SUB') < target_sub_p) {
     const cand = medici
       .filter(m => lavoraPomeriggio(m.id) && slotP.get(m.id) !== 'SUB' && !slotP.has(m.id))
       .sort(cmpBy('sub'))
-    for (let i = 0; i < capacita.sub_p - countSlot(slotP, 'SUB') && i < cand.length; i++) {
+    for (let i = 0; i < target_sub_p - countSlot(slotP, 'SUB') && i < cand.length; i++) {
       slotP.set(cand[i].id, 'SUB')
     }
   }
 
   // ── MED-pomeriggio ─────────────────────────────────────────────────
-  if (countSlot(slotP, 'MED') < capacita.med_p) {
+  if (countSlot(slotP, 'MED') < target_med_p) {
     const cand = medici
       .filter(m => lavoraPomeriggio(m.id) && slotP.get(m.id) !== 'MED' && !slotP.has(m.id))
       .sort(cmpBy('med'))
-    for (let i = 0; i < capacita.med_p - countSlot(slotP, 'MED') && i < cand.length; i++) {
+    for (let i = 0; i < target_med_p - countSlot(slotP, 'MED') && i < cand.length; i++) {
       slotP.set(cand[i].id, 'MED')
+    }
+  }
+
+  // ── Fase 5 — Fallback per gli avanzi ──────────────────────────────
+  // Safety net: in casi limite (orig pre-fill che esaurisce la capacità
+  // mentre lascia altri medici scoperti, target dispari + preserve sbila-
+  // nciato, ecc.) il fill greedy può lasciare medici eligibili senza
+  // placement. Garantiamo che ognuno ne abbia uno applicando queste regole
+  // in ordine:
+  //   1) per i lunghi (lavora entrambe le metà) con UN solo lato già
+  //      settato, copia il placement noto sull'altro lato → coerenza
+  //      interna del L.
+  //   2) altrimenti scegli SUB se serve raggiungere il target (count <
+  //      target_sub_X), MED se serve raggiungere quello, alternativamente
+  //      il placement con count attuale minore (per equilibrio).
+  for (const m of medici) {
+    if (lavoraMattina(m.id) && !slotM.has(m.id)) {
+      const fromOther = slotP.get(m.id)
+      if (fromOther) {
+        slotM.set(m.id, fromOther)
+      } else {
+        const needSub = countSlot(slotM, 'SUB') < target_sub_m
+        const needMed = countSlot(slotM, 'MED') < target_med_m
+        slotM.set(m.id,
+          needSub ? 'SUB'
+          : needMed ? 'MED'
+          : (countSlot(slotM, 'SUB') <= countSlot(slotM, 'MED') ? 'SUB' : 'MED'),
+        )
+      }
+    }
+    if (lavoraPomeriggio(m.id) && !slotP.has(m.id)) {
+      const fromOther = slotM.get(m.id)
+      if (fromOther) {
+        slotP.set(m.id, fromOther)
+      } else {
+        const needSub = countSlot(slotP, 'SUB') < target_sub_p
+        const needMed = countSlot(slotP, 'MED') < target_med_p
+        slotP.set(m.id,
+          needSub ? 'SUB'
+          : needMed ? 'MED'
+          : (countSlot(slotP, 'SUB') <= countSlot(slotP, 'MED') ? 'SUB' : 'MED'),
+        )
+      }
     }
   }
 
