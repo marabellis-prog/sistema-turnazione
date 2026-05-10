@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { AuthUser } from '../types'
 
-const CACHE_KEY  = 'auth_user_profile'
-const TIMEOUT_MS = 8000
+const CACHE_KEY     = 'auth_user_profile'
+const UNAUTH_KEY    = 'auth_unauthorized_email'
+const TIMEOUT_MS    = 15_000  // più generoso: cold start + rete lenta
 
 // ── Cache sessionStorage ──────────────────────────────────────────
 function getCached(): AuthUser | null {
@@ -77,6 +78,16 @@ export function useAuth() {
     return () => subscription.unsubscribe()
   }, [])
 
+  /** Helper: scrive l'email "non autorizzata" in sessionStorage così
+   *  LoginPage può mostrare il banner diagnostico invece di un silenzioso
+   *  ritorno a /login. Il `reason` viene loggato in console per debugging. */
+  function flagUnauthorized(email: string, reason: string) {
+    console.warn(`[Auth] Non autorizzato (${reason}):`, email.toLowerCase())
+    try {
+      sessionStorage.setItem(UNAUTH_KEY, email.toLowerCase())
+    } catch {}
+  }
+
   async function loadUser(email: string) {
     const queryPromise   = supabase.rpc('get_my_profile')
     const timeoutPromise = new Promise<{ data: null; error: Error }>(resolve =>
@@ -88,7 +99,12 @@ export function useAuth() {
       const { data, error } = result as Awaited<typeof queryPromise>
 
       if (error) {
+        // RPC failure (timeout / 5xx / RLS): non sappiamo se l'utente è
+        // autorizzato o no. Flagga comunque l'email così l'utente vede
+        // un banner spiegativo invece di un kick-out muto.
         console.error('[Auth] Errore get_my_profile:', error.message)
+        flagUnauthorized(email, `errore RPC: ${error.message}`)
+        await supabase.auth.signOut()
         setUser(null)
         return
       }
@@ -96,28 +112,26 @@ export function useAuth() {
       const profile = Array.isArray(data) ? data[0] : data
 
       if (!profile) {
-        // Email Google non nella whitelist (o con dot-trick non compatibile,
-        // o l'utente ha scelto un account Google diverso da quello previsto).
-        // Segnaliamo motivo via sessionStorage così LoginPage può mostrare
-        // un messaggio chiaro invece di un silenzioso ritorno a /login.
-        console.warn('[Auth] Non autorizzato:', email.toLowerCase())
-        try {
-          sessionStorage.setItem('auth_unauthorized_email', email.toLowerCase())
-        } catch {}
+        // Email Google non in whitelist (caso più comune).
+        flagUnauthorized(email, 'email non in elenco utenti autorizzati')
         await supabase.auth.signOut()
         setUser(null)
       } else {
         const authUser: AuthUser = {
           id:    profile.id,
           email: profile.email,
-          ruolo: profile.ruolo as 'admin' | 'user',
+          ruolo: profile.ruolo as 'admin' | 'user' | 'ospite',
           nome:  profile.nome ?? null,
         }
         setCached(authUser)
         setUser(authUser)
       }
     } catch (e) {
+      // Eccezione imprevista (es. parsing JSON, rete persa, ecc.).
+      // Stesso pattern: flagga e signOut, così la UI può spiegare.
       console.error('[Auth] Errore imprevisto:', e)
+      flagUnauthorized(email, `eccezione: ${(e as Error).message ?? 'sconosciuta'}`)
+      try { await supabase.auth.signOut() } catch {}
       setUser(null)
     } finally {
       setLoading(false)
