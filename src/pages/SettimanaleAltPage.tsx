@@ -311,13 +311,21 @@ export function SettimanaleAltPage() {
   function MixedPlacementTag({ sm, sp }: { sm: SlotPlacement; sp: SlotPlacement }) {
     if (!sm && !sp) return null
     if (sm === sp) return <PlacementTag placement={sm} />
-    // Misto
+    // Misto — l'arrow è più grande e scuro per essere ben visibile
+    // (a 10px confondeva con un trattino)
     const colSm = sm === 'SUB' ? '#9f1239' : sm === 'MED' ? '#0c4a6e' : '#9ca3af'
     const colSp = sp === 'SUB' ? '#9f1239' : sp === 'MED' ? '#0c4a6e' : '#9ca3af'
     return (
       <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 800 }}>
         (<span style={{ color: colSm }}>{sm ?? '—'}</span>
-        <span style={{ color: '#6b7280' }}>→</span>
+        <span style={{
+          color:        '#1f2937',
+          fontSize:     16,
+          fontWeight:   900,
+          margin:       '0 3px',
+          verticalAlign: 'middle',
+          lineHeight:   1,
+        }}>→</span>
         <span style={{ color: colSp }}>{sp ?? '—'}</span>)
       </span>
     )
