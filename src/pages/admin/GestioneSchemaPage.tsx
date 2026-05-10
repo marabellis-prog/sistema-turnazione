@@ -1245,36 +1245,41 @@ export function GestioneSchemaPage() {
       </div>{/* /flex-wrap container */}
 
       {/* ═══ TOAST WARNING (validazione drop) ════════════════════
-          Posizionato fixed in alto a destra, appare quando un drop
-          violerebbe la regola "uno slot, un solo numero".
+          Centrato sulla viewport (full-screen wrapper con flex center).
+          pointer-events-none sul wrapper + auto sul toast → i click
+          fuori dal toast passano attraverso e non bloccano la UI.
           Auto-dismiss in 3.5s o click sulla X. */}
       {warningMsg && (
         <div
-          className="fixed top-16 right-4 z-50 flex items-start gap-2 px-3.5 py-2.5 rounded-lg shadow-lg"
-          style={{
-            background:     '#fef3c7',
-            borderLeft:     '4px solid #d97706',
-            color:          '#78350f',
-            maxWidth:       420,
-            animationName:  'fadeSlideIn',
-            animationDuration: '180ms',
-            animationTimingFunction: 'ease-out',
-          }}
+          className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none px-4"
           role="alert">
-          <AlertTriangle size={16} className="shrink-0 mt-0.5" style={{ color: '#b45309' }} />
-          <span className="text-xs font-medium leading-snug flex-1">
-            {warningMsg}
-          </span>
-          <button
-            onClick={() => {
-              if (warningTimer.current) clearTimeout(warningTimer.current)
-              setWarningMsg(null)
-            }}
-            className="shrink-0 hover:opacity-70 transition-opacity"
-            style={{ color: '#92400e' }}
-            title="Chiudi">
-            <X size={14} />
-          </button>
+          <div
+            className="flex items-start gap-2.5 px-4 py-3 rounded-xl shadow-2xl"
+            style={{
+              background:     '#fef3c7',
+              borderLeft:     '5px solid #d97706',
+              color:          '#78350f',
+              maxWidth:       460,
+              pointerEvents:  'auto',
+              animationName:  'fadeSlideIn',
+              animationDuration: '180ms',
+              animationTimingFunction: 'ease-out',
+            }}>
+            <AlertTriangle size={18} className="shrink-0 mt-0.5" style={{ color: '#b45309' }} />
+            <span className="text-sm font-medium leading-snug flex-1">
+              {warningMsg}
+            </span>
+            <button
+              onClick={() => {
+                if (warningTimer.current) clearTimeout(warningTimer.current)
+                setWarningMsg(null)
+              }}
+              className="shrink-0 hover:opacity-70 transition-opacity"
+              style={{ color: '#92400e' }}
+              title="Chiudi">
+              <X size={16} />
+            </button>
+          </div>
         </div>
       )}
     </div>
