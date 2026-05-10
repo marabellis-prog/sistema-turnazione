@@ -866,6 +866,25 @@ export function ModificaTurniPage() {
     return total
   }, [medici, getCella])
 
+  // ── Conteggio metà-giornate per placement (SUB / MED) ─────────────
+  // Le righe "TURNI IN SUB" / "TURNI IN MED" contano le metà giornate
+  // (slot_mattina + slot_pomeriggio) assegnate a quel placement. Le L
+  // contribuiscono fino a 2 (una per metà), M e P fino a 1 ciascuno,
+  // REP 0. Insieme sub + med == tot (riga TURNI TOTALI). In un giorno
+  // bilanciato: sub == med == tot/2.
+  const calcolaTotalePlacement = useCallback(
+    (data: string, placement: 'SUB' | 'MED'): number => {
+      let total = 0
+      for (const m of medici) {
+        const cur = getCella(m.id, data)
+        if (cur.slot_mattina    === placement) total++
+        if (cur.slot_pomeriggio === placement) total++
+      }
+      return total
+    },
+    [medici, getCella],
+  )
+
   // ── beforeunload — blocca chiusura/refresh tab ─────────────────────
   useEffect(() => {
     if (!hasUnsaved) return
@@ -1067,39 +1086,104 @@ export function ModificaTurniPage() {
             </tr>
           ))}
 
-          {/* Riga totali turni — SOLO sotto la tabella Clinica.
-              Conteggio: M=1, P=1, L=2, REP=0, vuoto=0.
-              Sfondo azzurro pastello, testo bianco, refresh in tempo reale
-              mentre si edita perché getCella legge prima dal Map modifiche. */}
+          {/* Righe totali turni — SOLO sotto la tabella Clinica:
+                1) TURNI TOTALI  M=1, P=1, L=2, REP=0   azzurro
+                2) TURNI IN SUB  count(slot_mattina/pom = SUB)  rosa
+                3) TURNI IN MED  count(slot_mattina/pom = MED)  azzurro tenue
+              Tutti si aggiornano in tempo reale (getCella legge dal Map
+              modifiche prima del DB). In un giorno bilanciato vale
+              sub + med == tot, e idealmente sub ≈ med. */}
           {tipo === 'clinica' && (
-            <tr>
-              <td style={{
-                width: 140, minWidth: 140,
-                position: 'sticky', left: 0, zIndex: 1,
-                background: '#7eb6d4', color: '#fff',
-                fontSize: 11, fontWeight: 800, padding: '4px 8px',
-                border: '1px solid #5d9bc1',
-                letterSpacing: '0.06em',
-                whiteSpace: 'nowrap',
-              }}>
-                TURNI TOTALI
-              </td>
-              {cols.map(c => {
-                const tot = calcolaTotaleClinici(c.data)
-                return (
-                  <td key={c.data} style={{
-                    width: 32, minWidth: 32, height: 24,
-                    background: '#7eb6d4', color: '#fff',
-                    fontSize: 12, fontWeight: 700,
-                    textAlign: 'center', verticalAlign: 'middle',
-                    border: '1px solid #5d9bc1',
-                    padding: 0,
-                  }}>
-                    {tot || ''}
-                  </td>
-                )
-              })}
-            </tr>
+            <>
+              <tr>
+                <td style={{
+                  width: 140, minWidth: 140,
+                  position: 'sticky', left: 0, zIndex: 1,
+                  background: '#7eb6d4', color: '#fff',
+                  fontSize: 11, fontWeight: 800, padding: '4px 8px',
+                  border: '1px solid #5d9bc1',
+                  letterSpacing: '0.06em',
+                  whiteSpace: 'nowrap',
+                }}>
+                  TURNI TOTALI
+                </td>
+                {cols.map(c => {
+                  const tot = calcolaTotaleClinici(c.data)
+                  return (
+                    <td key={c.data} style={{
+                      width: 32, minWidth: 32, height: 24,
+                      background: '#7eb6d4', color: '#fff',
+                      fontSize: 12, fontWeight: 700,
+                      textAlign: 'center', verticalAlign: 'middle',
+                      border: '1px solid #5d9bc1',
+                      padding: 0,
+                    }}>
+                      {tot || ''}
+                    </td>
+                  )
+                })}
+              </tr>
+
+              {/* TURNI IN SUB — colore coerente col chip SUB (rosa pastello + bordo rosso) */}
+              <tr>
+                <td style={{
+                  width: 140, minWidth: 140,
+                  position: 'sticky', left: 0, zIndex: 1,
+                  background: '#fecaca', color: '#9f1239',
+                  fontSize: 11, fontWeight: 800, padding: '4px 8px',
+                  border: '1px solid #dc2626',
+                  letterSpacing: '0.06em',
+                  whiteSpace: 'nowrap',
+                }}>
+                  TURNI IN SUB
+                </td>
+                {cols.map(c => {
+                  const n = calcolaTotalePlacement(c.data, 'SUB')
+                  return (
+                    <td key={c.data} style={{
+                      width: 32, minWidth: 32, height: 24,
+                      background: '#fecaca', color: '#9f1239',
+                      fontSize: 12, fontWeight: 700,
+                      textAlign: 'center', verticalAlign: 'middle',
+                      border: '1px solid #dc2626',
+                      padding: 0,
+                    }}>
+                      {n || ''}
+                    </td>
+                  )
+                })}
+              </tr>
+
+              {/* TURNI IN MED — colore coerente col chip MED (azzurro pastello + bordo cyan) */}
+              <tr>
+                <td style={{
+                  width: 140, minWidth: 140,
+                  position: 'sticky', left: 0, zIndex: 1,
+                  background: '#bae6fd', color: '#0c4a6e',
+                  fontSize: 11, fontWeight: 800, padding: '4px 8px',
+                  border: '1px solid #0284c7',
+                  letterSpacing: '0.06em',
+                  whiteSpace: 'nowrap',
+                }}>
+                  TURNI IN MED
+                </td>
+                {cols.map(c => {
+                  const n = calcolaTotalePlacement(c.data, 'MED')
+                  return (
+                    <td key={c.data} style={{
+                      width: 32, minWidth: 32, height: 24,
+                      background: '#bae6fd', color: '#0c4a6e',
+                      fontSize: 12, fontWeight: 700,
+                      textAlign: 'center', verticalAlign: 'middle',
+                      border: '1px solid #0284c7',
+                      padding: 0,
+                    }}>
+                      {n || ''}
+                    </td>
+                  )
+                })}
+              </tr>
+            </>
           )}
         </tbody>
       </table>
