@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useLocation, useHref } from 'react-router-dom'
+import { Link, useLocation, useHref } from 'react-router-dom'
 import { LogOut, Calendar, CalendarDays, Settings, Users, AlertTriangle, RefreshCw } from 'lucide-react'
 import { usePendingActions } from '../contexts/PendingActionsContext'
 import { useVersionCheck } from '../hooks/useVersionCheck'
@@ -10,37 +10,39 @@ interface Props {
   onSignOut: () => void
 }
 
-// Nomi unici delle window/tab — il target HTML usa questi per ritrovare
-// la tab già aperta invece di duplicarla. Nomi prefissati per evitare
-// collisioni con eventuali altre app aperte dall'utente.
-const TAB_CALENDARIO  = 'sistema-turni-calendario'
-const TAB_ADMIN       = 'sistema-turni-admin'
-const TAB_SETTIMANALE = 'sistema-turni-settimanale'
+// Solo la tab Admin ha un nome dedicato — quando un'altra tab clicca
+// "Admin" il browser focalizza la tab admin esistente invece di duplicarla.
+// Calendario e Settimanale invece navigano sempre nella tab corrente.
+const TAB_ADMIN = 'sistema-turni-admin'
 
 export function NavBar({ user, onSignOut }: Props) {
   const loc = useLocation()
   const { needsRegen, needsRefresh } = usePendingActions()
   const { updateAvailable, applyUpdate } = useVersionCheck()
-  // useHref → applica il basename "/sistema-turnazione" automaticamente
-  const hrefCalendario  = useHref('/calendario')
-  const hrefAdmin       = useHref('/admin')
-  const hrefSettimanale = useHref('/settimanale')
+  // useHref → applica il basename "/sistema-turnazione" automaticamente.
+  // Serve solo per il link Admin e per i badge "Rigenera/Aggiorna"
+  // (entrambi orientati a /admin/*). Calendario e Settimanale usano
+  // <Link to="..."> che gestisce il basename da sé.
+  const hrefAdmin = useHref('/admin')
 
-  // Auto-rinomina la tab corrente in base alla pagina su cui è.
-  // Quando un'altra tab apre target="sistema-turni-calendario", il browser
-  // trova questa tab (se è sul calendario) e ci salta sopra.
+  // Auto-rinomina la tab corrente quando l'utente si trova su /admin/*
+  // — così altre tab che cliccano "Admin" la trovano e ci saltano sopra.
+  // Se l'utente lascia /admin (es. naviga su /calendario nella stessa tab),
+  // resettiamo il nome: in quel modo un click "Admin" da un'altra tab
+  // aprirà una NUOVA tab admin invece di portare l'utente fuori dalla
+  // pagina dove sta lavorando.
   useEffect(() => {
     if (loc.pathname.startsWith('/admin')) {
       window.name = TAB_ADMIN
-    } else if (loc.pathname.startsWith('/calendario')) {
-      window.name = TAB_CALENDARIO
-    } else if (loc.pathname.startsWith('/settimanale')) {
-      window.name = TAB_SETTIMANALE
+    } else if (window.name === TAB_ADMIN) {
+      window.name = ''
     }
   }, [loc.pathname])
 
   /**
-   * Click handler "smart" per i link Calendario/Admin:
+   * Click handler "smart" — usato SOLO per il link Admin (e per i badge
+   * "Rigenera/Aggiorna calendario") che vogliono aprire/focalizzare la
+   * tab admin dedicata.
    *  - Se sei già sulla pagina destinazione → no-op (non ricarica).
    *  - Altrimenti `window.open('', tabName)` → trick noto: se esiste una
    *    tab con quel nome, restituisce la sua reference SENZA navigarla
@@ -81,6 +83,7 @@ export function NavBar({ user, onSignOut }: Props) {
     existing.focus()
   }
 
+  /** Link "smart" per Admin: apre/focalizza la tab admin dedicata. */
   const smartLink = (
     to: string, href: string, tabName: string,
     label: string, Icon: React.ElementType,
@@ -100,6 +103,28 @@ export function NavBar({ user, onSignOut }: Props) {
         <Icon size={15} />
         {label}
       </a>
+    )
+  }
+
+  /** Link "semplice" per Calendario / Settimanale: naviga nella tab
+   *  corrente (no target, no smart focus). Usa React Router Link → SPA
+   *  navigation senza reload, basename gestito automaticamente. */
+  const simpleLink = (
+    to: string, label: string, Icon: React.ElementType,
+  ) => {
+    const active = loc.pathname.startsWith(to)
+    return (
+      <Link
+        to={to}
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+          ${active ? '' : 'hover:text-white'}`}
+        style={active
+          ? { background: 'rgba(255,255,255,0.15)', color: '#fff' }
+          : { color: '#9ab488' }}
+      >
+        <Icon size={15} />
+        {label}
+      </Link>
     )
   }
 
@@ -163,14 +188,15 @@ export function NavBar({ user, onSignOut }: Props) {
           </a>
         )}
 
-        {/* Navigazione — Calendario / Settimanale / Admin in tab separate.
-            Se la tab esiste già, il browser ci salta sopra invece di duplicarla.
-            Gli ospiti vedono SOLO la voce Settimanale (è l'unica accessibile). */}
+        {/* Navigazione — Calendario e Settimanale navigano nella tab corrente.
+            Solo Admin apre/focalizza una tab dedicata (così resti sul
+            calendario aperto in un'altra tab anche dopo aver lavorato in admin).
+            Gli ospiti vedono SOLO Settimanale (l'unica pagina accessibile a loro). */}
         {user && (
           <div className="flex items-center gap-1 ml-1">
             {user.ruolo !== 'ospite' &&
-              smartLink('/calendario',  hrefCalendario,  TAB_CALENDARIO,  'Calendario',  Calendar)}
-            {smartLink('/settimanale', hrefSettimanale, TAB_SETTIMANALE, 'Settimanale', CalendarDays)}
+              simpleLink('/calendario', 'Calendario', Calendar)}
+            {simpleLink('/settimanale', 'Settimanale', CalendarDays)}
             {user.ruolo === 'admin' &&
               smartLink('/admin', hrefAdmin, TAB_ADMIN, 'Admin', Settings)}
           </div>
