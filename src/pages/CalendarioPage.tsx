@@ -537,9 +537,13 @@ export function CalendarioPage() {
                   const SEL_OVL = 'linear-gradient(rgba(190,140,90,0.35),rgba(190,140,90,0.35))'
                   const bg = isSel ? `${SEL_OVL}, ${bgBase}` : bgBase
 
+                  // Bordo azzurro "modificato manualmente" SOLO sulla tabella
+                  // clinica — sulla ricerca crea rumore visivo inutile.
+                  const showModificato = modif && tipo === 'clinica'
+
                   return (
                     <td key={col.data}
-                      className={`cal-cell ${modif ? 'cal-cell-modificata' : ''}`}
+                      className={`cal-cell ${showModificato ? 'cal-cell-modificata' : ''}`}
                       style={{
                         background:  bg,
                         borderColor: '#8a9882',
@@ -686,12 +690,45 @@ export function CalendarioPage() {
         </div>
       </div>
 
-      {/* Legenda — sopra la tabella, togglabile dal bottone Legenda.
-          Default: aperta su desktop, chiusa su mobile. */}
+      {/* Legenda — su desktop sopra la tabella (inline), su mobile in un
+          modal centrato cliccabile per chiudere. Stesso toggle dal bottone
+          "Legenda" della toolbar; il default `mostraLegenda` è già aperto
+          su ≥640px e chiuso sotto. */}
       {mostraLegenda && (
-        <div className="px-3 py-2 shrink-0 border-b" style={{ borderColor: '#d5ccb8' }}>
-          <LegendaCalendario variant="pubblica" />
-        </div>
+        <>
+          {/* Desktop: legenda inline sopra la tabella */}
+          <div className="hidden sm:block px-3 py-2 shrink-0 border-b"
+            style={{ borderColor: '#d5ccb8' }}>
+            <LegendaCalendario variant="pubblica" />
+          </div>
+
+          {/* Mobile: modal centrato (click fuori = chiudi) */}
+          <div
+            className="sm:hidden fixed inset-0 z-50 flex items-center justify-center p-3"
+            style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }}
+            onClick={() => setMostraLegenda(false)}>
+            <div
+              className="relative bg-white rounded-2xl shadow-2xl flex flex-col w-full"
+              style={{ maxWidth: 'min(96vw, 520px)', maxHeight: '88vh' }}
+              onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-stone-200 shrink-0">
+                <h3 className="font-bold text-stone-800 text-sm flex items-center gap-2">
+                  <Info size={16} style={{ color: '#476540' }} />
+                  Legenda
+                </h3>
+                <button onClick={() => setMostraLegenda(false)}
+                  className="text-stone-400 hover:text-stone-600 transition-colors p-1">
+                  <X size={18} />
+                </button>
+              </div>
+              {/* Contenuto */}
+              <div className="overflow-auto p-3">
+                <LegendaCalendario variant="pubblica" />
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       <div className="overflow-auto flex-1">
