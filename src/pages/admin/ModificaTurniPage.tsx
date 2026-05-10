@@ -1267,18 +1267,21 @@ export function ModificaTurniPage() {
     )
   }
 
-  /** Coppia di tabelle (clinica + ricerca) + legenda per uno stesso periodo */
+  /** Coppia di tabelle (clinica + ricerca) per uno stesso periodo.
+   *  Layout: clinica → legenda → ricerca. La legenda sta tra le due
+   *  tabelle perché i drag avvengono in clinica e così l'utente ha i
+   *  pallini sempre vicini alla zona di lavoro (no scroll all'ultima
+   *  riga). La tabella ricerca è read-only, quindi sotto va bene. */
   function CoppiaTabelle({ cols }: { cols: ColonnaCal[] }) {
     return (
       <div className="space-y-2">
         <div className="overflow-auto rounded-lg border border-stone-300 bg-white">
           <TabellaPeriodo cols={cols} tipo="clinica" />
         </div>
+        <LegendaCalendario variant="admin" />
         <div className="overflow-auto rounded-lg border bg-white" style={{ borderColor: '#c98a96' }}>
           <TabellaPeriodo cols={cols} tipo="ricerca" />
         </div>
-        {/* Legenda — sempre visibile sotto le tabelle del mese */}
-        <LegendaCalendario variant="admin" />
       </div>
     )
   }
