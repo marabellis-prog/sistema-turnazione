@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, supabaseUrl, supabaseAnonKey } from '../lib/supabase'
 import type { AuthUser } from '../types'
 
 const CACHE_KEY     = 'auth_user_profile'
 const UNAUTH_KEY    = 'auth_unauthorized_email'
-const TIMEOUT_MS    = 15_000  // più generoso: cold start + rete lenta
+const TIMEOUT_MS    = 10_000  // fetch diretto è veloce (~500ms), 10s basta abbondantemente
 
 // ── Cache sessionStorage ──────────────────────────────────────────
 function getCached(): AuthUser | null {
@@ -89,14 +89,39 @@ export function useAuth() {
   }
 
   async function loadUser(email: string) {
-    const queryPromise   = supabase.rpc('get_my_profile')
+    // ⚠️ Uso fetch diretto invece di supabase.rpc(): il client supabase-js
+    // prende un lock interno sull'auth-state durante l'INITIAL_SESSION /
+    // SIGNED_IN, e le chiamate .rpc() rimangono in stallo per >15s
+    // (confermato a runtime). Il fetch diretto al REST endpoint risponde
+    // in ~500ms con lo stesso JWT, e non passa dal lock.
+    const queryPromise = (async () => {
+      const { data: sess } = await supabase.auth.getSession()
+      const token = sess?.session?.access_token
+      if (!token) return { data: null, error: new Error('no_access_token') as Error }
+      const res = await fetch(`${supabaseUrl}/rest/v1/rpc/get_my_profile`, {
+        method: 'POST',
+        headers: {
+          'apikey':         supabaseAnonKey,
+          'Authorization':  `Bearer ${token}`,
+          'Content-Type':   'application/json',
+        },
+        body: '{}',
+      })
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '')
+        return { data: null, error: new Error(`HTTP ${res.status} ${txt.slice(0, 80)}`) as Error }
+      }
+      const json = await res.json().catch(() => null) as unknown
+      return { data: json, error: null as Error | null }
+    })()
+
     const timeoutPromise = new Promise<{ data: null; error: Error }>(resolve =>
       setTimeout(() => resolve({ data: null, error: new Error('timeout') }), TIMEOUT_MS)
     )
 
     try {
-      const result  = await Promise.race([queryPromise, timeoutPromise])
-      const { data, error } = result as Awaited<typeof queryPromise>
+      const result = await Promise.race([queryPromise, timeoutPromise])
+      const { data, error } = result
 
       if (error) {
         // RPC failure (timeout / 5xx / RLS): non sappiamo se l'utente è
