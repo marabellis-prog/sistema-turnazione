@@ -393,6 +393,21 @@ export function ModificaTurniPage() {
   const [err,         setErr]         = useState<string | null>(null)
   const [msg,         setMsg]         = useState<string | null>(null)
 
+  // Flag "Autocalc SUB/MED" — quando ON (default) il cambio TC ricalcola
+  // automaticamente TR/SUB/MED del giorno via ricalcolaGiorno. Quando OFF
+  // il cambio TC modifica SOLO la cella interessata (preservando i
+  // placement eligibili al nuovo TC), lasciando all'admin la libertà di
+  // gestire manualmente SUB/MED via drag dei pallini dalla legenda.
+  // Stato persistito in localStorage così non si reimposta a ogni reload.
+  const [autocalcSubMed, setAutocalcSubMed] = useState<boolean>(() => {
+    try { return localStorage.getItem('mt_autocalc_submed') !== 'false' }
+    catch { return true }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('mt_autocalc_submed', String(autocalcSubMed)) }
+    catch {}
+  }, [autocalcSubMed])
+
   // Map<key=`${medicoId}|${data}`, RicalcCell> = modifiche locali non salvate.
   // Ogni entry contiene tc, tr, isSub, isMed insieme: il ricalcolo
   // automatico al cambio TC genera in blocco le modifiche del giorno.
@@ -668,20 +683,61 @@ export function ModificaTurniPage() {
   }, [config, schemi, medici, turniByKey, colonne])
 
   // ── Update cella (TC) → triggera ricalcolo del giorno ──────────────
-  // Cambia il TC di un medico in un giorno e ridistribuisce automaticamente
-  // TR/SUB/MED del giorno secondo le regole. Il delta vs DB viene calcolato
-  // per ogni cella del giorno: se il risultato coincide col DB l'entry è
-  // rimossa dal Map (no falso modificato).
+  // Cambia il TC di un medico in un giorno e (se autocalcSubMed è ON)
+  // ridistribuisce automaticamente TR/SUB/MED del giorno. Il delta vs DB
+  // viene calcolato per ogni cella del giorno: se il risultato coincide
+  // col DB l'entry è rimossa dal Map (no falso modificato).
+  // Quando autocalcSubMed è OFF, modifichiamo SOLO la cella interessata:
+  // niente ridistribuzione, i placement vengono solo normalizzati per
+  // rimuovere quelli non eligibili al nuovo TC (es. tc=M → slot_pomeriggio
+  // non ha senso, lo azzero). L'admin gestisce manualmente SUB/MED via
+  // drag dei pallini dalla legenda.
   const updateCella = useCallback((medicoId: string, data: string, tc: TurnoClinico, _tr: TurnoRicerca) => {
     setModifiche(prev => {
-      const overrides = new Map<string, TurnoClinico>()
-      overrides.set(medicoId, tc)
-      const result = ricalcoloGiorno(data, overrides, prev)
-
       const next = new Map(prev)
-      for (const [medId, newCell] of result) {
-        const key = `${medId}|${data}`
+
+      if (autocalcSubMed) {
+        // Comportamento classico: ricalcola tutto il giorno.
+        const overrides = new Map<string, TurnoClinico>()
+        overrides.set(medicoId, tc)
+        const result = ricalcoloGiorno(data, overrides, prev)
+        for (const [medId, newCell] of result) {
+          const key = `${medId}|${data}`
+          const dbT = turniByKey.get(key)
+          const dbCur: RicalcCell = {
+            tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
+            tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
+            slot_mattina:    dbT?.slot_mattina    ?? null,
+            slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
+          }
+          if (newCell.tc === dbCur.tc && newCell.tr === dbCur.tr &&
+              newCell.slot_mattina === dbCur.slot_mattina &&
+              newCell.slot_pomeriggio === dbCur.slot_pomeriggio) {
+            next.delete(key)
+          } else {
+            next.set(key, newCell)
+          }
+        }
+      } else {
+        // Modalità manuale: tocca SOLO la cella corrente, niente ridistribuzione.
+        const key = `${medicoId}|${data}`
+        const local = prev.get(key)
         const dbT = turniByKey.get(key)
+        const cur: RicalcCell = local ?? {
+          tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
+          tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
+          slot_mattina:    dbT?.slot_mattina    ?? null,
+          slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
+        }
+        // Normalizza i placement: rimuovi quelli non eligibili al nuovo TC.
+        // I valori esistenti per le metà ancora eligibili vengono preservati,
+        // così se l'admin aveva trascinato un SUB/MED prima, resta dov'era.
+        const newCell: RicalcCell = {
+          tc,
+          tr: cur.tr,  // TR invariato — gestito dalla legenda drag
+          slot_mattina:    (tc === 'M' || tc === 'L') ? cur.slot_mattina    : null,
+          slot_pomeriggio: (tc === 'P' || tc === 'L') ? cur.slot_pomeriggio : null,
+        }
         const dbCur: RicalcCell = {
           tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
           tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
@@ -698,7 +754,7 @@ export function ModificaTurniPage() {
       }
       return next
     })
-  }, [ricalcoloGiorno, turniByKey])
+  }, [autocalcSubMed, ricalcoloGiorno, turniByKey])
 
   // ── Drop dalla legenda ────────────────────────────────────────────
   // Le icone della legenda sono draggabili. Drop su una cella applica:
@@ -1263,6 +1319,27 @@ export function ModificaTurniPage() {
               {modifiche.size} {modifiche.size === 1 ? 'modifica non salvata' : 'modifiche non salvate'}
             </span>
           )}
+
+          {/* Flag autocalc SUB/MED — quando OFF, il cambio TC NON
+              ridistribuisce automaticamente sub/med del giorno. L'admin
+              gestisce manualmente i pallini via drag dalla legenda.
+              Stato persistito in localStorage. */}
+          <label
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium cursor-pointer select-none border transition-colors"
+            style={autocalcSubMed
+              ? { background: '#e0e8d8', color: '#456b3a', borderColor: '#9ab488' }
+              : { background: '#fef3c7', color: '#92400e', borderColor: '#fbbf24' }}
+            title={autocalcSubMed
+              ? 'Autocalc SUB/MED attivo: cambiare un TC redistribuisce automaticamente i placement del giorno. Disattivalo per gestire SUB/MED a mano.'
+              : 'Autocalc SUB/MED disattivato: il cambio TC tocca solo la cella interessata. Trascina i pallini Sub/Med dalla legenda per assegnarli manualmente.'}>
+            <input
+              type="checkbox"
+              checked={autocalcSubMed}
+              onChange={e => setAutocalcSubMed(e.target.checked)}
+              style={{ accentColor: '#476540', cursor: 'pointer' }}
+            />
+            Autocalc SUB/MED
+          </label>
 
           {/* Bottone salva */}
           <button
