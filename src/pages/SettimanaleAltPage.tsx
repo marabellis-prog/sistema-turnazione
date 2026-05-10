@@ -363,17 +363,22 @@ export function SettimanaleAltPage() {
     const totalRows   = Math.max(1, d.lunghi.length + numPaired)
     const rowsOutput: React.ReactNode[] = []
 
+    // RM/RP: una voce per riga (div block-level esterno → newline tra
+    // turnisti). Se in ferie, la stripe è applicata allo <span> interno
+    // così non rompe il layout block del wrapper.
     const cellRicercaM = (
       <td rowSpan={totalRows} style={{ ...cellRicerca }}>
         {d.ricercaMattina.length === 0
           ? <span style={emptyDash}>—</span>
           : d.ricercaMattina.map((r, i) => (
-              <div key={`rm-${i}`} title={r.inFerie ? FERIE_TOOLTIP : undefined}
-                style={ferieWrap(r.inFerie)}>
-                <NomeBarrato medico={r.medico} inFerie={r.inFerie} />
-                {r.tcMain === 'L' && <span style={lBadgeSmall}>L</span>}
-                <PlacementTag placement={r.placement} />
-                <FerieMark show={r.inFerie} />
+              <div key={`rm-${i}`} style={{ padding: '1px 0' }}>
+                <span title={r.inFerie ? FERIE_TOOLTIP : undefined}
+                  style={ferieWrap(r.inFerie)}>
+                  <NomeBarrato medico={r.medico} inFerie={r.inFerie} />
+                  {r.tcMain === 'L' && <span style={lBadgeSmall}>L</span>}
+                  <PlacementTag placement={r.placement} />
+                  <FerieMark show={r.inFerie} />
+                </span>
               </div>
             ))}
       </td>
@@ -383,12 +388,14 @@ export function SettimanaleAltPage() {
         {d.ricercaPomeriggio.length === 0
           ? <span style={emptyDash}>—</span>
           : d.ricercaPomeriggio.map((r, i) => (
-              <div key={`rp-${i}`} title={r.inFerie ? FERIE_TOOLTIP : undefined}
-                style={ferieWrap(r.inFerie)}>
-                <NomeBarrato medico={r.medico} inFerie={r.inFerie} />
-                {r.tcMain === 'L' && <span style={lBadgeSmall}>L</span>}
-                <PlacementTag placement={r.placement} />
-                <FerieMark show={r.inFerie} />
+              <div key={`rp-${i}`} style={{ padding: '1px 0' }}>
+                <span title={r.inFerie ? FERIE_TOOLTIP : undefined}
+                  style={ferieWrap(r.inFerie)}>
+                  <NomeBarrato medico={r.medico} inFerie={r.inFerie} />
+                  {r.tcMain === 'L' && <span style={lBadgeSmall}>L</span>}
+                  <PlacementTag placement={r.placement} />
+                  <FerieMark show={r.inFerie} />
+                </span>
               </div>
             ))}
       </td>
