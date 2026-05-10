@@ -98,6 +98,29 @@ export function useAuth() {
     } catch {}
   }
 
+  /** Pulisce la sessione Supabase senza usare await (NON deve essere
+   *  chiamato con await dentro un onAuthStateChange handler — il client
+   *  supabase-js prende un lock interno che causa deadlock e blocca il
+   *  flusso, lasciando l'utente sulla loading screen all'infinito).
+   *  Strategia:
+   *   1. Rimuovo IMMEDIATAMENTE la chiave localStorage sb-<ref>-auth-token
+   *      così la sessione non viene più riconosciuta dal client.
+   *   2. Lancio signOut() in background via setTimeout(0) per "uscire" dallo
+   *      stack dell'handler corrente prima che supabase-js prenda il lock,
+   *      così il signOut può completare senza deadlock. */
+  function detachedSignOut() {
+    try {
+      const refMatch = supabaseUrl.match(/https?:\/\/([a-z0-9]+)\.supabase\.co/i)
+      const projectRef = refMatch?.[1]
+      if (projectRef) localStorage.removeItem(`sb-${projectRef}-auth-token`)
+    } catch {}
+    setTimeout(() => {
+      supabase.auth.signOut().catch(err => {
+        console.error('[Auth] signOut background error:', err)
+      })
+    }, 0)
+  }
+
   async function loadUser(email: string, accessTokenFromEvent?: string) {
     // ⚠️ Bypass completo del client supabase-js per la lettura del profilo:
     //   - supabase.rpc('get_my_profile') va in timeout durante l'auth-state
@@ -158,7 +181,7 @@ export function useAuth() {
         // un banner spiegativo invece di un kick-out muto.
         console.error('[Auth] Errore get_my_profile:', error.message)
         flagUnauthorized(email, `errore RPC: ${error.message}`)
-        await supabase.auth.signOut()
+        detachedSignOut()
         setUser(null)
         return
       }
@@ -168,7 +191,7 @@ export function useAuth() {
       if (!profile) {
         // Email Google non in whitelist (caso più comune).
         flagUnauthorized(email, 'email non in elenco utenti autorizzati')
-        await supabase.auth.signOut()
+        detachedSignOut()
         setUser(null)
       } else {
         const authUser: AuthUser = {
@@ -185,7 +208,7 @@ export function useAuth() {
       // Stesso pattern: flagga e signOut, così la UI può spiegare.
       console.error('[Auth] Errore imprevisto:', e)
       flagUnauthorized(email, `eccezione: ${(e as Error).message ?? 'sconosciuta'}`)
-      try { await supabase.auth.signOut() } catch {}
+      detachedSignOut()
       setUser(null)
     } finally {
       setLoading(false)
