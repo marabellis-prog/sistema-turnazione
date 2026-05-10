@@ -517,7 +517,7 @@ export function SettimanaleAltPage() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
           <CalendarDays size={20} style={{ color: '#476540' }} />
-          Tabellone Turni — Vista {vista === 'settimana' ? 'settimanale' : 'mensile'}
+          Vista Settimanale Alternativa
         </h2>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex rounded-lg overflow-hidden border border-stone-300">
