@@ -412,18 +412,22 @@ export function SettimanaleAltPage() {
 
     let isFirst = true
 
-    // Riga lunghi (cella unica colspan=2)
+    // Riga lunghi (cella unica colspan=2). Il contenuto è centrato
+    // orizzontalmente tramite un wrapper flex (justifyContent: center)
+    // così il nome sta proprio in mezzo alla cella unita Matt+Pom.
     d.lunghi.forEach((l, i) => {
       rowsOutput.push(
         <tr key={`${d.dataISO}-l-${i}`} style={isFirst ? { borderTop: '2px solid #1e3a8a' } : undefined}>
           {isFirst && cellDataNode}
           <td colSpan={2} style={cellLungo}>
-            <span title={l.inFerie ? FERIE_TOOLTIP : undefined}
-              style={ferieWrap(l.inFerie)}>
-              <NomeBarrato medico={l.medico} inFerie={l.inFerie} />
-              <MixedPlacementTag sm={l.slot_mattina} sp={l.slot_pomeriggio} />
-              <FerieMark show={l.inFerie} />
-            </span>
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+              <span title={l.inFerie ? FERIE_TOOLTIP : undefined}
+                style={ferieWrap(l.inFerie)}>
+                <NomeBarrato medico={l.medico} inFerie={l.inFerie} />
+                <MixedPlacementTag sm={l.slot_mattina} sp={l.slot_pomeriggio} />
+                <FerieMark show={l.inFerie} />
+              </span>
+            </div>
           </td>
           {isFirst && cellRicercaM}
           {isFirst && cellRicercaP}
