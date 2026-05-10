@@ -96,8 +96,14 @@ export function useAuth() {
       const profile = Array.isArray(data) ? data[0] : data
 
       if (!profile) {
-        // Email Google non nella whitelist
+        // Email Google non nella whitelist (o con dot-trick non compatibile,
+        // o l'utente ha scelto un account Google diverso da quello previsto).
+        // Segnaliamo motivo via sessionStorage così LoginPage può mostrare
+        // un messaggio chiaro invece di un silenzioso ritorno a /login.
         console.warn('[Auth] Non autorizzato:', email.toLowerCase())
+        try {
+          sessionStorage.setItem('auth_unauthorized_email', email.toLowerCase())
+        } catch {}
         await supabase.auth.signOut()
         setUser(null)
       } else {

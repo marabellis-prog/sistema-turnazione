@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Calendar } from 'lucide-react'
+import { Calendar, AlertCircle } from 'lucide-react'
 import type { AuthUser } from '../types'
 
 interface Props {
@@ -10,6 +10,21 @@ interface Props {
 
 export function LoginPage({ user, onSignIn }: Props) {
   const navigate = useNavigate()
+
+  // Se siamo arrivati qui dopo un tentativo di login non autorizzato,
+  // useAuth ha lasciato l'email problematica in sessionStorage. La
+  // mostriamo all'utente così capisce cosa è andato storto invece di
+  // vedere un misterioso "kick out".
+  const [unauthorizedEmail, setUnauthorizedEmail] = useState<string | null>(null)
+  useEffect(() => {
+    try {
+      const e = sessionStorage.getItem('auth_unauthorized_email')
+      if (e) {
+        setUnauthorizedEmail(e)
+        sessionStorage.removeItem('auth_unauthorized_email')
+      }
+    } catch {}
+  }, [])
 
   useEffect(() => {
     if (user) navigate('/calendario', { replace: true })
@@ -32,9 +47,25 @@ export function LoginPage({ user, onSignIn }: Props) {
         <h1 className="text-2xl font-bold mb-1" style={{ color: '#2b3c24' }}>
           Sistema Turni
         </h1>
-        <p className="text-sm mb-8" style={{ color: '#7a7a6a' }}>
+        <p className="text-sm mb-6" style={{ color: '#7a7a6a' }}>
           Gestione turni medici
         </p>
+
+        {/* Messaggio "non autorizzato" — se useAuth ci ha rimandato qui
+            dopo un login fallito (email non in elenco). */}
+        {unauthorizedEmail && (
+          <div className="rounded-lg p-3 mb-4 text-left flex items-start gap-2"
+            style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
+            <AlertCircle size={16} className="shrink-0 mt-0.5" style={{ color: '#b91c1c' }} />
+            <div className="text-xs" style={{ color: '#991b1b' }}>
+              <strong>Accesso negato.</strong> L'account{' '}
+              <span style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{unauthorizedEmail}</span>{' '}
+              non è abilitato. Verifica di aver scelto l'account Google
+              corretto (clic su "Accedi con un altro account" qui sotto)
+              o chiedi all'amministratore di aggiungerti.
+            </div>
+          </div>
+        )}
 
         <button
           onClick={onSignIn}
