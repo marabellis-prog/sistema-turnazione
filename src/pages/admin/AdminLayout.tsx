@@ -1,5 +1,5 @@
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
-import { Users, Calendar, UserCheck, Settings, Zap, Table2 } from 'lucide-react'
+import { Users, Calendar, UserCheck, Zap, Table2 } from 'lucide-react'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 
 const links = [
@@ -9,7 +9,6 @@ const links = [
   { to: '/admin/ferie',   label: 'Gestione Ferie',    Icon: Calendar },
   { to: '/admin/medici',  label: 'Medici/Turnisti',   Icon: Users },
   { to: '/admin/utenti',  label: 'Utenti',            Icon: UserCheck },
-  { to: '/admin/config',  label: 'Configurazione',    Icon: Settings },
 ]
 
 export function AdminLayout() {
