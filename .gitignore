@@ -12,3 +12,6 @@ credentials*.json
 *.xlsm
 *.xlsx
 *.xls
+
+# MCP project-level config — contiene PAT Supabase, va escluso
+.mcp.json
