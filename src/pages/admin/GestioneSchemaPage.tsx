@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Save, RotateCcw, Plus, X, Trash2, Eye, EyeOff } from 'lucide-react'
+import { Save, RotateCcw, Plus, X, Trash2, Eye, EyeOff, AlertTriangle } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
@@ -57,6 +57,111 @@ function emptySlot(slot: number, colonne: string[]): SlotRow {
 
 function isSlotVuoto(r: SlotRow) {
   return Object.values(r.vals).every(v => v === null) && !r.REP && !r.SUB && !r.MED
+}
+
+/**
+ * Valida un drop secondo la regola "uno slot, un solo numero":
+ * tutti i numeri non-null in una riga (M/P/RM/RP) devono essere identici.
+ *
+ * Casi gestiti:
+ *  - drop dalla strip su cella → solo lo slot di destinazione viene controllato
+ *  - swap intra-slot (stessa riga) → simulato e controllato
+ *  - swap inter-slot → entrambi gli slot (origine e destinazione) controllati,
+ *    perché lo scambio porta valori diversi su entrambi i lati
+ *  - drop sulla stessa cella di origine → no-op, nessuna validazione
+ *
+ * Ritorna `{ ok: false, reason }` con un messaggio user-friendly se il drop
+ * porterebbe a una riga con numeri diversi; `{ ok: true }` altrimenti.
+ */
+type DragSrc = {
+  num:           number
+  fromGiorno?:   number
+  fromSlotIdx?:  number
+  fromCol?:      string
+}
+
+function validateDrop(
+  griglia:  Record<number, SlotRow[]>,
+  src:      DragSrc,
+  toGiorno: number,
+  toIdx:    number,
+  toCol:    string,
+  giorniIt: string[],
+): { ok: true } | { ok: false; reason: string } {
+  const targetSlot = griglia[toGiorno]?.[toIdx]
+  if (!targetSlot) return { ok: true }
+
+  const targetOldVal = targetSlot.vals[toCol] ?? null
+
+  // Stessa cella → no-op
+  if (
+    src.fromGiorno  === toGiorno &&
+    src.fromSlotIdx === toIdx &&
+    src.fromCol     === toCol
+  ) return { ok: true }
+
+  /** Estrae i numeri distinti non-null da una mappa di celle. */
+  const distinctOf = (vals: Record<string, number | null>): number[] => {
+    const s = new Set<number>()
+    for (const v of Object.values(vals)) if (v !== null) s.add(v)
+    return [...s].sort((a, b) => a - b)
+  }
+
+  // Caso: swap intra-slot (stessa riga, colonne diverse)
+  const sameSlotSwap =
+    src.fromGiorno  === toGiorno &&
+    src.fromSlotIdx === toIdx &&
+    src.fromCol !== undefined && src.fromCol !== toCol
+
+  if (sameSlotSwap) {
+    const future = {
+      ...targetSlot.vals,
+      [toCol]:        src.num,
+      [src.fromCol!]: targetOldVal,
+    }
+    const distinct = distinctOf(future)
+    if (distinct.length > 1) {
+      return {
+        ok: false,
+        reason: `Lo slot ${giorniIt[toGiorno]} #${toIdx + 1} avrebbe numeri diversi (${distinct.join(', ')}). Sulla stessa riga deve esserci un solo turnista.`,
+      }
+    }
+    return { ok: true }
+  }
+
+  // Caso normale (drop dalla strip o swap inter-slot): controlla la dest.
+  const futureTarget = { ...targetSlot.vals, [toCol]: src.num }
+  const targetDistinct = distinctOf(futureTarget)
+  if (targetDistinct.length > 1) {
+    return {
+      ok: false,
+      reason: `Lo slot ${giorniIt[toGiorno]} #${toIdx + 1} avrebbe numeri diversi (${targetDistinct.join(', ')}). Sulla stessa riga deve esserci un solo turnista.`,
+    }
+  }
+
+  // Swap inter-slot: il source riceverà il vecchio valore della destinazione,
+  // quindi anche lo slot sorgente deve restare coerente.
+  if (
+    targetOldVal     !== null &&
+    src.fromGiorno   !== undefined &&
+    src.fromSlotIdx  !== undefined &&
+    src.fromCol      !== undefined &&
+    !(src.fromGiorno === toGiorno && src.fromSlotIdx === toIdx)
+  ) {
+    const srcSlot = griglia[src.fromGiorno]?.[src.fromSlotIdx]
+    if (srcSlot) {
+      const futureSrc = { ...srcSlot.vals, [src.fromCol]: targetOldVal }
+      const srcDistinct = distinctOf(futureSrc)
+      if (srcDistinct.length > 1) {
+        return {
+          ok: false,
+          reason: `Lo scambio porterebbe numeri diversi nello slot ${giorniIt[src.fromGiorno]} #${src.fromSlotIdx + 1} (${srcDistinct.join(', ')}).`,
+        }
+      }
+    }
+  }
+
+  return { ok: true }
 }
 
 // ── Cella (drag source + drop target) ───────────────────────────
@@ -148,6 +253,20 @@ export function GestioneSchemaPage() {
   // ── Modifiche non salvate ─────────────────────────────────────
   const [hasUnsaved, setHasUnsaved] = useState(false)
   const [navPending, setNavPending] = useState<string | null>(null)
+
+  // ── Toast di warning (validazione drop) ───────────────────────
+  // Auto-dismiss dopo 3.5s, dismissable via X. Stato/timer separati
+  // dal `msg` (che gestisce i messaggi di salvataggio).
+  const [warningMsg, setWarningMsg] = useState<string | null>(null)
+  const warningTimer = useRef<number | null>(null)
+  const showWarning = (text: string) => {
+    setWarningMsg(text)
+    if (warningTimer.current) clearTimeout(warningTimer.current)
+    warningTimer.current = window.setTimeout(() => setWarningMsg(null), 3500)
+  }
+  useEffect(() => () => {
+    if (warningTimer.current) clearTimeout(warningTimer.current)
+  }, [])
 
   // Blocca chiusura/refresh tab (dialog nativo del browser)
   useEffect(() => {
@@ -377,6 +496,18 @@ export function GestioneSchemaPage() {
   function handleDrop(toGiorno: number, toIdx: number, toCol: string) {
     const src = dragSource.current
     if (!src) return
+
+    // Regola "uno slot, un solo numero": tutti i numeri non-null in una
+    // riga (M/P/RM/RP) devono coincidere. Se il drop violerebbe la regola,
+    // mostra il toast e annulla l'operazione (incluso il marcamento di
+    // modifiche non salvate).
+    const v = validateDrop(griglia, src, toGiorno, toIdx, toCol, GIORNI_IT)
+    if (!v.ok) {
+      showWarning(v.reason)
+      dragSource.current = null
+      return
+    }
+
     markUnsaved()
     setGriglia(prev => {
       // Helper: copia profonda di una riga
@@ -1112,6 +1243,40 @@ export function GestioneSchemaPage() {
         </div>
       )}
       </div>{/* /flex-wrap container */}
+
+      {/* ═══ TOAST WARNING (validazione drop) ════════════════════
+          Posizionato fixed in alto a destra, appare quando un drop
+          violerebbe la regola "uno slot, un solo numero".
+          Auto-dismiss in 3.5s o click sulla X. */}
+      {warningMsg && (
+        <div
+          className="fixed top-16 right-4 z-50 flex items-start gap-2 px-3.5 py-2.5 rounded-lg shadow-lg"
+          style={{
+            background:     '#fef3c7',
+            borderLeft:     '4px solid #d97706',
+            color:          '#78350f',
+            maxWidth:       420,
+            animationName:  'fadeSlideIn',
+            animationDuration: '180ms',
+            animationTimingFunction: 'ease-out',
+          }}
+          role="alert">
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" style={{ color: '#b45309' }} />
+          <span className="text-xs font-medium leading-snug flex-1">
+            {warningMsg}
+          </span>
+          <button
+            onClick={() => {
+              if (warningTimer.current) clearTimeout(warningTimer.current)
+              setWarningMsg(null)
+            }}
+            className="shrink-0 hover:opacity-70 transition-opacity"
+            style={{ color: '#92400e' }}
+            title="Chiudi">
+            <X size={14} />
+          </button>
+        </div>
+      )}
     </div>
   )
 }
