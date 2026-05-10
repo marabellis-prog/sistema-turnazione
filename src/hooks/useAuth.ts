@@ -78,13 +78,19 @@ export function useAuth() {
     return () => subscription.unsubscribe()
   }, [])
 
-  /** Helper: scrive l'email "non autorizzata" in sessionStorage così
-   *  LoginPage può mostrare il banner diagnostico invece di un silenzioso
-   *  ritorno a /login. Il `reason` viene loggato in console per debugging. */
+  /** Helper: scrive l'email "non autorizzata" + il motivo del fallimento
+   *  in sessionStorage così LoginPage può mostrare un banner diagnostico
+   *  completo invece di un silenzioso ritorno a /login. Il `reason` viene
+   *  anche loggato in console per debugging. Il valore è JSON così
+   *  trasportiamo entrambe le info; LoginPage tollera anche il vecchio
+   *  formato (solo email) per backward compatibility. */
   function flagUnauthorized(email: string, reason: string) {
     console.warn(`[Auth] Non autorizzato (${reason}):`, email.toLowerCase())
     try {
-      sessionStorage.setItem(UNAUTH_KEY, email.toLowerCase())
+      sessionStorage.setItem(
+        UNAUTH_KEY,
+        JSON.stringify({ email: email.toLowerCase(), reason }),
+      )
     } catch {}
   }
 

@@ -12,19 +12,46 @@ export function LoginPage({ user, onSignIn }: Props) {
   const navigate = useNavigate()
 
   // Se siamo arrivati qui dopo un tentativo di login non autorizzato,
-  // useAuth ha lasciato l'email problematica in sessionStorage. La
-  // mostriamo all'utente così capisce cosa è andato storto invece di
-  // vedere un misterioso "kick out".
-  const [unauthorizedEmail, setUnauthorizedEmail] = useState<string | null>(null)
+  // useAuth ha lasciato l'email problematica + il motivo del fallimento
+  // in sessionStorage. La mostriamo all'utente in un banner persistente
+  // fino al click su OK — così capisce cosa è andato storto invece di
+  // vedere un misterioso "kick out". Tolleriamo sia il formato JSON nuovo
+  // (con motivo) sia il vecchio (solo email) per backward compatibility.
+  const [denial, setDenial] = useState<{ email: string; reason?: string } | null>(null)
   useEffect(() => {
     try {
-      const e = sessionStorage.getItem('auth_unauthorized_email')
-      if (e) {
-        setUnauthorizedEmail(e)
-        sessionStorage.removeItem('auth_unauthorized_email')
+      const raw = sessionStorage.getItem('auth_unauthorized_email')
+      if (!raw) return
+      let parsed: { email: string; reason?: string } | null = null
+      try {
+        const obj = JSON.parse(raw)
+        if (obj && typeof obj.email === 'string') parsed = obj
+      } catch {
+        // Vecchio formato: la chiave conteneva solo l'email come stringa.
+        parsed = { email: raw }
       }
+      if (parsed) setDenial(parsed)
     } catch {}
   }, [])
+
+  function dismissDenial() {
+    setDenial(null)
+    try { sessionStorage.removeItem('auth_unauthorized_email') } catch {}
+  }
+
+  /** Etichetta human-friendly per le diverse cause di rifiuto. */
+  function reasonLabel(reason?: string): string {
+    if (!reason) return 'Motivo non specificato.'
+    if (reason.startsWith('email non in elenco'))
+      return "L'email non risulta tra gli account autorizzati. Verifica di aver scelto l'account Google corretto o chiedi all'amministratore di aggiungerti."
+    if (reason.startsWith('errore RPC: timeout'))
+      return 'Il server non ha risposto in tempo (timeout). Verifica la connessione e riprova.'
+    if (reason.startsWith('errore RPC: HTTP'))
+      return `Errore di rete durante la verifica del profilo (${reason.replace('errore RPC: ', '')}). Riprova fra qualche istante.`
+    if (reason.startsWith('eccezione'))
+      return `Errore tecnico imprevisto (${reason.replace('eccezione: ', '')}). Se persiste, contatta l'amministratore.`
+    return reason
+  }
 
   useEffect(() => {
     if (user) navigate('/calendario', { replace: true })
@@ -51,19 +78,34 @@ export function LoginPage({ user, onSignIn }: Props) {
           Gestione turni medici
         </p>
 
-        {/* Messaggio "non autorizzato" — se useAuth ci ha rimandato qui
-            dopo un login fallito (email non in elenco). */}
-        {unauthorizedEmail && (
-          <div className="rounded-lg p-3 mb-4 text-left flex items-start gap-2"
+        {/* Banner "Accesso negato" — persistente fino al click su OK.
+            Mostra email + motivo del fallimento (timeout, non in elenco,
+            errore RPC, eccezione). Cliccando OK il banner si chiude e la
+            chiave sessionStorage viene rimossa. */}
+        {denial && (
+          <div className="rounded-lg p-3 mb-4 text-left"
             style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
-            <AlertCircle size={16} className="shrink-0 mt-0.5" style={{ color: '#b91c1c' }} />
-            <div className="text-xs" style={{ color: '#991b1b' }}>
-              <strong>Accesso negato.</strong> L'account{' '}
-              <span style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{unauthorizedEmail}</span>{' '}
-              non è abilitato. Verifica di aver scelto l'account Google
-              corretto (clic su "Accedi con un altro account" qui sotto)
-              o chiedi all'amministratore di aggiungerti.
+            <div className="flex items-start gap-2 mb-2">
+              <AlertCircle size={18} className="shrink-0 mt-0.5" style={{ color: '#b91c1c' }} />
+              <div className="text-xs flex-1" style={{ color: '#991b1b' }}>
+                <p className="font-bold text-sm mb-1">Accesso negato</p>
+                <p className="mb-1">
+                  Account:{' '}
+                  <span style={{ fontFamily: 'monospace', wordBreak: 'break-all', fontWeight: 600 }}>
+                    {denial.email}
+                  </span>
+                </p>
+                <p>{reasonLabel(denial.reason)}</p>
+              </div>
             </div>
+            <button
+              onClick={dismissDenial}
+              className="w-full rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
+              style={{ background: '#b91c1c', color: '#fff' }}
+              onMouseEnter={e => (e.currentTarget.style.background = '#991b1b')}
+              onMouseLeave={e => (e.currentTarget.style.background = '#b91c1c')}>
+              OK, ho capito
+            </button>
           </div>
         )}
 
