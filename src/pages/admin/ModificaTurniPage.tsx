@@ -798,26 +798,47 @@ export function ModificaTurniPage() {
         updated = { ...cur, tr: cur.tr === 'RP' ? '' : 'RP' }
       } else if (payload === 'FLAG:SUB' || payload === 'FLAG:MED') {
         const X: SlotPlacement = payload === 'FLAG:SUB' ? 'SUB' : 'MED'
-        // Logica drop:
-        //   1) se mattina == X     → toggle off (mattina = null)
-        //   2) elif pomeriggio==X  → toggle off (pomeriggio = null)
-        //   3) elif mattina null   → mattina = X (riempi)
-        //   4) elif pomeriggio null→ pomeriggio = X (riempi)
-        //   5) else (entrambe ≠ X) → mattina = X (sostituisci, riparte ciclo)
-        // Filtri di eligibilità: la mattina la posso settare solo se TC ∈ {M,L},
-        // il pomeriggio solo se TC ∈ {P,L}. REP/'' non possono ricevere flag.
+        // Filtri di eligibilità: la mattina la posso settare solo se TC ∈
+        // {M, L}, il pomeriggio solo se TC ∈ {P, L}. REP / '' non possono
+        // ricevere flag.
         const tc = cur.tc
         const canM = tc === 'M' || tc === 'L'
         const canP = tc === 'P' || tc === 'L'
         let sm = cur.slot_mattina
         let sp = cur.slot_pomeriggio
-        if (canM && sm === X) sm = null
-        else if (canP && sp === X) sp = null
-        else if (canM && sm === null) sm = X
-        else if (canP && sp === null) sp = X
-        else if (canM) sm = X    // entrambe piene di altro: sostituisci mattina
-        // Se !canM && !canP (REP, vuoto): nessun cambio
+
+        if (canM && canP) {
+          // tc === 'L' (lavora entrambe le metà): gestiamo entrambi i
+          // placement insieme. Caso più comune: l'admin vuole "tutto SUB"
+          // o "tutto MED" sul lungo.
+          //   - Già entrambi X → toggle off (null, null)
+          //   - Altrimenti     → uniforma entrambi a X (X, X)
+          // Per i lunghi MISTI (SUB-matt + MED-pom o viceversa) esistono i
+          // due pallini divisi draggabili nella legenda — vedi LegendaCalendario.
+          if (sm === X && sp === X) {
+            sm = null; sp = null
+          } else {
+            sm = X; sp = X
+          }
+        } else if (canM) {
+          // tc === 'M': solo mattina è rilevante → toggle.
+          sm = (sm === X) ? null : X
+          sp = null
+        } else if (canP) {
+          // tc === 'P': solo pomeriggio → toggle.
+          sp = (sp === X) ? null : X
+          sm = null
+        }
+        // Se !canM && !canP (REP, vuoto): nessun cambio.
         updated = { ...cur, slot_mattina: sm, slot_pomeriggio: sp }
+      } else if (payload === 'FLAG:L_SUB_MED' || payload === 'FLAG:L_MED_SUB') {
+        // L misto: applica direttamente lo split richiesto. Funziona solo
+        // se tc === 'L', altrimenti no-op.
+        if (cur.tc === 'L') {
+          const sm: SlotPlacement = payload === 'FLAG:L_SUB_MED' ? 'SUB' : 'MED'
+          const sp: SlotPlacement = payload === 'FLAG:L_SUB_MED' ? 'MED' : 'SUB'
+          updated = { ...cur, slot_mattina: sm, slot_pomeriggio: sp }
+        }
       } else {
         return prev
       }

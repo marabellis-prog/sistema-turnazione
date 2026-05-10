@@ -122,11 +122,14 @@ export function LegendaCalendario({ variant = 'pubblica', className, style }: Pr
         <span style={{ color: '#5a5a4a' }}>Medicina</span>
       </span>
 
-      {/* L con SUB mattina + MED pomeriggio — cerchio diviso, NON draggabile */}
+      {/* L con SUB mattina + MED pomeriggio — cerchio diviso, draggable.
+          Drop su una cella con TC=L → setta slot_mattina=SUB, slot_pomeriggio=MED
+          direttamente (in un solo movimento). Su TC ≠ L è no-op. */}
       <span className="flex items-center gap-1">
         <span
+          {...dragHandlers('FLAG:L_SUB_MED')}
           className="select-none"
-          title="Lunga: SUB la mattina, MED il pomeriggio"
+          title="Trascina su una cella L per impostare SUB-mattina + MED-pomeriggio"
           style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             width: 22, height: 22, borderRadius: '50%',
@@ -134,6 +137,7 @@ export function LegendaCalendario({ variant = 'pubblica', className, style }: Pr
             border: '1.5px solid #6b7280',
             position: 'relative',
             color: '#1f2937', fontSize: 8, fontWeight: 800, lineHeight: 1,
+            cursor: 'grab',
           }}>
           <span style={{ position: 'absolute', left: 4, top: '50%', transform: 'translateY(-50%)', color: '#9f1239' }}>S</span>
           <span style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', color: '#0c4a6e' }}>M</span>
@@ -141,11 +145,12 @@ export function LegendaCalendario({ variant = 'pubblica', className, style }: Pr
         <span style={{ color: '#5a5a4a' }}>L: sub matt. + med pom.</span>
       </span>
 
-      {/* L con MED mattina + SUB pomeriggio — cerchio diviso speculare, NON draggabile */}
+      {/* L con MED mattina + SUB pomeriggio — speculare, draggable. */}
       <span className="flex items-center gap-1">
         <span
+          {...dragHandlers('FLAG:L_MED_SUB')}
           className="select-none"
-          title="Lunga: MED la mattina, SUB il pomeriggio"
+          title="Trascina su una cella L per impostare MED-mattina + SUB-pomeriggio"
           style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             width: 22, height: 22, borderRadius: '50%',
@@ -153,6 +158,7 @@ export function LegendaCalendario({ variant = 'pubblica', className, style }: Pr
             border: '1.5px solid #6b7280',
             position: 'relative',
             color: '#1f2937', fontSize: 8, fontWeight: 800, lineHeight: 1,
+            cursor: 'grab',
           }}>
           <span style={{ position: 'absolute', left: 4, top: '50%', transform: 'translateY(-50%)', color: '#0c4a6e' }}>M</span>
           <span style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', color: '#9f1239' }}>S</span>
