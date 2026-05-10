@@ -58,29 +58,47 @@ function fmtDataBreve(d: Date): string {
 
 type Vista = 'settimana' | 'mese'
 
-/** Calcola i giorni visualizzati per (anchor, vista). */
+/** 1° del mese contenente la data. */
+function firstOfMonth(d: Date): Date {
+  const r = new Date(d.getFullYear(), d.getMonth(), 1)
+  r.setHours(0, 0, 0, 0)
+  return r
+}
+
+/** Riporta una data al "formato anchor" della vista corrente:
+ *  - settimana → lunedì della settimana
+ *  - mese      → 1° del mese
+ *  Usata sia all'inizializzazione che al cambio vista. */
+function normalizeAnchor(d: Date, vista: Vista): Date {
+  return vista === 'settimana' ? startOfWeek(d) : firstOfMonth(d)
+}
+
+/** Calcola i giorni visualizzati per (anchor, vista).
+ *  - settimana → 7 giorni a partire dal lunedì
+ *  - mese      → tutti e SOLO i giorni del mese (no padding di righe
+ *    settimanali sul mese precedente/successivo) */
 function computeGiorni(anchor: Date, vista: Vista): Date[] {
   if (vista === 'settimana') {
     return Array.from({ length: 7 }, (_, i) => addDays(anchor, i))
   }
-  // Mese che contiene anchor (riferimento: primo giorno della settimana
-  // visibile). La griglia mensile va dal lunedì della settimana del 1°
-  // al sabato/domenica della settimana dell'ultimo giorno.
-  const primoMese  = new Date(anchor.getFullYear(), anchor.getMonth(),     1)
-  const ultimoMese = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0)
-  const lunStart   = startOfWeek(primoMese)
-  const lunEnd     = startOfWeek(ultimoMese)
-  const out: Date[] = []
-  for (let d = new Date(lunStart); d <= addDays(lunEnd, 6); d = addDays(d, 1)) {
-    out.push(new Date(d))
-  }
-  return out
+  const year     = anchor.getFullYear()
+  const month    = anchor.getMonth()
+  const lastDay  = new Date(year, month + 1, 0).getDate()
+  return Array.from({ length: lastDay }, (_, i) => {
+    const r = new Date(year, month, i + 1)
+    r.setHours(0, 0, 0, 0)
+    return r
+  })
 }
 
-/** Sposta l'anchor di una settimana (vista=settimana) o un mese (vista=mese). */
+/** Sposta l'anchor di una settimana o di un mese (dir = +1/-1).
+ *  ⚠️ L'anchor ha semantiche diverse a seconda della vista, vedi
+ *  normalizeAnchor — qui sfruttiamo che in vista mese l'anchor è
+ *  GIÀ il 1° del mese, quindi `getMonth() + dir` punta esattamente
+ *  al mese vicino senza ambiguità. */
 function shiftAnchor(anchor: Date, vista: Vista, dir: 1 | -1): Date {
   if (vista === 'settimana') return addDays(anchor, 7 * dir)
-  return startOfWeek(new Date(anchor.getFullYear(), anchor.getMonth() + dir, 1))
+  return firstOfMonth(new Date(anchor.getFullYear(), anchor.getMonth() + dir, 1))
 }
 
 interface MedDisplay {
@@ -117,8 +135,11 @@ interface DayDisplay {
 }
 
 export function SettimanalePage() {
-  const [anchorWeek, setAnchorWeek] = useState<Date>(() => startOfWeek(new Date()))
+  // Vista di default: settimana → anchor = lunedì della settimana di oggi.
+  // Se l'utente passa a 'mese', changeVista trasformerà l'anchor in 1° del
+  // mese corrispondente (vedi normalizeAnchor).
   const [vista, setVista] = useState<Vista>('settimana')
+  const [anchorWeek, setAnchorWeek] = useState<Date>(() => startOfWeek(new Date()))
 
   // ── Realtime: invalidate automatico delle query 'turni' / 'ferie-ranges'.
   useTurniRealtime()
@@ -159,17 +180,34 @@ export function SettimanalePage() {
 
   // Se l'anchor di default (settimana di "oggi") cade fuori dal periodo
   // del calendario, riposiziona alla prima/ultima settimana valida appena
-  // disponibile la config. Eseguito una sola volta per ogni cambio di
-  // periodo: dopo, l'utente naviga liberamente entro i bordi.
+  // disponibile la config. Usa normalizeAnchor così rispetta la vista
+  // corrente (lunedì in weekly · 1° del mese in monthly).
   useEffect(() => {
     if (!periodo) return
     if (anchorWeek < periodo.min) {
-      setAnchorWeek(startOfWeek(periodo.min))
+      setAnchorWeek(normalizeAnchor(periodo.min, vista))
     } else if (anchorWeek > periodo.max) {
-      setAnchorWeek(startOfWeek(periodo.max))
+      setAnchorWeek(normalizeAnchor(periodo.max, vista))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [periodo])
+
+  /** Cambia vista e renormalizza l'anchor (con clamp ai bordi del periodo).
+   *  Necessario perché il "formato" dell'anchor differisce tra le due viste:
+   *  passare da weekly a monthly senza renormalizzare lascerebbe l'anchor
+   *  su un lunedì che potrebbe ricadere nel mese precedente, causando
+   *  bug di navigazione (Succ. che non avanza) e display sbagliato. */
+  function changeVista(newVista: Vista) {
+    setVista(newVista)
+    setAnchorWeek(prev => {
+      let n = normalizeAnchor(prev, newVista)
+      if (periodo) {
+        if (n < periodo.min) n = normalizeAnchor(periodo.min, newVista)
+        else if (n > periodo.max) n = normalizeAnchor(periodo.max, newVista)
+      }
+      return n
+    })
+  }
 
   const giorni = useMemo(() => computeGiorni(anchorWeek, vista), [anchorWeek, vista])
 
@@ -331,7 +369,11 @@ export function SettimanalePage() {
 
   const goPrev = () => { if (canGoPrev) setAnchorWeek(shiftAnchor(anchorWeek, vista, -1)) }
   const goNext = () => { if (canGoNext) setAnchorWeek(shiftAnchor(anchorWeek, vista, +1)) }
-  const goOggi = () => { if (todayInRange) setAnchorWeek(startOfWeek(new Date())) }
+  const goOggi = () => {
+    // Vai a "oggi" rispettando la vista corrente: lunedì della settimana
+    // in weekly, 1° del mese corrente in monthly.
+    if (todayInRange) setAnchorWeek(normalizeAnchor(new Date(), vista))
+  }
 
   // ── Helpers di rendering ───────────────────────────────────────────
   /** Pillola circolare colorata per il placement (SUB pink / MED cyan).
@@ -511,10 +553,10 @@ export function SettimanalePage() {
           Vista {vista === 'settimana' ? 'settimanale' : 'mensile'}
         </h2>
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Toggle vista */}
+          {/* Toggle vista — usa changeVista per renormalizzare l'anchor */}
           <div className="flex rounded-lg overflow-hidden border border-stone-300">
             <button
-              onClick={() => setVista('settimana')}
+              onClick={() => changeVista('settimana')}
               className="px-3 py-1.5 text-xs font-medium transition-colors"
               style={vista === 'settimana'
                 ? { background: '#476540', color: '#fff' }
@@ -522,7 +564,7 @@ export function SettimanalePage() {
               Settimana
             </button>
             <button
-              onClick={() => setVista('mese')}
+              onClick={() => changeVista('mese')}
               className="px-3 py-1.5 text-xs font-medium transition-colors"
               style={vista === 'mese'
                 ? { background: '#476540', color: '#fff' }
