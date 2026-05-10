@@ -6,9 +6,12 @@
  * Per ogni slot mostra mattina + pomeriggio + l'eventuale colonna extra
  * (ricerca) + colonna reperibilità.
  *
- * Il sistema mostra la STRUTTURA TEORICA dello schema (rotazione applicata
- * settimana per settimana), non i turni con modifiche manuali. Per quelle
- * c'è la pagina Modifica Turni (admin) o la pagina Calendario completa.
+ * La struttura (chi sta in quale slot) è derivata dalla rotazione teorica
+ * dello schema attivo. Le informazioni che invece dipendono dai turni reali
+ * salvati nel DB — flag SUB/MED su mattina/pomeriggio e stato ferie —
+ * vengono lette in tempo reale: appena l'admin modifica un turno o approva
+ * delle ferie, la vista si aggiorna automaticamente (Supabase Realtime
+ * + polling 15s come fallback).
  *
  * Accessibile a tutti gli utenti loggati (admin, user, ospite). Per gli
  * ospiti è l'unica pagina visibile.
@@ -21,7 +24,9 @@ import { supabase } from '../lib/supabase'
 import {
   contaLunedi, primoLunediDelPeriodo, getDayOfWeek, formatDate, MESI_IT,
 } from '../lib/algorithm'
-import type { Configurazione, Medico, SchemaModello } from '../types'
+import { useTurniRealtime } from '../hooks/useTurniRealtime'
+import { useFerieRealtime } from '../hooks/useFerieRealtime'
+import type { Configurazione, Medico, SchemaModello, Turno, Ferie, SlotPlacement } from '../types'
 
 // Giorni della settimana in italiano (1=Lun, ..., 7=Dom)
 const GIORNI_IT = ['', 'LUNEDÌ', 'MARTEDÌ', 'MERCOLEDÌ', 'GIOVEDÌ', 'VENERDÌ', 'SABATO', 'DOMENICA']
@@ -62,6 +67,13 @@ export function SettimanalePage() {
   // Settimana corrente (lunedì) come default
   const [anchorWeek, setAnchorWeek] = useState<Date>(() => startOfWeek(new Date()))
   const [vista, setVista] = useState<Vista>('settimana')
+
+  // ── Realtime: invalida le query non appena cambia qualcosa lato DB ─
+  // useTurniRealtime / useFerieRealtime di default fanno invalidate sulle
+  // query con i prefissi giusti — perfetto qui visto che usiamo useQuery
+  // anche per turni e ferie. Debounce 500ms interno al hook.
+  useTurniRealtime()
+  useFerieRealtime()
 
   // ── Query dati ───────────────────────────────────────────────────
   const { data: config } = useQuery<Configurazione | null>({
@@ -115,10 +127,89 @@ export function SettimanalePage() {
     return out
   }, [anchorWeek, vista])
 
+  // Range ISO del periodo visualizzato — usato come parametro delle query
+  // turni/ferie. La queryKey include di/df, così cambiare settimana/mese
+  // forza un nuovo fetch del solo periodo richiesto.
+  const periodo = useMemo(() => {
+    if (giorni.length === 0) return null
+    return { di: formatDate(giorni[0]), df: formatDate(giorni[giorni.length - 1]) }
+  }, [giorni])
+
+  // ── Turni del periodo ────────────────────────────────────────────
+  // Servono per leggere lo stato REALE di slot_mattina/pomeriggio (SUB/MED)
+  // e il flag is_ferie aggiornati alle ultime modifiche dell'admin. Senza
+  // questa query la vista mostrerebbe solo lo schema teorico statico.
+  // staleTime: 0 + refetchOnMount: 'always' + refetchInterval 15s → safety
+  // net se la connessione Realtime cade. L'invalidate via useTurniRealtime
+  // copre il caso normale (refresh istantaneo).
+  const { data: turni = [] } = useQuery<Turno[]>({
+    // Prefisso ['turni', ...] → coperto dall'invalidate di useTurniRealtime
+    // che fa invalidateQueries({ queryKey: ['turni'] }) con match parziale.
+    queryKey: ['turni', 'settimanale', periodo?.di, periodo?.df],
+    queryFn: async () => {
+      if (!periodo) return []
+      const { data, error } = await supabase
+        .from('turni').select('*')
+        .gte('data', periodo.di).lte('data', periodo.df)
+      if (error) throw error
+      return data ?? []
+    },
+    enabled: !!periodo,
+    staleTime:                   0,
+    refetchOnMount:              'always',
+    refetchInterval:             15_000,
+    refetchIntervalInBackground: false,
+  })
+
+  // ── Ferie (range completi, solo i campi minimi) ──────────────────
+  // Query analoga a quella usata in CalendarioPage: tutti i range,
+  // mai filtrati per medico. Saranno filtrati lato client. Servono
+  // per barrare i medici in ferie nella vista settimanale.
+  const { data: ferieDB = [] } = useQuery<Pick<Ferie, 'medico_id' | 'data_inizio' | 'data_fine' | 'approvate'>[]>({
+    queryKey: ['ferie-ranges'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ferie').select('medico_id, data_inizio, data_fine, approvate')
+      if (error) throw error
+      return data ?? []
+    },
+    staleTime:                   0,
+    refetchOnMount:              'always',
+    refetchInterval:             15_000,
+    refetchIntervalInBackground: false,
+  })
+
   // ── Helper per calcolare il medico per un numero in una data ───────
   const mediciAttivi = useMemo(() =>
     [...medici].filter(m => m.attivo).sort((a, b) => a.numero_ordine - b.numero_ordine),
     [medici])
+
+  // Lookup turni: chiave "medico_id|data" → Turno. Costruito con un solo
+  // pass sui turni del periodo, così ogni cella legge in O(1).
+  const turniByKey = useMemo(() => {
+    const m = new Map<string, Turno>()
+    for (const t of turni) m.set(`${t.medico_id}|${t.data}`, t)
+    return m
+  }, [turni])
+
+  // Range ferie APPROVATE per medico — la vista pubblica mostra solo le
+  // approvate (le richieste in attesa non condizionano la vista del team).
+  const ferieRanges = useMemo(() => {
+    const m = new Map<string, [string, string][]>()
+    for (const f of ferieDB) {
+      if (!f.approvate) continue
+      if (!m.has(f.medico_id)) m.set(f.medico_id, [])
+      m.get(f.medico_id)!.push([f.data_inizio, f.data_fine])
+    }
+    return m
+  }, [ferieDB])
+
+  function isInFerie(medicoId: string | null | undefined, dataISO: string): boolean {
+    if (!medicoId) return false
+    const ranges = ferieRanges.get(medicoId)
+    if (!ranges) return false
+    return ranges.some(([di, df]) => dataISO >= di && dataISO <= df)
+  }
 
   function medicoForNum(numero: number | null, data: Date): Medico | null {
     if (numero == null || mediciAttivi.length === 0 || !config) return null
@@ -136,6 +227,41 @@ export function SettimanalePage() {
     return m.nome.split(' ').slice(-1)[0].toUpperCase()
   }
 
+  /** Visualizza un nome medico con eventuale tag SUB/MED e overlay "(F)"
+   *  se il medico è in ferie quel giorno. Il nome viene barrato per
+   *  segnalare visivamente la ferie senza far sparire l'informazione di
+   *  chi sarebbe stato in turno secondo la rotazione. */
+  const NomeMedico = ({ medico, placement, inFerie }: {
+    medico: Medico | null
+    placement: SlotPlacement
+    inFerie: boolean
+  }) => {
+    if (!medico) return null
+    const tag = placement === 'SUB' ? '(SUB)'
+              : placement === 'MED' ? '(MED)' : ''
+    const tagColor = placement === 'SUB' ? '#9f1239'
+                   : placement === 'MED' ? '#0c4a6e' : undefined
+    return (
+      <>
+        <span style={inFerie
+          ? { textDecoration: 'line-through', color: '#9ca3af' }
+          : undefined}>
+          {nomeBreve(medico)}
+        </span>
+        {tag && !inFerie && (
+          <span style={{ marginLeft: 4, color: tagColor, fontWeight: 800, fontSize: 10 }}>
+            {tag}
+          </span>
+        )}
+        {inFerie && (
+          <span style={{
+            marginLeft: 4, color: '#b45309', fontWeight: 800, fontSize: 10,
+          }}>(F)</span>
+        )}
+      </>
+    )
+  }
+
   // ── Render del singolo giorno ────────────────────────────────────
   function renderGiorno(data: Date, idx: number) {
     const dWeek = getDayOfWeek(data)
@@ -149,6 +275,10 @@ export function SettimanalePage() {
     // Reperibile = medico nello slot con is_reperibilita
     const repSlot = slotsGiorno.find(s => s.is_reperibilita)
     const medicoRep = repSlot ? medicoForNum(repSlot.numero_medico_mattina, data) : null
+    const repInFerie = !!medicoRep && (
+      !!turniByKey.get(`${medicoRep.id}|${dataISO}`)?.is_ferie ||
+      isInFerie(medicoRep.id, dataISO)
+    )
 
     // Slot non-reperibilità ordinati
     const slotsNormali = slotsGiorno.filter(s => !s.is_reperibilita)
@@ -201,7 +331,9 @@ export function SettimanalePage() {
                 border: '1px solid #6b7280',
                 color: medicoRep ? '#1f2937' : '#9ca3af',
               }}>
-            {medicoRep ? nomeBreve(medicoRep) : '—'}
+            {medicoRep
+              ? <NomeMedico medico={medicoRep} placement={null} inFerie={repInFerie} />
+              : '—'}
           </td>
         </tr>
 
@@ -223,13 +355,34 @@ export function SettimanalePage() {
           const medRM = medicoForNum(slot.numero_medico_rm,         data)
           const medRP = medicoForNum(slot.numero_medico_rp,         data)
 
-          // Etichetta SUB/MED da slot.is_sub / is_med
-          const tag = slot.is_sub ? '(SUB)' : slot.is_med ? '(MED)' : ''
-          const tagColor = slot.is_sub ? '#9f1239' : slot.is_med ? '#0c4a6e' : undefined
+          // Lookup turno reale per ogni medico — quando esiste, lo schema
+          // teorico cede il passo allo stato salvato nel DB (SUB/MED per
+          // mattina/pomeriggio + flag ferie).
+          const turnoM  = medM  ? turniByKey.get(`${medM.id}|${dataISO}`)  : undefined
+          const turnoP  = medP  ? turniByKey.get(`${medP.id}|${dataISO}`)  : undefined
+          const turnoRM = medRM ? turniByKey.get(`${medRM.id}|${dataISO}`) : undefined
+          const turnoRP = medRP ? turniByKey.get(`${medRP.id}|${dataISO}`) : undefined
+
+          // Fallback dello schema: in assenza del turno (es. data fuori
+          // dal calendario generato) prendiamo il flag dello schema teorico.
+          const fallbackPlacement: SlotPlacement = slot.is_sub
+            ? 'SUB' : slot.is_med ? 'MED' : null
+
+          // Placement effettivo — DB ha la precedenza, schema il fallback.
+          const placM: SlotPlacement = turnoM?.slot_mattina    ?? fallbackPlacement
+          const placP: SlotPlacement = turnoP?.slot_pomeriggio ?? fallbackPlacement
+
+          // Stato ferie — combina flag is_ferie del turno con le date
+          // inserite in tabella ferie (entrambi i casi sono validi).
+          const ferieM  = !!turnoM?.is_ferie  || isInFerie(medM?.id,  dataISO)
+          const ferieP  = !!turnoP?.is_ferie  || isInFerie(medP?.id,  dataISO)
+          const ferieRM = !!turnoRM?.is_ferie || isInFerie(medRM?.id, dataISO)
+          const ferieRP = !!turnoRP?.is_ferie || isInFerie(medRP?.id, dataISO)
 
           // Cella "extra" — mostra il nome di chi fa ricerca quel giorno
           // (RM o RP). Se ha entrambi, RM prevale (ricerca mattutina).
           const extraMedico = medRM ?? medRP ?? null
+          const extraInFerie = medRM ? ferieRM : ferieRP
 
           const rowBg = slotIdx % 2 === 0 ? '#dbeafe' : '#bfdbfe'
 
@@ -240,32 +393,14 @@ export function SettimanalePage() {
                 padding: '4px 8px', fontSize: 11, fontWeight: 600,
                 border: '1px solid #6b7280',
               }}>
-                {medM ? (
-                  <>
-                    {nomeBreve(medM)}
-                    {tag && (
-                      <span style={{ marginLeft: 4, color: tagColor, fontWeight: 800, fontSize: 10 }}>
-                        {tag}
-                      </span>
-                    )}
-                  </>
-                ) : ''}
+                <NomeMedico medico={medM} placement={placM} inFerie={ferieM} />
               </td>
               {/* Pomeriggio */}
               <td style={{
                 padding: '4px 8px', fontSize: 11, fontWeight: 600,
                 border: '1px solid #6b7280',
               }}>
-                {medP ? (
-                  <>
-                    {nomeBreve(medP)}
-                    {tag && (
-                      <span style={{ marginLeft: 4, color: tagColor, fontWeight: 800, fontSize: 10 }}>
-                        {tag}
-                      </span>
-                    )}
-                  </>
-                ) : ''}
+                <NomeMedico medico={medP} placement={placP} inFerie={ferieP} />
               </td>
               {/* Extra (ricerca) */}
               <td style={{
@@ -274,7 +409,7 @@ export function SettimanalePage() {
                 color: '#374151',
                 border: '1px solid #6b7280',
               }}>
-                {extraMedico ? nomeBreve(extraMedico) : ''}
+                <NomeMedico medico={extraMedico} placement={null} inFerie={extraInFerie} />
               </td>
             </tr>
           )
