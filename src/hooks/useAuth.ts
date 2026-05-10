@@ -89,15 +89,31 @@ export function useAuth() {
   }
 
   async function loadUser(email: string) {
-    // ⚠️ Uso fetch diretto invece di supabase.rpc(): il client supabase-js
-    // prende un lock interno sull'auth-state durante l'INITIAL_SESSION /
-    // SIGNED_IN, e le chiamate .rpc() rimangono in stallo per >15s
-    // (confermato a runtime). Il fetch diretto al REST endpoint risponde
-    // in ~500ms con lo stesso JWT, e non passa dal lock.
+    // ⚠️ Bypass completo del client supabase-js per la lettura del profilo:
+    //   - supabase.rpc('get_my_profile') va in timeout durante l'auth-state
+    //     handler (lock interno del client su INITIAL_SESSION / SIGNED_IN)
+    //   - supabase.auth.getSession() rispetta lo stesso lock → anche quello
+    //     è in stallo
+    // Soluzione: leggiamo il JWT direttamente da localStorage (la chiave
+    // `sb-<project_ref>-auth-token` è popolata da supabase-js prima ancora
+    // di fire l'evento auth) e facciamo fetch al REST endpoint. Risposta
+    // ~500ms invece di >15s.
     const queryPromise = (async () => {
-      const { data: sess } = await supabase.auth.getSession()
-      const token = sess?.session?.access_token
+      // Project ref deriva dall'URL Supabase (es. https://abc.supabase.co → abc)
+      const refMatch = supabaseUrl.match(/https?:\/\/([a-z0-9]+)\.supabase\.co/i)
+      const projectRef = refMatch?.[1]
+      if (!projectRef) return { data: null, error: new Error('no_project_ref') as Error }
+      const raw = localStorage.getItem(`sb-${projectRef}-auth-token`)
+      if (!raw) return { data: null, error: new Error('no_session_in_storage') as Error }
+      let token: string | undefined
+      try {
+        const parsed = JSON.parse(raw) as { access_token?: string }
+        token = parsed.access_token
+      } catch {
+        return { data: null, error: new Error('storage_parse_error') as Error }
+      }
       if (!token) return { data: null, error: new Error('no_access_token') as Error }
+
       const res = await fetch(`${supabaseUrl}/rest/v1/rpc/get_my_profile`, {
         method: 'POST',
         headers: {
