@@ -953,14 +953,13 @@ export function ModificaTurniPage() {
   // Il "tipo" determina quale parte della cella visualizzare/editare:
   //   - 'clinica'  → mostra/edita TC, lascia TR invariato
   //   - 'ricerca'  → mostra/edita TR, lascia TC invariato
-  // Il bordo azzurro "modificato" è indipendente per tipo: riferito
-  // solo al lato gestito da quella tabella.
+  // Il bordo azzurro "modificato" si vede SOLO nella tabella clinica:
+  // la ricerca è read-only (i TR sono ricalcolati automaticamente dal
+  // cambio TC), evidenziarli sarebbe rumore visivo.
   const renderCella = (medicoId: string, col: ColonnaCal, tipo: TipoTabella) => {
     const cur  = getCella(medicoId, col.data)
     const orig = getOriginale(medicoId, col.data)
-    const isMod = tipo === 'clinica'
-      ? cur.tc !== orig.tc
-      : cur.tr !== orig.tr
+    const isMod = tipo === 'clinica' && cur.tc !== orig.tc
     const ferie = ferieStatus(medicoId, col.data)
     const ferieColore = colorePerGiorno.get(col.data)?.color ?? null
     return (
