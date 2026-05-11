@@ -224,6 +224,26 @@ interface EditableCellProps {
    * Payload: 'TC:M' | 'TC:P' | 'TC:L' | 'TC:REP' | 'TR:RM' | 'TR:RP' | 'FLAG:SUB' | 'FLAG:MED'
    */
   onDropFromLegend?: (payload: string) => void
+
+  // ── Selezione + navigazione tastiera (solo tabella clinica) ───────
+  /** True se questa è la cella correntemente "selezionata" (click). */
+  isSelected?:      boolean
+  /**
+   * Quando definita (anche string vuota), la cella entra in modalità
+   * editing con `draft` pre-popolato a questo valore. `undefined` = no.
+   * Stringa vuota → input vuoto (caso Enter/Canc).
+   * Lettera → la cella entra in edit con quella lettera già scritta.
+   */
+  pendingEditChar?: string
+  /** Callback al click sulla cella — il parent setta la selezione. */
+  onSelect?:        () => void
+  /**
+   * Callback alla fine dell'editing (commit con Enter/blur o cancel con Esc).
+   * - committed=true + moveDown=true   → conferma Enter → muovi selected giù
+   * - committed=true + moveDown=false  → commit per blur → mantieni selected
+   * - committed=false → Esc, niente modifiche, mantieni selected
+   */
+  onEditEnd?:       (committed: boolean, moveDown: boolean) => void
 }
 
 function EditableCell({
@@ -231,26 +251,51 @@ function EditableCell({
   ferieGiornoColore = null,
   slot_mattina = null, slot_pomeriggio = null, readOnly = false,
   onChangeClinico, onChangeRicerca, onPasteRange, onDropFromLegend,
+  isSelected = false, pendingEditChar, onSelect, onEditEnd,
 }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   const [draft,   setDraft]   = useState('')
   const [dragOver, setDragOver] = useState(false)
+  /** Quando entriamo in edit via tastiera "lettera", il caret va alla fine
+   *  (per continuare a digitare). Quando entriamo via Enter/Canc, il draft
+   *  è vuoto e non c'è nulla da selezionare. */
+  const enteredByLetter = useRef(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (editing && inputRef.current) {
       inputRef.current.focus()
-      inputRef.current.select()
+      // Solo se l'edit è stato iniziato da un click / drop / Enter (no
+      // lettera già digitata) selezioniamo tutto il testo, così il
+      // prossimo carattere lo sostituisce. Se invece l'utente ha già
+      // digitato la prima lettera, il caret va alla fine.
+      if (!enteredByLetter.current) inputRef.current.select()
+      enteredByLetter.current = false
     }
   }, [editing])
 
-  const startEdit = () => {
-    if (readOnly) return
-    setDraft(tipo === 'clinica' ? tc : tr)
+  /** Reazione a pendingEditChar (richiesta di edit dal parent via tastiera).
+   *  - undefined → niente
+   *  - ''        → enter edit con campo vuoto (Enter / Canc)
+   *  - 'M'/...   → enter edit con quella lettera già scritta
+   */
+  useEffect(() => {
+    if (pendingEditChar === undefined || readOnly || editing) return
+    setDraft(pendingEditChar)
+    enteredByLetter.current = pendingEditChar.length > 0
     setEditing(true)
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingEditChar])
 
-  const commit = () => {
+  /** Entra in edit "tradizionale" — non usato dal click (che ora è SELECT),
+   *  ma utile per chiamate esterne future. */
+  // const startEdit = () => {
+  //   if (readOnly) return
+  //   setDraft(tipo === 'clinica' ? tc : tr)
+  //   setEditing(true)
+  // }
+
+  const commit = (moveDown: boolean) => {
     if (tipo === 'clinica') {
       const next = parseClinico(draft)
       if (next !== tc) onChangeClinico(next)
@@ -259,6 +304,12 @@ function EditableCell({
       if (next !== tr) onChangeRicerca(next)
     }
     setEditing(false)
+    onEditEnd?.(true, moveDown)
+  }
+
+  const cancel = () => {
+    setEditing(false)
+    onEditEnd?.(false, false)
   }
 
   // Background cella clinica:
@@ -295,9 +346,34 @@ function EditableCell({
     ? 'inset 0 0 0 2px #f59e0b, 0 0 6px 0 rgba(245,158,11,0.5)'
     : modifiedShadow
 
+  // Outline/box-shadow per la cella SELECTED (priorità minore del drag-over
+  // e del modified). Volutamente "chiarissimo": un outline grigio neutro
+  // sopra la cella, senza coprire il LabelClinico sottostante.
+  const selectedShadow = isSelected && !editing
+    ? 'inset 0 0 0 2px #6b7280, 0 0 0 1px rgba(0,0,0,0.05)'
+    : undefined
+
+  // Composiziono la box-shadow finale per priorità:
+  //   1. drag-over (arancione, intent di drop)
+  //   2. selected  (grigio scuro neutro)
+  //   3. modified  (azzurro, già esistente)
+  const finalShadow = dragOver
+    ? 'inset 0 0 0 2px #f59e0b, 0 0 6px 0 rgba(245,158,11,0.5)'
+    : selectedShadow ?? modifiedShadow
+
   return (
     <td
-      onClick={!editing && !readOnly ? startEdit : undefined}
+      // data-clinica-cell serve al listener click globale del parent per
+      // capire se il click è "dentro" una cella editabile (e quindi NON
+      // resettare la selezione corrente).
+      data-clinica-cell={tipo === 'clinica' && !readOnly ? 'true' : undefined}
+      onClick={() => {
+        if (readOnly || editing) return
+        // Click ora SELEZIONA la cella (non entra in edit). L'editing si
+        // attiva premendo una lettera, Enter o Canc — gestito dal parent
+        // via pendingEditChar.
+        onSelect?.()
+      }}
       onDragOver={e => {
         if (!onDropFromLegend) return
         const types = e.dataTransfer.types
@@ -317,8 +393,14 @@ function EditableCell({
       }}
       style={{
         width: 32, minWidth: 32, height: 28,
-        background:    bg,
-        boxShadow:     dragOverShadow,
+        // Sfondo: se selected (e non in edit) sovrastampo un grigio
+        // chiarissimo SOPRA il bg base, così il colore originario resta
+        // visibile in trasparenza (es. festivo giallo, ferie verde) ma
+        // si capisce che siamo sulla cella. Niente di troppo invadente.
+        background: (isSelected && !editing)
+          ? `linear-gradient(rgba(0,0,0,0.06), rgba(0,0,0,0.06)), ${bg}`
+          : bg,
+        boxShadow:     finalShadow,
         cursor:        readOnly ? 'default' : (editing ? 'text' : 'pointer'),
         padding:       0,
         textAlign:     'center',
@@ -332,10 +414,10 @@ function EditableCell({
           ref={inputRef}
           value={draft}
           onChange={e => setDraft(e.target.value.toUpperCase())}
-          onBlur={commit}
+          onBlur={() => commit(false)}
           onKeyDown={e => {
-            if (e.key === 'Enter') { e.preventDefault(); commit() }
-            else if (e.key === 'Escape') { e.preventDefault(); setEditing(false) }
+            if (e.key === 'Enter')         { e.preventDefault(); commit(true) }
+            else if (e.key === 'Escape')   { e.preventDefault(); cancel() }
           }}
           onPaste={e => {
             // Paste da Excel: stringa TSV (tab fra colonne, \n fra righe).
@@ -347,6 +429,7 @@ function EditableCell({
               e.preventDefault()
               onPasteRange(text)
               setEditing(false)
+              onEditEnd?.(true, false)
             }
           }}
           maxLength={6}
@@ -410,6 +493,18 @@ export function ModificaTurniPage() {
   // fra tutti gli admin. Il click sulla checkbox fa UPDATE del DB +
   // invalidate della query, così l'aggiornamento si propaga.
   const [savingAutocalc, setSavingAutocalc] = useState(false)
+
+  // ── Selezione cella + edit-intent (solo tabella Clinica) ──────────
+  // selectedCell: la cella attualmente "selected" (overlay grigio chiaro);
+  //   è settata dal click sulla cella e dalla navigazione tastiera.
+  // editIntent: quando settato, la cella corrispondente entra in modalità
+  //   editing con il `char` come draft iniziale (vuoto se da Enter/Canc,
+  //   altrimenti la lettera digitata). Risettato a null da handleEditEnd
+  //   quando l'utente esce dall'editing.
+  const [selectedCell, setSelectedCell] =
+    useState<{ medicoId: string; data: string } | null>(null)
+  const [editIntent, setEditIntent] =
+    useState<{ medicoId: string; data: string; char: string } | null>(null)
 
   // Map<key=`${medicoId}|${data}`, RicalcCell> = modifiche locali non salvate.
   // Ogni entry contiene tc, tr, isSub, isMed insieme: il ricalcolo
@@ -987,6 +1082,94 @@ export function ModificaTurniPage() {
     return () => registerNavGuard(null)
   }, [hasUnsaved, registerNavGuard])
 
+  // ── Fine editing di una cella (commit o cancel) ────────────────────
+  // Chiamata da EditableCell tramite onEditEnd. Sempre azzera editIntent
+  // (così la cella esce dalla modalità editing). Se moveDown=true (Enter
+  // di conferma) sposta la selezione al medico successivo nella stessa
+  // colonna data — comportamento Excel-like. Se siamo già all'ultimo
+  // medico la selezione resta dov'è.
+  function handleEditEnd(medicoId: string, data: string, moveDown: boolean) {
+    setEditIntent(null)
+    if (!moveDown) return
+    const idx = medici.findIndex(m => m.id === medicoId)
+    if (idx < 0 || idx >= medici.length - 1) return
+    setSelectedCell({ medicoId: medici[idx + 1].id, data })
+  }
+
+  // ── Navigazione tastiera sulla cella selezionata (solo Clinica) ────
+  // Listener globale su `document.keydown` attivo solo quando c'è una
+  // cella selezionata e nessun input/textarea/select ha il focus (così
+  // l'editor della cella e tutti gli altri input della pagina restano
+  // funzionanti). Mappatura tasti (spec utente):
+  //   - ↑↓←→ : sposta selectedCell di una cella, ferma ai bordi (no wrap)
+  //   - Lettera A-Z : entra in edit sostituendo il contenuto con quella lettera
+  //   - Enter / Canc(Delete) : entra in edit con campo vuoto
+  //   - Escape : deseleziona (selectedCell=null)
+  //   - Tab / Shift+Tab / Backspace : nessuna azione (preventDefault)
+  useEffect(() => {
+    if (!selectedCell) return
+    function onKey(e: KeyboardEvent) {
+      // Se l'utente sta digitando in un campo input/textarea/select,
+      // l'editor della cella stessa o un'altra UI gestisce i tasti.
+      const ae = document.activeElement as HTMLElement | null
+      if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT')) {
+        return
+      }
+      const sel = selectedCell
+      if (!sel) return
+
+      const move = (dx: number, dy: number) => {
+        const mIdx = medici.findIndex(m => m.id === sel.medicoId)
+        const dIdx = colonne.findIndex(c => c.data === sel.data)
+        if (mIdx < 0 || dIdx < 0) return
+        const newM = Math.max(0, Math.min(medici.length - 1, mIdx + dy))
+        const newD = Math.max(0, Math.min(colonne.length - 1, dIdx + dx))
+        setSelectedCell({ medicoId: medici[newM].id, data: colonne[newD].data })
+      }
+
+      if (e.key === 'ArrowUp')    { e.preventDefault(); move(0, -1); return }
+      if (e.key === 'ArrowDown')  { e.preventDefault(); move(0, +1); return }
+      if (e.key === 'ArrowLeft')  { e.preventDefault(); move(-1, 0); return }
+      if (e.key === 'ArrowRight') { e.preventDefault(); move(+1, 0); return }
+      if (e.key === 'Tab')        { e.preventDefault(); return }
+      if (e.key === 'Backspace')  { e.preventDefault(); return }
+      if (e.key === 'Escape')     { e.preventDefault(); setSelectedCell(null); return }
+      if (e.key === 'Enter' || e.key === 'Delete') {
+        e.preventDefault()
+        setEditIntent({ medicoId: sel.medicoId, data: sel.data, char: '' })
+        return
+      }
+      // Lettera singola A-Z (senza modificatori) → edit con quella lettera
+      if (
+        e.key.length === 1 &&
+        /^[a-zA-Z]$/.test(e.key) &&
+        !e.ctrlKey && !e.metaKey && !e.altKey
+      ) {
+        e.preventDefault()
+        setEditIntent({ medicoId: sel.medicoId, data: sel.data, char: e.key.toUpperCase() })
+        return
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [selectedCell, medici, colonne])
+
+  // ── Click fuori da una cella Clinica → reset selezione ─────────────
+  // Solo le celle Clinica (rendering con data-clinica-cell="true") sono
+  // navigabili. Cliccando ovunque altro — header, riga totali, tabella
+  // Ricerca, spazio vuoto attorno — la selezione si perde. Usiamo
+  // `mousedown` per intercettare prima di un eventuale onClick handler.
+  useEffect(() => {
+    function onDocMouseDown(e: MouseEvent) {
+      const target = e.target as HTMLElement | null
+      if (!target) return
+      if (target.closest('[data-clinica-cell]')) return
+      setSelectedCell(null)
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    return () => document.removeEventListener('mousedown', onDocMouseDown)
+  }, [])
+
   // ── Salva tutte le modifiche pendenti ──────────────────────────────
   async function handleSave() {
     if (modifiche.size === 0) return
@@ -1062,6 +1245,15 @@ export function ModificaTurniPage() {
     const isMod = tipo === 'clinica' && cur.tc !== orig.tc
     const ferie = ferieStatus(medicoId, col.data)
     const ferieColore = colorePerGiorno.get(col.data)?.color ?? null
+    // Solo nella tabella clinica abbiamo selezione + editing da tastiera.
+    const isSel = tipo === 'clinica' &&
+      selectedCell?.medicoId === medicoId &&
+      selectedCell?.data === col.data
+    const pendingChar = (tipo === 'clinica' &&
+      editIntent?.medicoId === medicoId &&
+      editIntent?.data === col.data)
+      ? editIntent.char
+      : undefined
     return (
       <EditableCell
         key={`${medicoId}|${col.data}|${tipo}`}
@@ -1079,6 +1271,15 @@ export function ModificaTurniPage() {
         // Tabella RICERCA: read-only — RM/RP sono ricalcolati automatic
         // dal cambio TC (regola: RM solo a P, RP solo a M).
         readOnly={tipo === 'ricerca'}
+        // Selezione + editing tastiera (solo clinica, vedi pendingChar/isSel sopra)
+        isSelected={isSel}
+        pendingEditChar={pendingChar}
+        onSelect={tipo === 'clinica'
+          ? () => setSelectedCell({ medicoId, data: col.data })
+          : undefined}
+        onEditEnd={tipo === 'clinica'
+          ? (_committed, moveDown) => handleEditEnd(medicoId, col.data, moveDown)
+          : undefined}
         onChangeClinico={tcNew => updateCella(medicoId, col.data, tcNew, cur.tr)}
         onChangeRicerca={trNew => updateCella(medicoId, col.data, cur.tc, trNew)}
         // Paste multi-cella SOLO per la clinica: copia da Excel di un
