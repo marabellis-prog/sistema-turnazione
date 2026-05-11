@@ -17,7 +17,12 @@ export const supabase = createClient(
     auth: {
       autoRefreshToken: true,
       persistSession: true,
-      detectSessionInUrl: true,
+      // detectSessionInUrl = false: lo scambio code → session lo facciamo
+      // manualmente in AuthCallbackPage via exchangeCodeForSession(). In
+      // automatico c'erano race condition su mobile/Safari che causavano
+      // timeout silenziosi (code consumato dal client prima che il code
+      // verifier fosse pronto in localStorage). Manuale → errori espliciti.
+      detectSessionInUrl: false,
       flowType: 'pkce',
     },
   }

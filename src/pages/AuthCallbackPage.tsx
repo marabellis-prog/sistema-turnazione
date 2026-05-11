@@ -3,24 +3,20 @@
  *
  * Flusso:
  *  1. Utente clicca "Accedi con Google" → OAuth Google → questa pagina
- *  2. Aspetta che Supabase completi lo scambio code → session (SIGNED_IN)
+ *     (URL: /auth/callback?code=...&state=...)
+ *  2. Eseguiamo MANUALMENTE supabase.auth.exchangeCodeForSession() per
+ *     scambiare il code OAuth con una session valida. Non ci affidiamo a
+ *     `detectSessionInUrl: true` perché su mobile/browser strict il code
+ *     verifier può non essere trovato in localStorage in tempo, causando
+ *     un fallimento silenzioso (timeout). Lo scambio manuale espone
+ *     l'errore reale invece di farci aspettare 15s a vuoto.
  *  3. SUBITO fa il check del profilo via fetch RPC `get_my_profile`
  *  4. Decisione:
  *     - profilo OK         → salva cache, navigate('/calendario')
  *     - profilo vuoto      → flag "accesso negato", signOut, navigate('/login')
  *     - errore di rete/RPC → flag "errore tecnico", signOut, navigate('/login')
  *
- * Punti chiave:
- *  - UI minimale (solo spinner + testo) — NIENTE CalendarLoadingScreen
- *    pesante, niente fetch dati. Vediamo questa pagina solo per il tempo
- *    necessario al check del profilo (~500 ms con rete normale).
- *  - Il check viene fatto QUI prima del redirect, non in ProtectedRoute.
- *    Cosicché l'utente non vede mai una pagina "intermedia caricamento
- *    calendario" se non è autorizzato — appare direttamente il banner
- *    sulla LoginPage.
- *  - Su mobile lento il flusso è identico, solo più lento. Lo status
- *    text aggiorna ("Verifica autorizzazione…") così l'utente capisce
- *    che sta accadendo qualcosa.
+ * UI minimale (solo spinner + testo) — niente CalendarLoadingScreen.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -34,7 +30,7 @@ import {
 } from '../lib/authHelpers'
 import type { Session } from '@supabase/supabase-js'
 
-const TIMEOUT_MS = 15_000
+const TIMEOUT_MS = 20_000   // 20s — generoso per cold start mobile
 
 export function AuthCallbackPage() {
   const navigate = useNavigate()
@@ -45,7 +41,7 @@ export function AuthCallbackPage() {
     if (handled.current) return
     handled.current = true
 
-    /** Esegue il check del profilo e fa il redirect appropriato. */
+    /** Esegue il check del profilo via RPC e fa il redirect appropriato. */
     async function processSession(session: Session) {
       const email = session.user.email ?? '(email mancante)'
       setStatus('Verifica autorizzazione…')
@@ -59,7 +55,6 @@ export function AuthCallbackPage() {
         navigate('/login', { replace: true })
         return
       }
-
       // Profilo vuoto = email non in whitelist
       if (!result) {
         flagUnauthorized(email, 'email non in elenco utenti autorizzati')
@@ -67,46 +62,86 @@ export function AuthCallbackPage() {
         navigate('/login', { replace: true })
         return
       }
-
-      // OK! Salva cache e naviga al calendario.
+      // OK
       setCachedProfile(result)
       navigate('/calendario', { replace: true })
     }
 
-    // Listener SIGNED_IN: dopo che Supabase ha completato lo scambio code,
-    // arriva l'evento con la session piena. Processiamo subito.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        if (event === 'SIGNED_IN' && session) {
-          subscription.unsubscribe()
-          processSession(session)
+    /** Punto d'ingresso async — orchestra il flusso completo. */
+    async function init() {
+      try {
+        const url = new URL(window.location.href)
+        const code  = url.searchParams.get('code')
+        const errParam = url.searchParams.get('error')
+
+        // Caso A: Google ha restituito un errore (es. utente ha cliccato Cancel)
+        if (errParam) {
+          const desc = url.searchParams.get('error_description') ?? errParam
+          flagUnauthorized('(errore OAuth)', `Google: ${desc}`)
+          navigate('/login', { replace: true })
+          return
         }
-      },
-    )
 
-    // Edge case: refresh manuale di /auth/callback con session già esistente.
-    // In quel caso SIGNED_IN non viene fired, ma getSession() ritorna la
-    // sessione attiva — processiamo lo stesso.
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session && !handled.current) return  // già handled
-      if (data.session) {
-        subscription.unsubscribe()
-        processSession(data.session)
+        // Caso B: c'è un code OAuth → scambio esplicito (più robusto del
+        // detectSessionInUrl automatico, soprattutto su mobile)
+        if (code) {
+          setStatus('Scambio del codice di accesso…')
+          // exchangeCodeForSession legge code + code_verifier (da localStorage)
+          // e contatta /auth/v1/token su Supabase. Se code_verifier è mancato
+          // (race / privacy strict) ritorna un errore esplicito invece di
+          // restare in stallo per sempre.
+          const { data, error } = await supabase.auth.exchangeCodeForSession(
+            window.location.href,
+          )
+          if (error) {
+            flagUnauthorized(
+              '(scambio code OAuth)',
+              `exchangeCodeForSession: ${error.message}`,
+            )
+            detachedSignOut()
+            navigate('/login', { replace: true })
+            return
+          }
+          if (data.session) {
+            await processSession(data.session)
+            return
+          }
+          // exchange OK ma niente session (caso patologico)
+          flagUnauthorized('(scambio code OAuth)', 'session vuota dopo exchange')
+          detachedSignOut()
+          navigate('/login', { replace: true })
+          return
+        }
+
+        // Caso C: nessun code nell'URL (refresh manuale di /auth/callback)
+        // Se c'è già una sessione valida in localStorage → la usiamo.
+        const { data: sessionData } = await supabase.auth.getSession()
+        if (sessionData.session) {
+          await processSession(sessionData.session)
+          return
+        }
+
+        // Niente da fare: torna al login
+        navigate('/login', { replace: true })
+      } catch (e) {
+        flagUnauthorized(
+          '(eccezione callback)',
+          `${(e as Error).message ?? 'sconosciuta'}`,
+        )
+        detachedSignOut()
+        navigate('/login', { replace: true })
       }
-    }).catch(() => {})
+    }
 
-    // Timeout di sicurezza: se nessun SIGNED_IN entro 15 s c'è qualcosa
-    // che non va — torna al login senza spegnere l'app.
-    const timeout = setTimeout(() => {
-      subscription.unsubscribe()
-      flagUnauthorized('(timeout autenticazione)', 'timeout sul callback OAuth')
+    // Timeout di sicurezza
+    const timeoutId = setTimeout(() => {
+      flagUnauthorized('(timeout)', 'timeout sul callback OAuth (>20s)')
       navigate('/login', { replace: true })
     }, TIMEOUT_MS)
 
-    return () => {
-      clearTimeout(timeout)
-      subscription.unsubscribe()
-    }
+    init().finally(() => clearTimeout(timeoutId))
+
+    return () => clearTimeout(timeoutId)
   }, [navigate])
 
   return (
