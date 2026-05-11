@@ -1,61 +1,66 @@
+/**
+ * useAuth — hook globale per lo stato di autenticazione dell'app.
+ *
+ * Nuova architettura (post 2026-05-11):
+ *  - Il "check di autorizzazione" (fetch RPC get_my_profile) viene fatto
+ *    SOLO in due punti specifici:
+ *      a) AuthCallbackPage  → quando l'utente atterra dal flow OAuth.
+ *         È lì che decidiamo /calendario vs /login. Vedi quel file.
+ *      b) useAuth.loadUser   → fallback per INITIAL_SESSION quando la
+ *         cache profilo non c'è (es. reload con sessione esistente).
+ *  - SIGNED_IN qui non triggera più la fetch RPC — la cache è già stata
+ *    settata da AuthCallbackPage prima del navigate('/calendario'),
+ *    quindi basta leggerla. Niente race con CalendarLoadingScreen.
+ *  - SIGNED_OUT azzera lo stato.
+ *
+ * La logica di "kick out muto" è stata risolta perché qualunque cammino
+ * di fallimento ora flag-ga sessionStorage UNAUTH_KEY prima del redirect,
+ * e LoginPage mostra il banner con email + motivo.
+ */
+
 import { useEffect, useState } from 'react'
-import { supabase, supabaseUrl, supabaseAnonKey } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
+import {
+  getCachedProfile, setCachedProfile, clearCachedProfile,
+  flagUnauthorized, detachedSignOut, fetchProfile,
+} from '../lib/authHelpers'
 import type { AuthUser } from '../types'
 
-const CACHE_KEY     = 'auth_user_profile'
-const UNAUTH_KEY    = 'auth_unauthorized_email'
-const TIMEOUT_MS    = 10_000  // fetch diretto è veloce (~500ms), 10s basta abbondantemente
-
-// ── Cache sessionStorage ──────────────────────────────────────────
-function getCached(): AuthUser | null {
-  try {
-    const raw = sessionStorage.getItem(CACHE_KEY)
-    return raw ? (JSON.parse(raw) as AuthUser) : null
-  } catch { return null }
-}
-function setCached(u: AuthUser) {
-  try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(u)) } catch {}
-}
-function clearCached() {
-  try { sessionStorage.removeItem(CACHE_KEY) } catch {}
-}
-
-// ─────────────────────────────────────────────────────────────────
+const TIMEOUT_MS = 10_000
 
 export function useAuth() {
-  const [user, setUser]       = useState<AuthUser | null>(() => getCached())
+  // Inizializza con la cache se disponibile — così reload + nav istantanei.
+  const [user,    setUser]    = useState<AuthUser | null>(() => getCachedProfile())
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
 
-        // ── SIGNED_OUT: unico evento che causa logout reale ──────
+        // ── SIGNED_OUT: logout reale ────────────────────────────
         if (event === 'SIGNED_OUT') {
-          clearCached()
+          clearCachedProfile()
           setUser(null)
           setLoading(false)
           return
         }
 
         // ── INITIAL_SESSION: fired una volta sola all'avvio ─────
+        // Caso comune: refresh pagina con sessione ancora valida.
+        // Se abbiamo già la cache profilo (sessionStorage), usiamola
+        // direttamente. Altrimenti fai un check al volo.
         if (event === 'INITIAL_SESSION') {
           if (session?.user?.email) {
-            const cached = getCached()
+            const cached = getCachedProfile()
             if (cached && cached.email.toLowerCase() === session.user.email.toLowerCase()) {
-              // Profilo già in cache → nessuna chiamata al DB
               setUser(cached)
               setLoading(false)
             } else {
-              // ⚠️ Passiamo il token DALL'EVENT (session.access_token) per
-              // evitare race con localStorage: in incognito o al primo
-              // login il setItem di localStorage può essere ancora in
-              // volo quando l'evento viene fired.
               await loadUser(session.user.email, session.access_token)
             }
           } else {
-            // Nessuna sessione all'avvio (utente non loggato)
-            clearCached()
+            // Nessuna sessione → utente non loggato
+            clearCachedProfile()
             setUser(null)
             setLoading(false)
           }
@@ -63,153 +68,54 @@ export function useAuth() {
         }
 
         // ── SIGNED_IN: dopo OAuth callback ──────────────────────
+        // AuthCallbackPage ha già fatto il check e settato la cache.
+        // Noi leggiamo solo la cache. Se per qualche motivo è vuota
+        // (race / cleanup), fallback a loadUser.
         if (event === 'SIGNED_IN' && session?.user?.email) {
-          const cached = getCached()
+          const cached = getCachedProfile()
           if (cached && cached.email.toLowerCase() === session.user.email.toLowerCase()) {
             setUser(cached)
             setLoading(false)
           } else {
+            // Cache mancante: fallback check (caso patologico)
             await loadUser(session.user.email, session.access_token)
           }
           return
         }
 
-        // ── TOKEN_REFRESHED / USER_UPDATED / altri: ignora ──────
-        // NON cambiare lo stato — l'utente è già loggato
-      }
+        // TOKEN_REFRESHED / USER_UPDATED / altri: ignora
+      },
     )
 
     return () => subscription.unsubscribe()
   }, [])
 
-  /** Helper: scrive l'email "non autorizzata" + il motivo del fallimento
-   *  in sessionStorage così LoginPage può mostrare un banner diagnostico
-   *  completo invece di un silenzioso ritorno a /login. Il `reason` viene
-   *  anche loggato in console per debugging. Il valore è JSON così
-   *  trasportiamo entrambe le info; LoginPage tollera anche il vecchio
-   *  formato (solo email) per backward compatibility. */
-  function flagUnauthorized(email: string, reason: string) {
-    console.warn(`[Auth] Non autorizzato (${reason}):`, email.toLowerCase())
+  /** Fallback check del profilo. Usato SOLO per INITIAL_SESSION senza
+   *  cache (es. reload con nuova tab). In flusso normale post-OAuth è
+   *  AuthCallbackPage che fa questo check. */
+  async function loadUser(email: string, accessToken: string) {
     try {
-      sessionStorage.setItem(
-        UNAUTH_KEY,
-        JSON.stringify({ email: email.toLowerCase(), reason }),
-      )
-    } catch {}
-  }
+      const result = await Promise.race([
+        fetchProfile(accessToken),
+        new Promise<{ error: string }>(resolve =>
+          setTimeout(() => resolve({ error: 'timeout' }), TIMEOUT_MS),
+        ),
+      ])
 
-  /** Pulisce la sessione Supabase senza usare await (NON deve essere
-   *  chiamato con await dentro un onAuthStateChange handler — il client
-   *  supabase-js prende un lock interno che causa deadlock e blocca il
-   *  flusso, lasciando l'utente sulla loading screen all'infinito).
-   *  Strategia:
-   *   1. Rimuovo IMMEDIATAMENTE la chiave localStorage sb-<ref>-auth-token
-   *      così la sessione non viene più riconosciuta dal client.
-   *   2. Lancio signOut() in background via setTimeout(0) per "uscire" dallo
-   *      stack dell'handler corrente prima che supabase-js prenda il lock,
-   *      così il signOut può completare senza deadlock. */
-  function detachedSignOut() {
-    try {
-      const refMatch = supabaseUrl.match(/https?:\/\/([a-z0-9]+)\.supabase\.co/i)
-      const projectRef = refMatch?.[1]
-      if (projectRef) localStorage.removeItem(`sb-${projectRef}-auth-token`)
-    } catch {}
-    setTimeout(() => {
-      supabase.auth.signOut().catch(err => {
-        console.error('[Auth] signOut background error:', err)
-      })
-    }, 0)
-  }
-
-  async function loadUser(email: string, accessTokenFromEvent?: string) {
-    // ⚠️ Bypass completo del client supabase-js per la lettura del profilo:
-    //   - supabase.rpc('get_my_profile') va in timeout durante l'auth-state
-    //     handler (lock interno del client su INITIAL_SESSION / SIGNED_IN)
-    //   - supabase.auth.getSession() rispetta lo stesso lock → anche quello
-    //     è in stallo
-    // Soluzione: facciamo fetch DIRETTAMENTE al REST endpoint usando il JWT.
-    // Il token lo prendiamo, in ordine di preferenza:
-    //   1. Dal parametro accessTokenFromEvent (passato dall'event handler
-    //      di onAuthStateChange — sempre presente lì, niente race).
-    //   2. Da localStorage `sb-<project_ref>-auth-token` come fallback
-    //      (es. INITIAL_SESSION dopo refresh pagina).
-    const queryPromise = (async () => {
-      let token: string | undefined = accessTokenFromEvent
-      if (!token) {
-        const refMatch = supabaseUrl.match(/https?:\/\/([a-z0-9]+)\.supabase\.co/i)
-        const projectRef = refMatch?.[1]
-        if (!projectRef) return { data: null, error: new Error('no_project_ref') as Error }
-        const raw = localStorage.getItem(`sb-${projectRef}-auth-token`)
-        if (!raw) return { data: null, error: new Error('no_session_in_storage') as Error }
-        try {
-          const parsed = JSON.parse(raw) as { access_token?: string }
-          token = parsed.access_token
-        } catch {
-          return { data: null, error: new Error('storage_parse_error') as Error }
-        }
-      }
-      if (!token) return { data: null, error: new Error('no_access_token') as Error }
-
-      const res = await fetch(`${supabaseUrl}/rest/v1/rpc/get_my_profile`, {
-        method: 'POST',
-        headers: {
-          'apikey':         supabaseAnonKey,
-          'Authorization':  `Bearer ${token}`,
-          'Content-Type':   'application/json',
-        },
-        body: '{}',
-      })
-      if (!res.ok) {
-        const txt = await res.text().catch(() => '')
-        return { data: null, error: new Error(`HTTP ${res.status} ${txt.slice(0, 80)}`) as Error }
-      }
-      const json = await res.json().catch(() => null) as unknown
-      return { data: json, error: null as Error | null }
-    })()
-
-    const timeoutPromise = new Promise<{ data: null; error: Error }>(resolve =>
-      setTimeout(() => resolve({ data: null, error: new Error('timeout') }), TIMEOUT_MS)
-    )
-
-    try {
-      const result = await Promise.race([queryPromise, timeoutPromise])
-      const { data, error } = result
-
-      if (error) {
-        // RPC failure (timeout / 5xx / RLS): non sappiamo se l'utente è
-        // autorizzato o no. Flagga comunque l'email così l'utente vede
-        // un banner spiegativo invece di un kick-out muto.
-        console.error('[Auth] Errore get_my_profile:', error.message)
-        flagUnauthorized(email, `errore RPC: ${error.message}`)
+      if (result && typeof result === 'object' && 'error' in result) {
+        flagUnauthorized(email, `errore RPC: ${result.error}`)
         detachedSignOut()
         setUser(null)
         return
       }
-
-      const profile = Array.isArray(data) ? data[0] : data
-
-      if (!profile) {
-        // Email Google non in whitelist (caso più comune).
+      if (!result) {
         flagUnauthorized(email, 'email non in elenco utenti autorizzati')
         detachedSignOut()
         setUser(null)
-      } else {
-        const authUser: AuthUser = {
-          id:    profile.id,
-          email: profile.email,
-          ruolo: profile.ruolo as 'admin' | 'user' | 'ospite',
-          nome:  profile.nome ?? null,
-        }
-        setCached(authUser)
-        setUser(authUser)
+        return
       }
-    } catch (e) {
-      // Eccezione imprevista (es. parsing JSON, rete persa, ecc.).
-      // Stesso pattern: flagga e signOut, così la UI può spiegare.
-      console.error('[Auth] Errore imprevisto:', e)
-      flagUnauthorized(email, `eccezione: ${(e as Error).message ?? 'sconosciuta'}`)
-      detachedSignOut()
-      setUser(null)
+      setCachedProfile(result)
+      setUser(result)
     } finally {
       setLoading(false)
     }
@@ -227,7 +133,7 @@ export function useAuth() {
   }
 
   async function signOut() {
-    clearCached()
+    clearCachedProfile()
     await supabase.auth.signOut()
     setUser(null)
   }
