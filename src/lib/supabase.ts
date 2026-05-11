@@ -17,13 +17,16 @@ export const supabase = createClient(
     auth: {
       autoRefreshToken: true,
       persistSession: true,
-      // detectSessionInUrl = false: lo scambio code → session lo facciamo
-      // manualmente in AuthCallbackPage via exchangeCodeForSession(). In
-      // automatico c'erano race condition su mobile/Safari che causavano
-      // timeout silenziosi (code consumato dal client prima che il code
-      // verifier fosse pronto in localStorage). Manuale → errori espliciti.
-      detectSessionInUrl: false,
-      flowType: 'pkce',
+      // Implicit flow: il token arriva nell'URL hash (#access_token=...)
+      // direttamente dal redirect Google, niente "code → token exchange"
+      // intermedio. Vantaggi: NON richiede di preservare un code_verifier
+      // in localStorage fra signIn e callback (il PKCE crollava su mobile
+      // con "Invalid flow state, no valid flow state found"). Supabase
+      // legge il token via detectSessionInUrl al mount del client.
+      // Trade-off di sicurezza minore: il token transita nell'URL fragment
+      // (mai inviato al server), accettabile per una SPA con backend RLS.
+      detectSessionInUrl: true,
+      flowType: 'implicit',
     },
   }
 )
