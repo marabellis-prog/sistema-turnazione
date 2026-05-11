@@ -1100,12 +1100,21 @@ export function ModificaTurniPage() {
   // Listener globale su `document.keydown` attivo solo quando c'è una
   // cella selezionata e nessun input/textarea/select ha il focus (così
   // l'editor della cella e tutti gli altri input della pagina restano
-  // funzionanti). Mappatura tasti (spec utente):
-  //   - ↑↓←→ : sposta selectedCell di una cella, ferma ai bordi (no wrap)
+  // funzionanti). Mappatura tasti (Excel-like):
+  //   - ↑←→  : sposta selectedCell di una cella, ferma ai bordi (no wrap)
+  //   - ↓ / Enter : sposta giù di una cella, ferma all'ultimo medico
   //   - Lettera A-Z : entra in edit sostituendo il contenuto con quella lettera
-  //   - Enter / Canc(Delete) : entra in edit con campo vuoto
+  //   - Canc(Delete) : entra in edit con campo vuoto
   //   - Escape : deseleziona (selectedCell=null)
   //   - Tab / Shift+Tab / Backspace : nessuna azione (preventDefault)
+  //
+  // NOTA su Enter: volutamente NON entra in edit mode (ne` su una cella
+  // selected ne` "automaticamente" sulla cella sotto dopo il commit).
+  // Comportamento Excel-like: Enter sposta solo la selezione, l'edit
+  // si entra esplicitamente con una lettera o Canc. Questo evita che
+  // un key-repeat di Enter al commit faccia partire un edit indesiderato
+  // sulla cella sotto, e mantiene l'utente in "modalita` navigazione"
+  // libera di usare le frecce dopo ogni Enter.
   useEffect(() => {
     if (!selectedCell) return
     function onKey(e: KeyboardEvent) {
@@ -1131,10 +1140,11 @@ export function ModificaTurniPage() {
       if (e.key === 'ArrowDown')  { e.preventDefault(); move(0, +1); return }
       if (e.key === 'ArrowLeft')  { e.preventDefault(); move(-1, 0); return }
       if (e.key === 'ArrowRight') { e.preventDefault(); move(+1, 0); return }
+      if (e.key === 'Enter')      { e.preventDefault(); move(0, +1); return }
       if (e.key === 'Tab')        { e.preventDefault(); return }
       if (e.key === 'Backspace')  { e.preventDefault(); return }
       if (e.key === 'Escape')     { e.preventDefault(); setSelectedCell(null); return }
-      if (e.key === 'Enter' || e.key === 'Delete') {
+      if (e.key === 'Delete') {
         e.preventDefault()
         setEditIntent({ medicoId: sel.medicoId, data: sel.data, char: '' })
         return
