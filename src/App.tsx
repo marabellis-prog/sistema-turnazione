@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-route
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { NavBar }            from './components/NavBar'
 import { ProtectedRoute }    from './components/ProtectedRoute'
-import { CalendarLoadingScreen } from './components/CalendarLoadingScreen'
 import { LoginPage }         from './pages/LoginPage'
 import { AuthCallbackPage }  from './pages/AuthCallbackPage'
 import { CalendarioPage }     from './pages/CalendarioPage'
@@ -60,12 +59,17 @@ function AppRoutes() {
         {/* Callback OAuth */}
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
 
-        {/* Calendario (richiede login) */}
+        {/* Calendario (richiede login).
+            NIENTE loadingComponent: ProtectedRoute usa lo spinner default
+            durante il check auth (è breve). Il CalendarLoadingScreen
+            pesante con i contatori lo gestisce CalendarioPage internamente
+            durante il caricamento dei dati. Così su mobile l'utente vede
+            uno spinnerino veloce + box "Verifica…" invece del rendering
+            pesante che confonde quando l'auth fallisce. */}
         <Route
           path="/calendario"
           element={
-            <ProtectedRoute user={user} loading={loading}
-              loadingComponent={<CalendarLoadingScreen lCfg lMed />}>
+            <ProtectedRoute user={user} loading={loading}>
               <CalendarioPage />
             </ProtectedRoute>
           }
@@ -115,15 +119,29 @@ function AppRoutes() {
         </Route>
 
         {/* Root → redirect (spinner durante loading, mai pagina bianca).
-            Ospiti vanno a /settimanale (è l'unica pagina che possono vedere),
-            tutti gli altri al /calendario. */}
+            Anche il post-OAuth atterra qui via AuthCallbackPage pass-through.
+            useAuth gestisce setupAuth con getSession() + check whitelist.
+            Box centrato con sfondo coerente al login così la transizione
+            visiva non è "rotta".
+            Ospiti → /settimanale (unica pagina visibile), gli altri → /calendario. */}
         <Route
           path="/"
           element={
             loading
               ? (
-                <div className="flex min-h-screen items-center justify-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-olive-600" />
+                <div className="min-h-screen flex items-center justify-center p-4"
+                  style={{ background: 'linear-gradient(135deg, #1c2818 0%, #456b3a 50%, #577a45 100%)' }}>
+                  <div className="rounded-2xl shadow-2xl p-8 w-full max-w-sm text-center"
+                    style={{ background: '#faf8f3' }}>
+                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 mx-auto mb-4"
+                      style={{ borderColor: '#476540' }} />
+                    <p className="text-sm font-semibold" style={{ color: '#2b3c24' }}>
+                      Verifica accesso…
+                    </p>
+                    <p className="text-xs mt-2" style={{ color: '#7a7a6a' }}>
+                      Attendi qualche istante
+                    </p>
+                  </div>
                 </div>
               )
               : !user
