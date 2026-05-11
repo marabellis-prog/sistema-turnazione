@@ -39,6 +39,7 @@ import { calcolaColoreFerie, COLORI_FERIE, ETICHETTA_COLORE } from '../../lib/fe
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
 import { useTurniRealtime } from '../../hooks/useTurniRealtime'
+import { useConfigurazioneRealtime } from '../../hooks/useConfigurazioneRealtime'
 import type {
   Configurazione, Medico, SchemaModello, Turno, Ferie,
   TurnoClinico, TurnoRicerca, SlotPlacement, ColonnaCal,
@@ -386,6 +387,11 @@ export function ModificaTurniPage() {
   // (o un Genera Calendario sta rigenerando tutto), questa tab si aggiorna
   // automaticamente. Usa la queryKey ['turni-modifica'] di questa pagina.
   useTurniRealtime()
+
+  // Realtime sulla configurazione: il flag Autocalc SUB/MED è condiviso
+  // fra tutti gli admin. Se un admin lo cambia, gli altri lo vedono
+  // aggiornarsi istantaneamente (checkbox + comportamento updateCella).
+  useConfigurazioneRealtime()
 
   const qc = useQueryClient()
 
