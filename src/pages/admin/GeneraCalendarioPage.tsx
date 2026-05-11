@@ -296,6 +296,7 @@ export function GeneraCalendarioPage() {
         anno_fine:   annoFine,   mese_fine:   meseFine,
         schema_attivo: schemaNum,
         max_ferie_concomitanti: config?.max_ferie_concomitanti ?? 2,
+        autocalc_sub_med: config?.autocalc_sub_med ?? true,
         updated_at: new Date().toISOString(),
       }
       const turniGenerati = calcolaCalendarioCompleto(cfgObj, schemi, medici)

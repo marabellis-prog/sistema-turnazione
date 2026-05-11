@@ -17,6 +17,12 @@ export interface Configurazione {
   mese_fine: number           // 1..12
   schema_attivo: number       // numero schema (1, 2, ...)
   max_ferie_concomitanti: number   // quanti medici al massimo possono essere in ferie nello stesso giorno
+  /** Flag globale: quando true, in Modifica Turni il cambio TC ricalcola
+   *  automaticamente TR/SUB/MED del giorno via ricalcolaGiorno. Quando
+   *  false, il cambio TC tocca solo la cella interessata e l'admin
+   *  gestisce SUB/MED manualmente trascinando i pallini. Default true.
+   *  Stato condiviso fra tutti gli admin tramite tabella `configurazione`. */
+  autocalc_sub_med: boolean
   updated_at: string
 }
 

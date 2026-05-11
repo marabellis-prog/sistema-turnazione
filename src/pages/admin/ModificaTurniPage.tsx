@@ -24,7 +24,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Calendar, Save, Layers, Rows3 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import {
@@ -387,6 +387,8 @@ export function ModificaTurniPage() {
   // automaticamente. Usa la queryKey ['turni-modifica'] di questa pagina.
   useTurniRealtime()
 
+  const qc = useQueryClient()
+
   const [view,        setView]        = useState<'lineare' | 'mensile'>('mensile')
   const [navPending,  setNavPending]  = useState<string | null>(null)
   const [saving,      setSaving]      = useState(false)
@@ -398,15 +400,10 @@ export function ModificaTurniPage() {
   // il cambio TC modifica SOLO la cella interessata (preservando i
   // placement eligibili al nuovo TC), lasciando all'admin la libertà di
   // gestire manualmente SUB/MED via drag dei pallini dalla legenda.
-  // Stato persistito in localStorage così non si reimposta a ogni reload.
-  const [autocalcSubMed, setAutocalcSubMed] = useState<boolean>(() => {
-    try { return localStorage.getItem('mt_autocalc_submed') !== 'false' }
-    catch { return true }
-  })
-  useEffect(() => {
-    try { localStorage.setItem('mt_autocalc_submed', String(autocalcSubMed)) }
-    catch {}
-  }, [autocalcSubMed])
+  // Valore letto da `configurazione.autocalc_sub_med` (DB) → condiviso
+  // fra tutti gli admin. Il click sulla checkbox fa UPDATE del DB +
+  // invalidate della query, così l'aggiornamento si propaga.
+  const [savingAutocalc, setSavingAutocalc] = useState(false)
 
   // Map<key=`${medicoId}|${data}`, RicalcCell> = modifiche locali non salvate.
   // Ogni entry contiene tc, tr, isSub, isMed insieme: il ricalcolo
@@ -696,7 +693,8 @@ export function ModificaTurniPage() {
     setModifiche(prev => {
       const next = new Map(prev)
 
-      if (autocalcSubMed) {
+      const autocalc = config?.autocalc_sub_med ?? true
+      if (autocalc) {
         // Comportamento classico: ricalcola tutto il giorno.
         const overrides = new Map<string, TurnoClinico>()
         overrides.set(medicoId, tc)
@@ -754,7 +752,7 @@ export function ModificaTurniPage() {
       }
       return next
     })
-  }, [autocalcSubMed, ricalcoloGiorno, turniByKey])
+  }, [config?.autocalc_sub_med, ricalcoloGiorno, turniByKey])
 
   // ── Drop dalla legenda ────────────────────────────────────────────
   // Le icone della legenda sono draggabili. Drop su una cella applica:
@@ -1344,26 +1342,64 @@ export function ModificaTurniPage() {
             </span>
           )}
 
-          {/* Flag autocalc SUB/MED — quando OFF, il cambio TC NON
-              ridistribuisce automaticamente sub/med del giorno. L'admin
-              gestisce manualmente i pallini via drag dalla legenda.
-              Stato persistito in localStorage. */}
-          <label
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium cursor-pointer select-none border transition-colors"
-            style={autocalcSubMed
-              ? { background: '#e0e8d8', color: '#456b3a', borderColor: '#9ab488' }
-              : { background: '#fef3c7', color: '#92400e', borderColor: '#fbbf24' }}
-            title={autocalcSubMed
-              ? 'Autocalc SUB/MED attivo: cambiare un TC redistribuisce automaticamente i placement del giorno. Disattivalo per gestire SUB/MED a mano.'
-              : 'Autocalc SUB/MED disattivato: il cambio TC tocca solo la cella interessata. Trascina i pallini Sub/Med dalla legenda per assegnarli manualmente.'}>
-            <input
-              type="checkbox"
-              checked={autocalcSubMed}
-              onChange={e => setAutocalcSubMed(e.target.checked)}
-              style={{ accentColor: '#476540', cursor: 'pointer' }}
-            />
-            Autocalc SUB/MED
-          </label>
+          {/* Flag autocalc SUB/MED — letto da configurazione.autocalc_sub_med
+              (DB, condiviso fra tutti gli admin). Click → UPDATE su DB +
+              invalidate query. Bloccato mentre il salvataggio è in volo.
+              Quando OFF, il cambio TC NON ridistribuisce automaticamente
+              sub/med del giorno; l'admin gestisce manualmente i pallini
+              via drag dalla legenda. */}
+          {(() => {
+            const autocalcSubMed = config?.autocalc_sub_med ?? true
+            return (
+              <label
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium cursor-pointer select-none border transition-colors"
+                style={{
+                  ...(autocalcSubMed
+                    ? { background: '#e0e8d8', color: '#456b3a', borderColor: '#9ab488' }
+                    : { background: '#fef3c7', color: '#92400e', borderColor: '#fbbf24' }),
+                  opacity: savingAutocalc ? 0.6 : 1,
+                  cursor: savingAutocalc ? 'wait' : 'pointer',
+                }}
+                title={savingAutocalc
+                  ? 'Salvataggio impostazione…'
+                  : autocalcSubMed
+                    ? 'Autocalc SUB/MED attivo (impostazione condivisa fra admin): cambiare un TC redistribuisce automaticamente i placement del giorno. Disattivalo per gestire SUB/MED a mano.'
+                    : 'Autocalc SUB/MED disattivato (impostazione condivisa fra admin): il cambio TC tocca solo la cella interessata. Trascina i pallini Sub/Med dalla legenda per assegnarli manualmente.'}>
+                <input
+                  type="checkbox"
+                  checked={autocalcSubMed}
+                  disabled={savingAutocalc || !config}
+                  onChange={async e => {
+                    if (!config) return
+                    setSavingAutocalc(true)
+                    const newVal = e.target.checked
+                    try {
+                      const { error } = await supabase.from('configurazione')
+                        .update({ autocalc_sub_med: newVal })
+                        .eq('id', config.id)
+                      if (error) throw error
+                      // Aggiorno la cache della query così la UI riflette
+                      // immediatamente il nuovo valore (senza aspettare il
+                      // refetch successivo).
+                      qc.setQueryData<Configurazione | null>(['configurazione'], old =>
+                        old ? { ...old, autocalc_sub_med: newVal } : old,
+                      )
+                      // Invalido così se ci sono altri admin connessi e la
+                      // loro query è stale, al prossimo focus si rinfresca.
+                      qc.invalidateQueries({ queryKey: ['configurazione'] })
+                    } catch (err) {
+                      console.error('[ModificaTurni] errore aggiornamento autocalc:', err)
+                      setErr('Errore aggiornando l\'impostazione autocalc: ' + (err as Error).message)
+                    } finally {
+                      setSavingAutocalc(false)
+                    }
+                  }}
+                  style={{ accentColor: '#476540', cursor: savingAutocalc ? 'wait' : 'pointer' }}
+                />
+                Autocalc SUB/MED
+              </label>
+            )
+          })()}
 
           {/* Bottone salva */}
           <button
