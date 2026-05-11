@@ -129,7 +129,13 @@ export function NavBar({ user, onSignOut }: Props) {
     to: string, href: string, tabName: string,
     label: string, Icon: React.ElementType,
   ) => {
-    const active = loc.pathname.startsWith(to)
+    // Match esatto OPPURE sub-path (con slash di confine), così:
+    //  - to=/settimanale     matcha /settimanale ma NON /settimanale-alt
+    //  - to=/admin           matcha /admin, /admin/turni, /admin/medici, ...
+    // Senza questo, `.startsWith('/settimanale')` matchava sia /settimanale
+    // che /settimanale-alt → "Settimanale" sempre active anche su Alt e
+    // non cliccabile (handleSmartNav blocca i click su link active).
+    const active = loc.pathname === to || loc.pathname.startsWith(to + '/')
     return (
       <a
         href={href}
