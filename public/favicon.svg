@@ -1,31 +1,31 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <!-- Sfondo blu arrotondato -->
-  <rect width="64" height="64" rx="14" fill="#1d4ed8"/>
+  <!-- Sfondo verde oliva scuro, coerente con la navbar (#2b3c24) -->
+  <rect width="64" height="64" rx="14" fill="#2b3c24"/>
 
-  <!-- Calendario: corpo -->
-  <rect x="10" y="16" width="44" height="36" rx="5" fill="white"/>
+  <!-- Calendario: corpo (crema chiara dell'app) -->
+  <rect x="10" y="16" width="44" height="36" rx="5" fill="#faf8f3"/>
 
-  <!-- Calendario: header superiore -->
-  <rect x="10" y="16" width="44" height="13" rx="5" fill="#2563eb"/>
-  <rect x="10" y="22" width="44" height="7" fill="#2563eb"/>
+  <!-- Calendario: header superiore in verde olive medio -->
+  <rect x="10" y="16" width="44" height="13" rx="5" fill="#456b3a"/>
+  <rect x="10" y="22" width="44" height="7" fill="#456b3a"/>
 
   <!-- Ganci calendario -->
-  <rect x="20" y="11" width="5" height="10" rx="2.5" fill="white"/>
-  <rect x="39" y="11" width="5" height="10" rx="2.5" fill="white"/>
+  <rect x="20" y="11" width="5" height="10" rx="2.5" fill="#e0e8d8"/>
+  <rect x="39" y="11" width="5" height="10" rx="2.5" fill="#e0e8d8"/>
 
-  <!-- Griglia giorni (3x3 puntini) -->
-  <rect x="16" y="36" width="6" height="5" rx="1.5" fill="#93c5fd"/>
-  <rect x="26" y="36" width="6" height="5" rx="1.5" fill="#93c5fd"/>
-  <rect x="36" y="36" width="6" height="5" rx="1.5" fill="#dbeafe"/>
-  <rect x="46" y="36" width="6" height="5" rx="1.5" fill="#93c5fd"/>
+  <!-- Griglia giorni (toni di verde oliva) -->
+  <rect x="16" y="36" width="6" height="5" rx="1.5" fill="#9ab488"/>
+  <rect x="26" y="36" width="6" height="5" rx="1.5" fill="#9ab488"/>
+  <rect x="36" y="36" width="6" height="5" rx="1.5" fill="#e0e8d8"/>
+  <rect x="46" y="36" width="6" height="5" rx="1.5" fill="#9ab488"/>
 
-  <rect x="16" y="44" width="6" height="5" rx="1.5" fill="#dbeafe"/>
-  <rect x="26" y="44" width="6" height="5" rx="1.5" fill="#93c5fd"/>
-  <rect x="36" y="44" width="6" height="5" rx="1.5" fill="#93c5fd"/>
-  <rect x="46" y="44" width="6" height="5" rx="1.5" fill="#dbeafe"/>
+  <rect x="16" y="44" width="6" height="5" rx="1.5" fill="#e0e8d8"/>
+  <rect x="26" y="44" width="6" height="5" rx="1.5" fill="#9ab488"/>
+  <rect x="36" y="44" width="6" height="5" rx="1.5" fill="#9ab488"/>
+  <rect x="46" y="44" width="6" height="5" rx="1.5" fill="#e0e8d8"/>
 
-  <!-- Croce medica in alto a destra sul calendario -->
-  <circle cx="46" cy="26" r="7" fill="#ef4444"/>
-  <rect x="43.5" y="22" width="5" height="8" rx="1.5" fill="white"/>
-  <rect x="42" y="23.5" width="8" height="5" rx="1.5" fill="white"/>
+  <!-- Croce medica rossa in alto a destra sul calendario -->
+  <circle cx="46" cy="26" r="7" fill="#b91c1c"/>
+  <rect x="43.5" y="22" width="5" height="8" rx="1.5" fill="#faf8f3"/>
+  <rect x="42" y="23.5" width="8" height="5" rx="1.5" fill="#faf8f3"/>
 </svg>

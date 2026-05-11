@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { NavBar }            from './components/NavBar'
 import { ProtectedRoute }    from './components/ProtectedRoute'
@@ -34,6 +34,7 @@ const queryClient = new QueryClient({
 function AppRoutes() {
   const { user, loading, signInWithGoogle, signOut } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
 
   // Ripristina il path salvato da 404.html (GitHub Pages trick)
   useEffect(() => {
@@ -43,6 +44,27 @@ function AppRoutes() {
       navigate(redirect, { replace: true })
     }
   }, [navigate])
+
+  // Titolo della scheda + favicon dinamici in base alla rotta.
+  // - /admin/* → "Admin · Sistema Turnazione" + favicon-admin.svg
+  // - resto    → "Sistema Turnazione" + favicon.svg
+  // Cosi` a colpo d'occhio distingui la tab admin dalla tab turni anche
+  // quando il browser mostra molte schede in barra.
+  useEffect(() => {
+    const isAdmin = location.pathname.startsWith('/admin')
+    document.title = isAdmin
+      ? 'Admin · Sistema Turnazione'
+      : 'Sistema Turnazione'
+    const link = document.querySelector("link[rel='icon']") as HTMLLinkElement | null
+    if (link) {
+      const target = isAdmin
+        ? '/sistema-turnazione/favicon-admin.svg'
+        : '/sistema-turnazione/favicon.svg'
+      if (link.getAttribute('href') !== target) {
+        link.setAttribute('href', target)
+      }
+    }
+  }, [location.pathname])
 
   return (
     <div className="min-h-screen flex flex-col">

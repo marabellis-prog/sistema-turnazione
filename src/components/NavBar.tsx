@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Link, useLocation, useHref } from 'react-router-dom'
+import { useLocation, useNavigate, useHref } from 'react-router-dom'
 import { LogOut, Calendar, CalendarDays, Settings, Users, AlertTriangle, RefreshCw } from 'lucide-react'
 import { usePendingActions } from '../contexts/PendingActionsContext'
 import { useVersionCheck } from '../hooks/useVersionCheck'
@@ -10,80 +10,121 @@ interface Props {
   onSignOut: () => void
 }
 
-// Solo la tab Admin ha un nome dedicato — quando un'altra tab clicca
-// "Admin" il browser focalizza la tab admin esistente invece di duplicarla.
-// Calendario e Settimanale invece navigano sempre nella tab corrente.
+// Due tab nominate:
+//  - TAB_TURNI: Calendario, Settimanale, Settimanale Alt (la "tab dei turni").
+//    Tutti i 3 link condividono la stessa tab: cliccare uno qualsiasi da
+//    un'altra tab focalizza questa, cliccare uno qualsiasi mentre siamo
+//    già qui naviga in-tab via SPA routing.
+//  - TAB_ADMIN: tutte le pagine /admin/*.
+//
+// Risultato: al massimo due finestre aperte (turni + admin).
+const TAB_TURNI = 'sistema-turni-calendario'
 const TAB_ADMIN = 'sistema-turni-admin'
 
+/** Quale tab "nominata" rappresenta una path. null = nessuna (es. /login). */
+function tabForPath(pathname: string): string | null {
+  if (pathname.startsWith('/admin'))                  return TAB_ADMIN
+  if (pathname.startsWith('/calendario'))             return TAB_TURNI
+  if (pathname.startsWith('/settimanale-alt'))        return TAB_TURNI
+  if (pathname.startsWith('/settimanale'))            return TAB_TURNI
+  return null
+}
+
 export function NavBar({ user, onSignOut }: Props) {
-  const loc = useLocation()
+  const loc      = useLocation()
+  const navigate = useNavigate()
   const { needsRegen, needsRefresh } = usePendingActions()
   const { updateAvailable, applyUpdate } = useVersionCheck()
   // useHref → applica il basename "/sistema-turnazione" automaticamente.
-  // Serve solo per il link Admin e per i badge "Rigenera/Aggiorna"
-  // (entrambi orientati a /admin/*). Calendario e Settimanale usano
-  // <Link to="..."> che gestisce il basename da sé.
-  const hrefAdmin = useHref('/admin')
+  const hrefCalendario     = useHref('/calendario')
+  const hrefSettimanale    = useHref('/settimanale')
+  const hrefSettimanaleAlt = useHref('/settimanale-alt')
+  const hrefAdmin          = useHref('/admin')
 
-  // Auto-rinomina la tab corrente quando l'utente si trova su /admin/*
-  // — così altre tab che cliccano "Admin" la trovano e ci saltano sopra.
-  // Se l'utente lascia /admin (es. naviga su /calendario nella stessa tab),
-  // resettiamo il nome: in quel modo un click "Admin" da un'altra tab
-  // aprirà una NUOVA tab admin invece di portare l'utente fuori dalla
-  // pagina dove sta lavorando.
+  // Auto-rinomina la tab corrente in base alla "famiglia" di pagine.
+  // - Su /admin/*       → window.name = TAB_ADMIN
+  // - Su /calendario, /settimanale, /settimanale-alt → window.name = TAB_TURNI
+  // - Altrove (es. /login) → reset se era una delle due nominate.
+  // Cosi` quando un'altra tab fa window.open('', TAB_XXX) trova questa
+  // tab e ci salta sopra invece di duplicarla.
   useEffect(() => {
-    if (loc.pathname.startsWith('/admin')) {
-      window.name = TAB_ADMIN
-    } else if (window.name === TAB_ADMIN) {
+    const target = tabForPath(loc.pathname)
+    if (target) {
+      window.name = target
+    } else if (window.name === TAB_ADMIN || window.name === TAB_TURNI) {
       window.name = ''
     }
   }, [loc.pathname])
 
   /**
-   * Click handler "smart" — usato SOLO per il link Admin (e per i badge
-   * "Rigenera/Aggiorna calendario") che vogliono aprire/focalizzare la
-   * tab admin dedicata.
-   *  - Se sei già sulla pagina destinazione → no-op (non ricarica).
-   *  - Altrimenti `window.open('', tabName)` → trick noto: se esiste una
-   *    tab con quel nome, restituisce la sua reference SENZA navigarla
-   *    (preserva stato e scroll). Solo focus.
-   *  - Se non esiste, ne apre una blank, poi la naviga al path desiderato.
-   *  - Se i popup sono bloccati → fallback a navigation in stessa tab.
+   * Click handler "smart" — gestisce la navigazione fra tab nominate.
+   *  - Stessa pagina destinazione → no-op (non ricarica).
+   *  - Stessa tab (window.name === tabName) → naviga in-tab via SPA routing.
+   *    Niente full reload, niente flash. Esempio: sono su /calendario e
+   *    clicco Settimanale → la stessa tab cambia rotta a /settimanale.
+   *  - Tab diversa nominata che ESISTE → focus + naviga il suo URL.
+   *  - Tab diversa che NON ESISTE → apre una nuova tab col path.
+   *  - Popup bloccati → fallback navigation in stessa tab (full reload).
    */
-  const handleSmartNav = (
+  function handleSmartNav(
     e: React.MouseEvent,
+    to: string,
     href: string,
     tabName: string,
     isActive: boolean,
-  ) => {
+  ) {
     if (isActive) { e.preventDefault(); return }
     e.preventDefault()
-    const existing = window.open('', tabName)
-    if (!existing) { window.location.href = href; return }
 
-    // Se la tab nominata è la NOSTRA tab corrente (succede quando
-    // il window.name di questa tab coincide col target — es. clicco
-    // "Rigenera calendario" da una pagina /admin/qualcos'altro che
-    // ha window.name = TAB_ADMIN), navighiamo normalmente in-app.
-    // Altrimenti window.open ci restituisce noi stessi e poi `isBlank=false`
-    // farebbe un focus() no-op, lasciando l'utente bloccato.
-    if (existing === window) {
-      window.location.href = href
+    // Se siamo già nella tab giusta (es. clicco Settimanale da Calendario,
+    // entrambi nella tab TAB_TURNI), facciamo SPA navigation: niente reload,
+    // tutto fluido.
+    if (window.name === tabName) {
+      navigate(to)
       return
     }
 
+    // Altrimenti cerco una tab nominata esistente con quel nome.
+    const existing = window.open('', tabName)
+    if (!existing) {
+      // Popup bloccati → fallback in-tab con reload completo
+      window.location.href = href
+      return
+    }
+    // Edge case: window.open('', tabName) può restituire la nostra stessa
+    // tab se il window.name corrente combacia (raro, dopo refresh).
+    if (existing === window) {
+      navigate(to)
+      return
+    }
+
+    // Tab "blank" (appena aperta) → naviga al path desiderato.
+    // Tab già esistente con contenuto → forza la navigazione anche lì
+    // (così l'utente che era su /calendario nella tab turni e clicca
+    // Settimanale da admin, atterra direttamente su /settimanale).
     let isBlank = true
     try {
       const cur = existing.location.href
       isBlank = !cur || cur === 'about:blank'
     } catch (_) {
-      isBlank = false // cross-origin guard (in pratica non capita qui)
+      isBlank = false  // cross-origin guard (non capita qui)
     }
-    if (isBlank) existing.location.href = href
+    if (isBlank) {
+      existing.location.href = href
+    } else {
+      // Tab già esistente: naviga a `href` solo se l'URL corrente non
+      // combacia già con `to`. Confronto sul pathname per essere robusto
+      // anche se href ha query string o trailing slash diversi.
+      try {
+        if (!existing.location.pathname.endsWith(to)) {
+          existing.location.href = href
+        }
+      } catch {}
+    }
     existing.focus()
   }
 
-  /** Link "smart" per Admin: apre/focalizza la tab admin dedicata. */
+  /** Genera un link "smart" che usa una tab nominata. */
   const smartLink = (
     to: string, href: string, tabName: string,
     label: string, Icon: React.ElementType,
@@ -93,7 +134,7 @@ export function NavBar({ user, onSignOut }: Props) {
       <a
         href={href}
         target={tabName}
-        onClick={e => handleSmartNav(e, href, tabName, active)}
+        onClick={e => handleSmartNav(e, to, href, tabName, active)}
         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
           ${active ? '' : 'hover:text-white'}`}
         style={active
@@ -103,28 +144,6 @@ export function NavBar({ user, onSignOut }: Props) {
         <Icon size={15} />
         {label}
       </a>
-    )
-  }
-
-  /** Link "semplice" per Calendario / Settimanale: naviga nella tab
-   *  corrente (no target, no smart focus). Usa React Router Link → SPA
-   *  navigation senza reload, basename gestito automaticamente. */
-  const simpleLink = (
-    to: string, label: string, Icon: React.ElementType,
-  ) => {
-    const active = loc.pathname.startsWith(to)
-    return (
-      <Link
-        to={to}
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-          ${active ? '' : 'hover:text-white'}`}
-        style={active
-          ? { background: 'rgba(255,255,255,0.15)', color: '#fff' }
-          : { color: '#9ab488' }}
-      >
-        <Icon size={15} />
-        {label}
-      </Link>
     )
   }
 
@@ -160,7 +179,7 @@ export function NavBar({ user, onSignOut }: Props) {
           <a
             href={hrefAdmin + '/genera'}
             target={TAB_ADMIN}
-            onClick={e => handleSmartNav(e, hrefAdmin + '/genera', TAB_ADMIN,
+            onClick={e => handleSmartNav(e, '/admin/genera', hrefAdmin + '/genera', TAB_ADMIN,
                                           loc.pathname.startsWith('/admin/genera'))}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold
                        animate-pulse transition-colors hover:opacity-90 shrink-0"
@@ -176,7 +195,7 @@ export function NavBar({ user, onSignOut }: Props) {
           <a
             href={hrefAdmin + '/genera'}
             target={TAB_ADMIN}
-            onClick={e => handleSmartNav(e, hrefAdmin + '/genera', TAB_ADMIN,
+            onClick={e => handleSmartNav(e, '/admin/genera', hrefAdmin + '/genera', TAB_ADMIN,
                                           loc.pathname.startsWith('/admin/genera'))}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold
                        transition-colors hover:opacity-90 shrink-0"
@@ -188,19 +207,18 @@ export function NavBar({ user, onSignOut }: Props) {
           </a>
         )}
 
-        {/* Navigazione — Calendario / Settimanale / Settimanale Alt navigano
-            nella tab corrente. Solo Admin apre/focalizza una tab dedicata
-            (così resti sul calendario aperto in un'altra tab anche dopo
-            aver lavorato in admin). Gli ospiti vedono Settimanale e
-            Settimanale Alt (entrambe accessibili a loro). */}
+        {/* Navigazione — Calendario / Settimanale / Settimanale Alt
+            CONDIVIDONO la tab TAB_TURNI: cliccare uno qualsiasi da admin
+            la apre/focalizza, cliccare uno qualsiasi quando siamo già qui
+            fa SPA navigation in-tab. Admin ha la sua tab dedicata. */}
         {user && (
           <div className="flex items-center gap-1 ml-1">
             {user.ruolo !== 'ospite' &&
-              simpleLink('/calendario', 'Calendario', Calendar)}
-            {simpleLink('/settimanale',     'Settimanale',     CalendarDays)}
-            {simpleLink('/settimanale-alt', 'Settimanale Alt', CalendarDays)}
+              smartLink('/calendario',      hrefCalendario,     TAB_TURNI, 'Calendario',      Calendar)}
+            {smartLink('/settimanale',      hrefSettimanale,    TAB_TURNI, 'Settimanale',     CalendarDays)}
+            {smartLink('/settimanale-alt',  hrefSettimanaleAlt, TAB_TURNI, 'Settimanale Alt', CalendarDays)}
             {user.ruolo === 'admin' &&
-              smartLink('/admin', hrefAdmin, TAB_ADMIN, 'Admin', Settings)}
+              smartLink('/admin',           hrefAdmin,          TAB_ADMIN, 'Admin',           Settings)}
           </div>
         )}
 
