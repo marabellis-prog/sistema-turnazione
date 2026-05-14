@@ -16,10 +16,14 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
 
-    <!-- Favicon browser desktop -->
+    <!-- Favicon browser desktop: SVG (Chrome/Firefox/Safari moderni) + PNG
+         fallback (browser vecchi e Safari iOS lista segnalibri/reading list,
+         che cerca un favicon "piccolo" e non scala bene l'SVG). -->
     <link rel="icon" type="image/svg+xml" href="/sistema-turnazione/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/sistema-turnazione/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/sistema-turnazione/favicon-16.png" />
 
-    <!-- iOS / iPadOS — "Aggiungi a schermata Home" -->
+    <!-- iOS / iPadOS — "Aggiungi a schermata Home" + griglia Preferiti Safari -->
     <link rel="apple-touch-icon" sizes="180x180" href="/sistema-turnazione/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
