@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sistema Turnazione</title>
+    <meta name="description" content="Gestione turni medici" />
+
+    <!-- Cache-Control: l'HTML non deve mai essere cachato dal browser.
+         Gli asset JS/CSS hanno hash nei nomi → cache lunga è ok per loro.
+         Ma se l'HTML viene cachato, il browser punta ai bundle vecchi
+         anche dopo un nuovo deploy → badge "Aggiornamento disponibile" inutile.
+         Gli HTTP headers di GH Pages superano il meta http-equiv, ma alcuni
+         browser onorano comunque il meta come hint forte. -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+
+    <!-- Favicon browser desktop: SVG (Chrome/Firefox/Safari moderni) + PNG
+         fallback (browser vecchi e Safari iOS lista segnalibri/reading list,
+         che cerca un favicon "piccolo" e non scala bene l'SVG). -->
+    <link rel="icon" type="image/svg+xml" href="/sistema-turnazione/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/sistema-turnazione/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/sistema-turnazione/favicon-16.png" />
+
+    <!-- iOS / iPadOS — "Aggiungi a schermata Home" + griglia Preferiti Safari -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/sistema-turnazione/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Turni" />
+
+    <!-- Android / PWA -->
+    <link rel="manifest" href="/sistema-turnazione/manifest.json" />
+    <meta name="theme-color" content="#374f30" />
+
+    <style>
+      /* Previene FOUC */
+      body { margin: 0; background: #f9fafb; }
+    </style>
+
+    <!-- 1. Rimuove Service Worker residui da versioni precedenti -->
+    <!-- 2. Pulisce il query param _r=... usato per bypassare la cache HTTP -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function (regs) {
+          regs.forEach(function (r) { r.unregister() })
+        })
+      }
+      if (window.location.search.indexOf('_r=') !== -1 && window.history && window.history.replaceState) {
+        var u = new URL(window.location.href)
+        u.searchParams.delete('_r')
+        var clean = u.pathname + (u.search || '') + u.hash
+        window.history.replaceState(null, '', clean)
+      }
+    </script>
+    <script type="module" crossorigin src="/sistema-turnazione/assets/index-0ydO7TFp.js"></script>
+    <link rel="stylesheet" crossorigin href="/sistema-turnazione/assets/index-BQO3Ebea.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
