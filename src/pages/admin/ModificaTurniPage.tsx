@@ -333,33 +333,21 @@ function EditableCell({
     bg = CELL_COLORS[first]?.bg ?? (isRedDay ? '#fef3c7' : '#fefefe')
   }
 
-  const modifiedShadow = isModified
-    ? 'inset 0 0 0 2px #38bdf8, 0 0 4px 0 rgba(56,189,248,0.4)'
-    : undefined
-
   // Mostro solo il valore pertinente al tipo; il complementare resta "in background"
   const displayValue = tipo === 'clinica' ? tc : tr
   const hasValue     = !!displayValue
 
-  // Highlight visivo durante il drag-over: bordo azzurro+ombra giallo tenue
-  const dragOverShadow = dragOver
-    ? 'inset 0 0 0 2px #f59e0b, 0 0 6px 0 rgba(245,158,11,0.5)'
-    : modifiedShadow
-
-  // Outline/box-shadow per la cella SELECTED (priorità minore del drag-over
-  // e del modified). Volutamente "chiarissimo": un outline grigio neutro
-  // sopra la cella, senza coprire il LabelClinico sottostante.
-  const selectedShadow = isSelected && !editing
-    ? 'inset 0 0 0 2px #6b7280, 0 0 0 1px rgba(0,0,0,0.05)'
+  // ── Highlight cella: outline invece di box-shadow (perf Safari iPad) ──
+  // box-shadow forza Safari a creare un nuovo paint layer per ogni cella
+  // attiva → lento su tabelle grosse. `outline` invece e` "free" (zero
+  // costo di compositing). Combinato con outlineOffset: -2px si comporta
+  // visivamente come un inset box-shadow ma senza il costo.
+  // Priorita`: drag-over > selected > modified
+  const outlineColor = dragOver
+    ? '#f59e0b'                            // arancione — drop intent
+    : (isSelected && !editing) ? '#6b7280' // grigio neutro — selected
+    : isModified                ? '#38bdf8' // azzurro — modificato vs originale
     : undefined
-
-  // Composiziono la box-shadow finale per priorità:
-  //   1. drag-over (arancione, intent di drop)
-  //   2. selected  (grigio scuro neutro)
-  //   3. modified  (azzurro, già esistente)
-  const finalShadow = dragOver
-    ? 'inset 0 0 0 2px #f59e0b, 0 0 6px 0 rgba(245,158,11,0.5)'
-    : selectedShadow ?? modifiedShadow
 
   return (
     <td
@@ -393,14 +381,17 @@ function EditableCell({
       }}
       style={{
         width: 32, minWidth: 32, height: 28,
-        // Sfondo: se selected (e non in edit) sovrastampo un grigio
-        // chiarissimo SOPRA il bg base, così il colore originario resta
-        // visibile in trasparenza (es. festivo giallo, ferie verde) ma
-        // si capisce che siamo sulla cella. Niente di troppo invadente.
-        background: (isSelected && !editing)
-          ? `linear-gradient(rgba(0,0,0,0.06), rgba(0,0,0,0.06)), ${bg}`
-          : bg,
-        boxShadow:     finalShadow,
+        // Sfondo: se selected (e non in edit) applico un leggero
+        // brightness via filter sul box. Niente linear-gradient overlay:
+        // su Safari un gradient sovrapposto crea un nuovo compositing
+        // layer che e` molto piu` costoso del filter brightness GPU.
+        background: bg,
+        filter: (isSelected && !editing) ? 'brightness(0.94)' : undefined,
+        // Outline invece di box-shadow (vedi sopra). outlineOffset
+        // negativo lo posiziona DENTRO la cella, look identico a un
+        // border interno, ma senza il costo di paint.
+        outline:       outlineColor ? `2px solid ${outlineColor}` : undefined,
+        outlineOffset: outlineColor ? '-2px' : undefined,
         cursor:        readOnly ? 'default' : (editing ? 'text' : 'pointer'),
         padding:       0,
         textAlign:     'center',
@@ -1663,7 +1654,20 @@ export function ModificaTurniPage() {
       {!loading && config && view === 'mensile' && (
         <div className="space-y-6">
           {colonnePerMese.map(({ anno, mese, colonne: cs }) => (
-            <div key={`${anno}-${mese}`}>
+            <div
+              key={`${anno}-${mese}`}
+              // content-visibility: auto fa skippare layout+paint ai mesi
+              // fuori dal viewport (Safari 18+, Chrome/Edge gia` da tempo).
+              // contain-intrinsic-size riserva lo spazio per evitare salti
+              // dello scrollbar quando il blocco "appare/scompare".
+              // Effetto: invece di renderizzare ~9000 celle (6 mesi x
+              // 1500 celle) il browser ne renderizza solo quelle del mese
+              // visibile (~1500 celle), drasticamente meno lavoro su iPad.
+              style={{
+                contentVisibility: 'auto',
+                containIntrinsicSize: '900px',
+              } as React.CSSProperties}
+            >
               <h3 className="text-sm font-bold mb-1.5 flex items-center gap-2"
                 style={{ color: '#476540' }}>
                 <Calendar size={14} />
