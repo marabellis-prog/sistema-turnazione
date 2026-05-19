@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { RefreshCw, Info, RotateCw, Plane, BarChart3, X } from 'lucide-react'
+import { RefreshCw, Info, RotateCw, Plane, BarChart3, X, ArrowRightLeft } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { generaColonne, MESI_IT } from '../lib/algorithm'
 import { CalendarLoadingScreen } from '../components/CalendarLoadingScreen'
 import { FerieModal, expandRange, toRanges, type DayChange } from '../components/FerieModal'
+import { CambioTurnoModal } from '../components/CambioTurnoModal'
 import { RiepilogoTurni } from '../components/RiepilogoTurni'
 import { LegendaCalendario } from '../components/LegendaCalendario'
 import { calcolaColoreFerie, COLORI_FERIE, ETICHETTA_COLORE } from '../lib/ferieColori'
@@ -175,7 +176,9 @@ export function CalendarioPage() {
   const { user } = useAuth()
   const qc = useQueryClient()
   const [showRichiediFerie, setShowRichiediFerie] = useState(false)
+  const [showRichiediCambio, setShowRichiediCambio] = useState(false)
   const [showRiepilogo,     setShowRiepilogo]     = useState(false)
+  const [cambioMsg,         setCambioMsg]         = useState<string | null>(null)
 
   // Realtime sulle ferie: quando l'admin approva/respinge una richiesta
   // (o un altro medico aggiunge le sue), il calendario pubblico aggiorna
@@ -674,6 +677,20 @@ export function CalendarioPage() {
               <span className="hidden sm:inline">Richiedi ferie</span>
             </button>
           )}
+          {/* Richiedi Cambio Turno — accanto a Richiedi Ferie, stesso vincolo
+              (visibile solo se mioMedico). Apre il CambioTurnoModal dove
+              l'utente descrive all'admin le modifiche concordate offline. */}
+          {mioMedico && (
+            <button onClick={() => setShowRichiediCambio(true)}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-white shadow-sm transition-colors"
+              style={{ background: '#7a5a2f' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#6a4d28'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#7a5a2f'}
+              title={`Richiedi cambio turno`}>
+              <ArrowRightLeft size={13} />
+              <span className="hidden sm:inline">Richiedi cambio</span>
+            </button>
+          )}
           <button onClick={() => {
               // Aggiorna esplicitamente TUTTO: turni (fetch manuale) + ferie + medici.
               // Senza l'invalidate sui ferie-ranges, una richiesta cambiata di stato
@@ -759,6 +776,29 @@ export function CalendarioPage() {
           onSave={handleSaveSelfFerie}
           onClose={() => setShowRichiediFerie(false)}
         />
+      )}
+
+      {/* ── Modal Richiedi Cambio Turno ──────────────────────────────── */}
+      {showRichiediCambio && mioMedico && (
+        <CambioTurnoModal
+          medicoRichiedente={mioMedico}
+          medici={medici}
+          turni={turni}
+          colonne={colonne}
+          onClose={() => setShowRichiediCambio(false)}
+          onSuccess={() => {
+            setCambioMsg('✓ Richiesta inviata all\'admin. Verrai aggiornato sullo stato.')
+            setTimeout(() => setCambioMsg(null), 5000)
+          }}
+        />
+      )}
+
+      {/* Toast di conferma dopo invio richiesta cambio turno */}
+      {cambioMsg && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg shadow-lg text-sm font-semibold animate-in fade-in"
+          style={{ background: '#dcfce7', color: '#166534', border: '1px solid #86efac' }}>
+          {cambioMsg}
+        </div>
       )}
 
       {/* ── Modal Riepilogo turni — completo (tutti i medici) ── */}
