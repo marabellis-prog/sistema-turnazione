@@ -25,7 +25,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Calendar, Save, Layers, Rows3 } from 'lucide-react'
+import { Calendar, Save, Layers, Rows3, RefreshCw } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import {
   calcolaCalendarioCompleto, calcolaTurnoTeorico, primoLunediDelPeriodo,
@@ -33,6 +33,7 @@ import {
   type RicalcCell,
 } from '../../lib/algorithm'
 import { ConfirmModal } from '../../components/ConfirmModal'
+import { useConfirm } from '../../hooks/useConfirm'
 import { RiepilogoTurni } from '../../components/RiepilogoTurni'
 import { LegendaCalendario, DRAG_MIME } from '../../components/LegendaCalendario'
 import { calcolaColoreFerie, COLORI_FERIE, ETICHETTA_COLORE } from '../../lib/ferieColori'
@@ -452,6 +453,7 @@ function EditableCell({
 export function ModificaTurniPage() {
   const navigate = useNavigate()
   const { registerNavGuard } = usePendingActions()
+  const { confirm, confirmState } = useConfirm()
 
   // Realtime sulle ferie: nuove richieste / approvazioni / cancellazioni
   // si riflettono istantaneamente sul pattern verde delle celle.
@@ -1260,6 +1262,68 @@ export function ModificaTurniPage() {
     }
   }
 
+  // ── Ricalcolo RM/RP su TUTTO il periodo ─────────────────────────────
+  // Bottone "Ricalcola RM/RP": per ogni giorno del periodo calcola di nuovo
+  // i turni di ricerca RM/RP secondo la regola dello schema (RM va a chi
+  // fa P, RP a chi fa M; tie-break per medico con meno occorrenze nel
+  // periodo). NON tocca TC e SUB/MED — quelli restano come sono adesso.
+  //
+  // Aggiunge le modifiche al Map `modifiche` (smart delta: se il nuovo
+  // valore coincide col DB, niente entry). L'admin vede tutte le righe
+  // proposte e clicca Salva per applicarle al DB.
+  async function handleRicalcolaRMRP() {
+    if (!config || colonne.length === 0 || medici.length === 0 || schemi.length === 0) return
+    const ok = await confirm({
+      title:   'Ricalcola RM/RP per tutto il periodo?',
+      message: `I turni di ricerca (RM/RP) di tutti i ${colonne.length} giorni del periodo verranno ricalcolati secondo la regola dello schema (RM va a chi fa P, RP a chi fa M). TC e SUB/MED rimangono invariati. Le modifiche risultano "non salvate": rivedile e clicca Salva per applicarle al DB.`,
+      confirmLabel: 'Ricalcola',
+    })
+    if (!ok) return
+
+    let cellsChanged = 0
+    setModifiche(prev => {
+      const next = new Map(prev)
+      for (const col of colonne) {
+        // Nessun TC override: ricalcoloGiorno usa lo stato corrente per
+        // dedurre il TC di ciascun medico nel giorno.
+        const result = ricalcoloGiorno(col.data, new Map(), prev)
+        for (const [medId, newCell] of result) {
+          const key = `${medId}|${col.data}`
+          const local = prev.get(key)
+          const dbT = turniByKey.get(key)
+          // Preservo TC e slot SUB/MED. Aggiorno SOLO il TR.
+          const curTc = (local?.tc ?? dbT?.turno_clinico ?? '') as TurnoClinico
+          const curSm = local?.slot_mattina    ?? dbT?.slot_mattina    ?? null
+          const curSp = local?.slot_pomeriggio ?? dbT?.slot_pomeriggio ?? null
+          const finalCell: RicalcCell = {
+            tc: curTc,
+            tr: newCell.tr,
+            slot_mattina:    curSm,
+            slot_pomeriggio: curSp,
+          }
+          const dbCur: RicalcCell = {
+            tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
+            tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
+            slot_mattina:    dbT?.slot_mattina    ?? null,
+            slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
+          }
+          if (finalCell.tc === dbCur.tc && finalCell.tr === dbCur.tr &&
+              finalCell.slot_mattina === dbCur.slot_mattina &&
+              finalCell.slot_pomeriggio === dbCur.slot_pomeriggio) {
+            next.delete(key)
+          } else {
+            next.set(key, finalCell)
+            cellsChanged++
+          }
+        }
+      }
+      return next
+    })
+
+    setMsg(`RM/RP ricalcolati: ${cellsChanged} cell${cellsChanged === 1 ? 'a modificata' : 'e modificate'}. Clicca Salva per applicare.`)
+    setTimeout(() => setMsg(null), 6000)
+  }
+
   // Magia 4 colori per giorno — ricalcolato in tempo reale al cambio
   // di TC/TR/modifiche locali. Viene applicato solo alle celle clinica
   // (cell senza ferie del medico) per dare feedback visivo immediato.
@@ -1658,6 +1722,21 @@ export function ModificaTurniPage() {
             )
           })()}
 
+          {/* Bottone "Ricalcola RM/RP" — propone modifiche RM/RP per
+              tutto il periodo. Le modifiche entrano come pending e
+              vanno salvate. */}
+          <button
+            onClick={handleRicalcolaRMRP}
+            disabled={saving || !config}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            style={{ background: '#7eb6d4' }}
+            onMouseEnter={e => { if (!saving && config) (e.currentTarget as HTMLElement).style.background = '#5d9bc1' }}
+            onMouseLeave={e => { if (!saving && config) (e.currentTarget as HTMLElement).style.background = '#7eb6d4' }}
+            title="Ricalcola RM/RP per tutti i giorni del periodo secondo lo schema">
+            <RefreshCw size={13} />
+            <span className="hidden sm:inline">Ricalcola RM/RP</span>
+          </button>
+
           {/* Bottone salva */}
           <button
             onClick={handleSave}
@@ -1760,6 +1839,10 @@ export function ModificaTurniPage() {
           </div>
         </div>
       )}
+
+      {/* Modal di conferma usato per il pulsante "Ricalcola RM/RP" */}
+      <ConfirmModal {...confirmState.opts} open={confirmState.open}
+        onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
 
       {/* Modal blocco navigazione — modifiche non salvate */}
       <ConfirmModal

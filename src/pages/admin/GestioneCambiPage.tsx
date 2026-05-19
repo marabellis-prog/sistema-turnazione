@@ -21,7 +21,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowRightLeft, Check, X, Clock, AlertTriangle, MessageSquare,
+  ArrowRightLeft, Check, X, Clock, AlertTriangle, MessageSquare, Trash2,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
@@ -211,6 +211,34 @@ export function GestioneCambiPage() {
     }
   }
 
+  // ── Elimina richiesta dall'archivio (solo per richieste risolte) ───
+  // Le pending non si cancellano qui — vanno prima Approvate o Rifiutate.
+  // L'eliminazione e` definitiva e NON tocca i turni gia` applicati: serve
+  // solo a tenere pulito l'archivio.
+  async function handleElimina(c: CambioTurno) {
+    if (c.stato === 'pending') return    // safety net
+    const richiedente = mediciById.get(c.medico_richiedente_id)
+    const ok = await confirm({
+      title:   'Eliminare la richiesta dall\'archivio?',
+      message: `La richiesta di ${richiedente?.nome ?? 'medico sconosciuto'} del ${fmtData(c.created_at.slice(0, 10))} verra rimossa definitivamente. Questa azione NON modifica i turni gia applicati al calendario.`,
+      confirmLabel: 'Elimina',
+      danger: true,
+    })
+    if (!ok) return
+    setBusyId(c.id); setErr(null); setMsg(null)
+    try {
+      const { error } = await supabase.from('cambi_turno').delete().eq('id', c.id)
+      if (error) throw error
+      setMsg('Richiesta eliminata dall\'archivio.')
+      qc.invalidateQueries({ queryKey: ['cambi-turno'] })
+      qc.invalidateQueries({ queryKey: ['cambi-turno-pending-count'] })
+    } catch (e) {
+      setErr('Errore eliminazione: ' + (e as Error).message)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   // ── Render di una richiesta ────────────────────────────────────────
   function RichiestaCard({ c }: { c: CambioTurno }) {
     const richiedente = mediciById.get(c.medico_richiedente_id)
@@ -304,12 +332,32 @@ export function GestioneCambiPage() {
           </div>
         )}
 
-        {/* Audit per archivio */}
-        {!isPending && c.resolved_at && (
-          <div className="mt-2 text-[10px] text-stone-500 flex items-center gap-1">
-            <Clock size={10} />
-            Risolto il {fmtData(c.resolved_at.slice(0, 10))}
-            {c.rejection_reason && <span className="ml-2 italic">— {c.rejection_reason}</span>}
+        {/* Audit + Elimina per archivio */}
+        {!isPending && (
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <div className="text-[10px] text-stone-500 flex items-center gap-1 flex-1 min-w-0">
+              {c.resolved_at && (
+                <>
+                  <Clock size={10} className="shrink-0" />
+                  Risolto il {fmtData(c.resolved_at.slice(0, 10))}
+                  {c.rejection_reason && (
+                    <span className="ml-2 italic truncate">— {c.rejection_reason}</span>
+                  )}
+                </>
+              )}
+            </div>
+            <button
+              onClick={() => handleElimina(c)}
+              disabled={busyId === c.id}
+              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-colors shrink-0"
+              style={{
+                background: '#fee2e2', color: '#991b1b',
+                border: '1px solid #fecaca',
+                opacity: busyId === c.id ? 0.6 : 1,
+              }}
+              title="Elimina questa richiesta dall'archivio">
+              <Trash2 size={11} /> Elimina
+            </button>
           </div>
         )}
       </div>
