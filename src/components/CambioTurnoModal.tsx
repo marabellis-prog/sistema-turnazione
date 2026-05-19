@@ -11,12 +11,11 @@
  *   4. In caso di approvazione, l'admin applica AUTOMATICAMENTE le
  *      modifiche al calendario (handler in GestioneCambiPage).
  *
- * UX: di default una riga vuota con medico=self + oggi. Pulsante "+" per
- * aggiungere altre righe (utile per scambi reciproci a 2 medici).
- * Ogni riga mostra il "DA" letto dai turni correnti come read-only, e
- * permette di editare TC (M/P/L/REP/—) + opzionalmente TR (RM/RP/—).
- * Gli slot SUB/MED vengono derivati dal TC (M=mattina only, P=pom only,
- * L=entrambi) preservando i placement esistenti quando possibile.
+ * UI: il medico sceglie SOLO il nuovo TC (M/P/L/REP). I turni di ricerca
+ * (RM/RP) verranno ricalcolati automaticamente in fase di approvazione,
+ * e i placement SUB/MED li sistema l'admin a mano in Modifica Turni se
+ * serve. Cosi` il modulo resta leggero e l'utente non deve preoccuparsi
+ * dei dettagli operativi.
  */
 
 import { useState, useMemo } from 'react'
@@ -43,15 +42,12 @@ interface Props {
   onSuccess?:        () => void
 }
 
-// Struttura del form: una row per ogni modifica proposta
+// Struttura del form: una row per ogni modifica proposta. Solo TC; TR
+// e slot SUB/MED li gestisce l'admin in fase di approvazione/edit.
 interface RowEditor {
   medico_id: string
-  data:      string                  // ISO YYYY-MM-DD
-  // "A" — quello che propongo. "DA" lo ricalcolo al volo dai turni.
-  tc_a:                TurnoClinico
-  tr_a:                TurnoRicerca
-  slot_mattina_a:      SlotPlacement
-  slot_pomeriggio_a:   SlotPlacement
+  data:      string             // ISO YYYY-MM-DD
+  tc_a:      TurnoClinico       // nuovo TC proposto
 }
 
 /** Helper: trova il turno corrente di (medico, data) nei turni passati. */
@@ -74,7 +70,9 @@ function findTurnoCorrente(turni: Turno[], medicoId: string, data: string) {
 
 /** Helper: normalizza slot_mattina/pomeriggio in base al TC scelto.
  *  Logica: TC=M → solo mattina rilevante; TC=P → solo pomeriggio;
- *  TC=L → entrambi rilevanti; TC=REP o vuoto → entrambi null. */
+ *  TC=L → entrambi rilevanti; TC=REP o vuoto → entrambi null.
+ *  Usato al submit per propagare gli slot della "DA" alla "A" filtrando
+ *  per eligibilita` del nuovo TC. */
 function normalizzaSlot(tc: TurnoClinico, sm: SlotPlacement, sp: SlotPlacement): {
   slot_mattina: SlotPlacement; slot_pomeriggio: SlotPlacement
 } {
@@ -120,16 +118,13 @@ export function CambioTurnoModal({
   const defaultDate =
     today >= minDate && today <= maxDate ? today : (minDate || '')
 
-  // Una riga di default: richiedente, oggi (o primo giorno), tutto vuoto su "A"
+  // Una riga di default: richiedente, oggi (o primo giorno), TC = quello attuale
   const [rows, setRows] = useState<RowEditor[]>(() => {
     const cur = findTurnoCorrente(turni, medicoRichiedente.id, defaultDate)
     return [{
       medico_id: medicoRichiedente.id,
       data:      defaultDate,
-      tc_a:      cur.tc,    // pre-compilo con il valore corrente
-      tr_a:      cur.tr,
-      slot_mattina_a:    cur.slot_mattina,
-      slot_pomeriggio_a: cur.slot_pomeriggio,
+      tc_a:      cur.tc,
     }]
   })
 
@@ -148,7 +143,7 @@ export function CambioTurnoModal({
   function addRow() {
     setRows(prev => {
       const last = prev[prev.length - 1]
-      // Aggiungo una riga vuota con stessa data dell'ultima
+      // Aggiungo una riga vuota con stessa data dell'ultima + medico richiedente
       const cur = findTurnoCorrente(turni, medicoRichiedente.id, last?.data ?? defaultDate)
       return [
         ...prev,
@@ -156,9 +151,6 @@ export function CambioTurnoModal({
           medico_id: medicoRichiedente.id,
           data:      last?.data ?? defaultDate,
           tc_a:      cur.tc,
-          tr_a:      cur.tr,
-          slot_mattina_a:    cur.slot_mattina,
-          slot_pomeriggio_a: cur.slot_pomeriggio,
         },
       ]
     })
@@ -168,19 +160,13 @@ export function CambioTurnoModal({
     setRows(prev => prev.filter((_, idx) => idx !== i))
   }
 
-  /** Quando cambia medico_id o data, ricarico la "DA" e auto-popolo "A". */
+  /** Quando cambia medico_id o data, ricarico "DA" e auto-popolo "A" col TC corrente. */
   function onMedicoOrDataChange(i: number, patch: Partial<RowEditor>) {
     setRows(prev => prev.map((r, idx) => {
       if (idx !== i) return r
       const next = { ...r, ...patch }
       const cur = findTurnoCorrente(turni, next.medico_id, next.data)
-      return {
-        ...next,
-        tc_a:              cur.tc,
-        tr_a:              cur.tr,
-        slot_mattina_a:    cur.slot_mattina,
-        slot_pomeriggio_a: cur.slot_pomeriggio,
-      }
+      return { ...next, tc_a: cur.tc }
     }))
   }
 
@@ -195,31 +181,33 @@ export function CambioTurnoModal({
       }
     }
 
-    // Costruisco le ModificaCambio, applicando normalizzaSlot al "A"
+    // Costruisco le ModificaCambio:
+    //   - da: snapshot del turno attuale dal DB
+    //   - a:  nuovo TC scelto dall'utente
+    //         TR: preservato da "DA" (l'admin lo ricalcolera` automatic in
+    //              fase di approvazione tramite la regola RM↔P / RP↔M)
+    //         slot_mattina/pomeriggio: preservati da "DA", normalizzati per
+    //              l'eligibilita` del nuovo TC (l'admin sistema a mano se serve)
     const modifiche: ModificaCambio[] = rows.map(r => {
       const da = findTurnoCorrente(turni, r.medico_id, r.data)
-      const slotA = normalizzaSlot(r.tc_a, r.slot_mattina_a, r.slot_pomeriggio_a)
+      const slotA = normalizzaSlot(r.tc_a, da.slot_mattina, da.slot_pomeriggio)
       return {
         medico_id: r.medico_id,
         data:      r.data,
         da: { tc: da.tc, tr: da.tr, slot_mattina: da.slot_mattina, slot_pomeriggio: da.slot_pomeriggio },
         a:  {
           tc: r.tc_a,
-          tr: r.tr_a,
+          tr: da.tr,    // preservato; sara` riallineato dall'admin
           slot_mattina:    slotA.slot_mattina,
           slot_pomeriggio: slotA.slot_pomeriggio,
         },
       }
     })
 
-    // Almeno UNA modifica deve essere diversa fra da e a
-    const haAlmenoUnaModifica = modifiche.some(m =>
-      m.da.tc !== m.a.tc || m.da.tr !== m.a.tr ||
-      m.da.slot_mattina !== m.a.slot_mattina ||
-      m.da.slot_pomeriggio !== m.a.slot_pomeriggio
-    )
+    // Almeno UNA modifica deve essere diversa fra da e a (sul TC)
+    const haAlmenoUnaModifica = modifiche.some(m => m.da.tc !== m.a.tc)
     if (!haAlmenoUnaModifica) {
-      setError('Nessuna modifica effettiva: imposta almeno una riga in cui "A" differisce da "DA".')
+      setError('Nessuna modifica effettiva: cambia il TC di almeno una riga.')
       return
     }
 
@@ -249,7 +237,7 @@ export function CambioTurnoModal({
       style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }}
       onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl flex flex-col w-full"
-        style={{ maxWidth: 'min(96vw, 760px)', maxHeight: '92vh' }}
+        style={{ maxWidth: 'min(96vw, 680px)', maxHeight: '92vh' }}
         onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-stone-200 shrink-0">
@@ -259,8 +247,9 @@ export function CambioTurnoModal({
               Richiesta cambio turno
             </h3>
             <p className="text-xs text-stone-500 mt-1">
-              Descrivi al admin le modifiche concordate offline. Verranno applicate
-              al calendario solo dopo approvazione.
+              Specifica solo il nuovo turno clinico (M/P/L/REP). I turni di ricerca
+              (RM/RP) verranno ricalcolati in automatico, gli eventuali SUB/MED li
+              sistema l'admin a mano.
             </p>
           </div>
           <button onClick={onClose}
@@ -273,10 +262,6 @@ export function CambioTurnoModal({
         <div className="overflow-auto p-4 space-y-3">
           {rows.map((r, i) => {
             const da = findTurnoCorrente(turni, r.medico_id, r.data)
-            const aSnap = {
-              tc: r.tc_a, tr: r.tr_a,
-              slot_mattina: r.slot_mattina_a, slot_pomeriggio: r.slot_pomeriggio_a,
-            }
             return (
               <div key={i} className="rounded-lg border border-stone-200 p-3 bg-stone-50">
                 <div className="flex items-center justify-between mb-2">
@@ -317,9 +302,8 @@ export function CambioTurnoModal({
                   </label>
                 </div>
 
-                {/* DA → A */}
+                {/* DA → A (solo TC) */}
                 <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                  {/* DA (read-only) */}
                   <div>
                     <span className="block text-xs text-stone-600 mb-0.5">Turno attuale (DA)</span>
                     <div className="px-2 py-1.5 rounded bg-white border border-stone-200 text-xs font-mono text-stone-700">
@@ -327,75 +311,19 @@ export function CambioTurnoModal({
                     </div>
                   </div>
                   <ArrowRight size={16} style={{ color: '#476540' }} className="mt-4" />
-                  {/* A — editor TC */}
                   <div>
                     <span className="block text-xs text-stone-600 mb-0.5">Diventa (A)</span>
-                    <div className="flex items-center gap-1">
-                      <select
-                        value={r.tc_a}
-                        onChange={e => setRow(i, { tc_a: e.target.value as TurnoClinico })}
-                        className="flex-1 px-2 py-1.5 rounded border border-stone-300 text-xs font-semibold">
-                        <option value="">— vuoto</option>
-                        <option value="M">M</option>
-                        <option value="P">P</option>
-                        <option value="L">L</option>
-                        <option value="REP">REP</option>
-                      </select>
-                      <select
-                        value={r.tr_a}
-                        onChange={e => setRow(i, { tr_a: e.target.value as TurnoRicerca })}
-                        className="px-2 py-1.5 rounded border border-stone-300 text-xs">
-                        <option value="">— TR</option>
-                        <option value="RM">RM</option>
-                        <option value="RP">RP</option>
-                        <option value="RM+RP">RM+RP</option>
-                      </select>
-                    </div>
+                    <select
+                      value={r.tc_a}
+                      onChange={e => setRow(i, { tc_a: e.target.value as TurnoClinico })}
+                      className="w-full px-2 py-1.5 rounded border border-stone-300 text-xs font-semibold">
+                      <option value="">— vuoto</option>
+                      <option value="M">M (mattina)</option>
+                      <option value="P">P (pomeriggio)</option>
+                      <option value="L">L (lunga)</option>
+                      <option value="REP">REP (reperibilita`)</option>
+                    </select>
                   </div>
-                </div>
-
-                {/* Slot mattina/pomeriggio editor — visibile solo se rilevante */}
-                {(r.tc_a === 'M' || r.tc_a === 'P' || r.tc_a === 'L') && (
-                  <div className="grid grid-cols-2 gap-2 mt-2">
-                    {(r.tc_a === 'M' || r.tc_a === 'L') && (
-                      <label className="text-xs">
-                        <span className="block text-stone-600 mb-0.5">Mattina</span>
-                        <select
-                          value={r.slot_mattina_a ?? ''}
-                          onChange={e => setRow(i, {
-                            slot_mattina_a: (e.target.value || null) as SlotPlacement,
-                          })}
-                          className="w-full px-2 py-1.5 rounded border border-stone-300 text-xs">
-                          <option value="">—</option>
-                          <option value="SUB">SUB</option>
-                          <option value="MED">MED</option>
-                        </select>
-                      </label>
-                    )}
-                    {(r.tc_a === 'P' || r.tc_a === 'L') && (
-                      <label className="text-xs">
-                        <span className="block text-stone-600 mb-0.5">Pomeriggio</span>
-                        <select
-                          value={r.slot_pomeriggio_a ?? ''}
-                          onChange={e => setRow(i, {
-                            slot_pomeriggio_a: (e.target.value || null) as SlotPlacement,
-                          })}
-                          className="w-full px-2 py-1.5 rounded border border-stone-300 text-xs">
-                          <option value="">—</option>
-                          <option value="SUB">SUB</option>
-                          <option value="MED">MED</option>
-                        </select>
-                      </label>
-                    )}
-                  </div>
-                )}
-
-                {/* Preview "A" finale */}
-                <div className="mt-2 text-[10px] text-stone-500">
-                  Risultato: <span className="font-mono">{fmtCella({
-                    ...aSnap,
-                    ...normalizzaSlot(r.tc_a, r.slot_mattina_a, r.slot_pomeriggio_a),
-                  })}</span>
                 </div>
               </div>
             )

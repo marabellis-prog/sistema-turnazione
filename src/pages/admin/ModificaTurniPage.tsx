@@ -782,75 +782,45 @@ export function ModificaTurniPage() {
   // non ha senso, lo azzero). L'admin gestisce manualmente SUB/MED via
   // drag dei pallini dalla legenda.
   const updateCella = useCallback((medicoId: string, data: string, tc: TurnoClinico, _tr: TurnoRicerca) => {
+    // LIGHTWEIGHT EDIT: aggiorna SOLO la cella corrente, niente ricalcolo
+    // del giorno. RM/RP (e SUB/MED se autocalc ON) vengono ricalcolati una
+    // sola volta al click "Salva" in handleSave. Cosi` la digitazione resta
+    // fluida anche con migliaia di celle visibili — il ricalcolo per giorno
+    // (che itera medici × colonne ed e` la parte costosa) avviene una volta
+    // sola in fase di salvataggio invece che ad ogni keystroke.
     setModifiche(prev => {
       const next = new Map(prev)
-
-      const autocalc = config?.autocalc_sub_med ?? true
-      if (autocalc) {
-        // Comportamento classico: ricalcola tutto il giorno.
-        const overrides = new Map<string, TurnoClinico>()
-        overrides.set(medicoId, tc)
-        const result = ricalcoloGiorno(data, overrides, prev)
-        for (const [medId, newCell] of result) {
-          const key = `${medId}|${data}`
-          const dbT = turniByKey.get(key)
-          const dbCur: RicalcCell = {
-            tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
-            tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
-            slot_mattina:    dbT?.slot_mattina    ?? null,
-            slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
-          }
-          if (newCell.tc === dbCur.tc && newCell.tr === dbCur.tr &&
-              newCell.slot_mattina === dbCur.slot_mattina &&
-              newCell.slot_pomeriggio === dbCur.slot_pomeriggio) {
-            next.delete(key)
-          } else {
-            next.set(key, newCell)
-          }
-        }
+      const key = `${medicoId}|${data}`
+      const local = prev.get(key)
+      const dbT = turniByKey.get(key)
+      // Preservo TR e slot_* esistenti (locali o da DB) — saranno
+      // riallineati al Save dalla ricalcoloGiorno. Slot normalizzati
+      // per l'eligibilita` del nuovo TC (es. tc=M → slot_pomeriggio=null).
+      const curTr = (local?.tr ?? dbT?.turno_ricerca ?? '') as TurnoRicerca
+      const oldSm = local?.slot_mattina    ?? dbT?.slot_mattina    ?? null
+      const oldSp = local?.slot_pomeriggio ?? dbT?.slot_pomeriggio ?? null
+      const newCell: RicalcCell = {
+        tc,
+        tr: curTr,
+        slot_mattina:    (tc === 'M' || tc === 'L') ? oldSm : null,
+        slot_pomeriggio: (tc === 'P' || tc === 'L') ? oldSp : null,
+      }
+      const dbCur: RicalcCell = {
+        tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
+        tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
+        slot_mattina:    dbT?.slot_mattina    ?? null,
+        slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
+      }
+      if (newCell.tc === dbCur.tc && newCell.tr === dbCur.tr &&
+          newCell.slot_mattina === dbCur.slot_mattina &&
+          newCell.slot_pomeriggio === dbCur.slot_pomeriggio) {
+        next.delete(key)
       } else {
-        // Modalità manuale (autocalc SUB/MED OFF): RM/RP vengono comunque
-        // ricalcolati automaticamente (e` una regola strutturale dello schema:
-        // RM va a chi fa P, RP a chi fa M, ricalcolata via ricalcoloGiorno).
-        // Solo i placement SUB/MED restano "manuali": preserviamo quelli
-        // gia` presenti nello stato locale o nel DB, normalizzati per
-        // l'eligibilita` del nuovo TC. Cosi` l'admin che disattiva l'autocalc
-        // mantiene il controllo SUB/MED ma non perde l'auto-RM/RP.
-        const overrides = new Map<string, TurnoClinico>()
-        overrides.set(medicoId, tc)
-        const result = ricalcoloGiorno(data, overrides, prev)
-        for (const [medId, newCell] of result) {
-          const key = `${medId}|${data}`
-          const local = prev.get(key)
-          const dbT = turniByKey.get(key)
-          // Slot SUB/MED PRESERVATI: lettura priority locale → DB
-          const oldSm = local?.slot_mattina    ?? dbT?.slot_mattina    ?? null
-          const oldSp = local?.slot_pomeriggio ?? dbT?.slot_pomeriggio ?? null
-          const newTc = newCell.tc
-          const finalCell: RicalcCell = {
-            tc: newTc,
-            tr: newCell.tr,   // RM/RP ricalcolati dallo schema (sempre)
-            slot_mattina:    (newTc === 'M' || newTc === 'L') ? oldSm : null,
-            slot_pomeriggio: (newTc === 'P' || newTc === 'L') ? oldSp : null,
-          }
-          const dbCur: RicalcCell = {
-            tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
-            tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
-            slot_mattina:    dbT?.slot_mattina    ?? null,
-            slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
-          }
-          if (finalCell.tc === dbCur.tc && finalCell.tr === dbCur.tr &&
-              finalCell.slot_mattina === dbCur.slot_mattina &&
-              finalCell.slot_pomeriggio === dbCur.slot_pomeriggio) {
-            next.delete(key)
-          } else {
-            next.set(key, finalCell)
-          }
-        }
+        next.set(key, newCell)
       }
       return next
     })
-  }, [config?.autocalc_sub_med, ricalcoloGiorno, turniByKey])
+  }, [turniByKey])
 
   // ── Drop dalla legenda ────────────────────────────────────────────
   // Le icone della legenda sono draggabili. Drop su una cella applica:
@@ -994,13 +964,24 @@ export function ModificaTurniPage() {
       }
     }
 
+    // Stessa logica di updateCella: solo TC, niente ricalcolo del giorno.
+    // RM/RP (e SUB/MED se autocalc ON) ricalcolati una sola volta al Save.
     setModifiche(prev => {
       const next = new Map(prev)
       for (const [data, overrides] of overridePerGiorno) {
-        const result = ricalcoloGiorno(data, overrides, next)
-        for (const [medId, newCell] of result) {
-          const key = `${medId}|${data}`
+        for (const [medicoId, tc] of overrides) {
+          const key = `${medicoId}|${data}`
+          const local = next.get(key)
           const dbT = turniByKey.get(key)
+          const curTr = (local?.tr ?? dbT?.turno_ricerca ?? '') as TurnoRicerca
+          const oldSm = local?.slot_mattina    ?? dbT?.slot_mattina    ?? null
+          const oldSp = local?.slot_pomeriggio ?? dbT?.slot_pomeriggio ?? null
+          const newCell: RicalcCell = {
+            tc,
+            tr: curTr,
+            slot_mattina:    (tc === 'M' || tc === 'L') ? oldSm : null,
+            slot_pomeriggio: (tc === 'P' || tc === 'L') ? oldSp : null,
+          }
           const dbCur: RicalcCell = {
             tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
             tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
@@ -1021,7 +1002,7 @@ export function ModificaTurniPage() {
 
     setMsg(`✓ Incollati ${appliedCount} turn${appliedCount === 1 ? 'o' : 'i'} dal clipboard`)
     setTimeout(() => setMsg(null), 3000)
-  }, [medici, colonne, turniByKey, ricalcoloGiorno])
+  }, [medici, colonne, turniByKey])
 
   // ── Totale turni clinici coperti in un giorno ─────────────────────
   // Conteggio per la riga "TURNI TOTALI" sotto la tabella clinica:
@@ -1182,31 +1163,93 @@ export function ModificaTurniPage() {
     if (modifiche.size === 0) return
     setSaving(true); setErr(null); setMsg(null)
     try {
-      const updates = Array.from(modifiche.entries()).map(([key, { tc, tr, slot_mattina, slot_pomeriggio }]) => {
+      const autocalc = config?.autocalc_sub_med ?? true
+
+      // 1) Raccogli le date uniche modificate (chiavi: "${medicoId}|${data}")
+      const dateToccate = new Set<string>()
+      for (const key of modifiche.keys()) dateToccate.add(key.split('|')[1])
+
+      // 2) Costruisci la mappa "finale" delle celle da salvare. Inizio
+      //    da modifiche, poi sovrascrivo con il risultato di ricalcoloGiorno
+      //    per ogni giorno toccato — cosi` RM/RP risultano sempre allineati
+      //    alla regola schema (RM↔P, RP↔M). Se autocalc OFF, mantengo i
+      //    placement SUB/MED esistenti (locali o da DB) invece di prendere
+      //    quelli ricalcolati.
+      const finalCells = new Map<string, RicalcCell>(modifiche)
+
+      for (const data of dateToccate) {
+        // TC override = i TC presenti in modifiche per quella data
+        const tcOverrides = new Map<string, TurnoClinico>()
+        for (const [key, cell] of modifiche.entries()) {
+          const [mId, dt] = key.split('|')
+          if (dt === data) tcOverrides.set(mId, cell.tc)
+        }
+        const result = ricalcoloGiorno(data, tcOverrides, modifiche)
+
+        for (const [medId, newCell] of result) {
+          const key = `${medId}|${data}`
+          const local = modifiche.get(key)
+          const dbT = turniByKey.get(key)
+          if (autocalc) {
+            finalCells.set(key, newCell)
+          } else {
+            // autocalc OFF: TC + TR ricalcolati (RM/RP automatici), ma
+            // slot SUB/MED preservati da locale/DB con filtro eligibilita`.
+            const oldSm = local?.slot_mattina    ?? dbT?.slot_mattina    ?? null
+            const oldSp = local?.slot_pomeriggio ?? dbT?.slot_pomeriggio ?? null
+            const newTc = newCell.tc
+            finalCells.set(key, {
+              tc: newTc,
+              tr: newCell.tr,
+              slot_mattina:    (newTc === 'M' || newTc === 'L') ? oldSm : null,
+              slot_pomeriggio: (newTc === 'P' || newTc === 'L') ? oldSp : null,
+            })
+          }
+        }
+      }
+
+      // 3) Filtra le celle che combaciano col DB (no-op, no upsert)
+      const updates: Array<{
+        medico_id: string; data: string;
+        turno_clinico: TurnoClinico; turno_ricerca: TurnoRicerca;
+        modificato_manualmente: boolean;
+        slot_mattina: SlotPlacement; slot_pomeriggio: SlotPlacement;
+        is_sub: boolean; is_med: boolean;
+        is_ferie: boolean; note: string | null;
+      }> = []
+      for (const [key, cell] of finalCells.entries()) {
         const [medico_id, data] = key.split('|')
-        const orig = getOriginale(medico_id, data)
-        const modificato_manualmente = (tc !== orig.tc) || (tr !== orig.tr)
         const dbT = turniByKey.get(key)
-        // is_sub / is_med calcolati come backward-compat (OR sui placement)
-        const is_sub = slot_mattina === 'SUB' || slot_pomeriggio === 'SUB'
-        const is_med = slot_mattina === 'MED' || slot_pomeriggio === 'MED'
-        return {
-          medico_id,
-          data,
-          turno_clinico:           tc,
-          turno_ricerca:           tr,
+        const dbTc = (dbT?.turno_clinico ?? '') as TurnoClinico
+        const dbTr = (dbT?.turno_ricerca  ?? '') as TurnoRicerca
+        const dbSm = dbT?.slot_mattina    ?? null
+        const dbSp = dbT?.slot_pomeriggio ?? null
+        if (cell.tc === dbTc && cell.tr === dbTr &&
+            cell.slot_mattina === dbSm && cell.slot_pomeriggio === dbSp) {
+          continue   // identico al DB: niente upsert
+        }
+        const orig = getOriginale(medico_id, data)
+        const modificato_manualmente = (cell.tc !== orig.tc) || (cell.tr !== orig.tr)
+        updates.push({
+          medico_id, data,
+          turno_clinico:          cell.tc,
+          turno_ricerca:          cell.tr,
           modificato_manualmente,
-          slot_mattina,
-          slot_pomeriggio,
-          is_sub,
-          is_med,
+          slot_mattina:           cell.slot_mattina,
+          slot_pomeriggio:        cell.slot_pomeriggio,
+          is_sub: cell.slot_mattina === 'SUB' || cell.slot_pomeriggio === 'SUB',
+          is_med: cell.slot_mattina === 'MED' || cell.slot_pomeriggio === 'MED',
           is_ferie: dbT?.is_ferie ?? false,
           note:     dbT?.note     ?? null,
-        }
-      })
-      const { error } = await supabase.from('turni')
-        .upsert(updates, { onConflict: 'medico_id,data' })
-      if (error) throw error
+        })
+      }
+
+      // 4) Upsert finale
+      if (updates.length > 0) {
+        const { error } = await supabase.from('turni')
+          .upsert(updates, { onConflict: 'medico_id,data' })
+        if (error) throw error
+      }
       setMsg(`✓ ${updates.length} turn${updates.length === 1 ? 'o aggiornato' : 'i aggiornati'}`)
       setModifiche(new Map())
       await refetchTurni()
