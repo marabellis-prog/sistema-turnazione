@@ -809,37 +809,43 @@ export function ModificaTurniPage() {
           }
         }
       } else {
-        // Modalità manuale: tocca SOLO la cella corrente, niente ridistribuzione.
-        const key = `${medicoId}|${data}`
-        const local = prev.get(key)
-        const dbT = turniByKey.get(key)
-        const cur: RicalcCell = local ?? {
-          tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
-          tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
-          slot_mattina:    dbT?.slot_mattina    ?? null,
-          slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
-        }
-        // Normalizza i placement: rimuovi quelli non eligibili al nuovo TC.
-        // I valori esistenti per le metà ancora eligibili vengono preservati,
-        // così se l'admin aveva trascinato un SUB/MED prima, resta dov'era.
-        const newCell: RicalcCell = {
-          tc,
-          tr: cur.tr,  // TR invariato — gestito dalla legenda drag
-          slot_mattina:    (tc === 'M' || tc === 'L') ? cur.slot_mattina    : null,
-          slot_pomeriggio: (tc === 'P' || tc === 'L') ? cur.slot_pomeriggio : null,
-        }
-        const dbCur: RicalcCell = {
-          tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
-          tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
-          slot_mattina:    dbT?.slot_mattina    ?? null,
-          slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
-        }
-        if (newCell.tc === dbCur.tc && newCell.tr === dbCur.tr &&
-            newCell.slot_mattina === dbCur.slot_mattina &&
-            newCell.slot_pomeriggio === dbCur.slot_pomeriggio) {
-          next.delete(key)
-        } else {
-          next.set(key, newCell)
+        // Modalità manuale (autocalc SUB/MED OFF): RM/RP vengono comunque
+        // ricalcolati automaticamente (e` una regola strutturale dello schema:
+        // RM va a chi fa P, RP a chi fa M, ricalcolata via ricalcoloGiorno).
+        // Solo i placement SUB/MED restano "manuali": preserviamo quelli
+        // gia` presenti nello stato locale o nel DB, normalizzati per
+        // l'eligibilita` del nuovo TC. Cosi` l'admin che disattiva l'autocalc
+        // mantiene il controllo SUB/MED ma non perde l'auto-RM/RP.
+        const overrides = new Map<string, TurnoClinico>()
+        overrides.set(medicoId, tc)
+        const result = ricalcoloGiorno(data, overrides, prev)
+        for (const [medId, newCell] of result) {
+          const key = `${medId}|${data}`
+          const local = prev.get(key)
+          const dbT = turniByKey.get(key)
+          // Slot SUB/MED PRESERVATI: lettura priority locale → DB
+          const oldSm = local?.slot_mattina    ?? dbT?.slot_mattina    ?? null
+          const oldSp = local?.slot_pomeriggio ?? dbT?.slot_pomeriggio ?? null
+          const newTc = newCell.tc
+          const finalCell: RicalcCell = {
+            tc: newTc,
+            tr: newCell.tr,   // RM/RP ricalcolati dallo schema (sempre)
+            slot_mattina:    (newTc === 'M' || newTc === 'L') ? oldSm : null,
+            slot_pomeriggio: (newTc === 'P' || newTc === 'L') ? oldSp : null,
+          }
+          const dbCur: RicalcCell = {
+            tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
+            tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
+            slot_mattina:    dbT?.slot_mattina    ?? null,
+            slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
+          }
+          if (finalCell.tc === dbCur.tc && finalCell.tr === dbCur.tr &&
+              finalCell.slot_mattina === dbCur.slot_mattina &&
+              finalCell.slot_pomeriggio === dbCur.slot_pomeriggio) {
+            next.delete(key)
+          } else {
+            next.set(key, finalCell)
+          }
         }
       }
       return next
@@ -1571,8 +1577,8 @@ export function ModificaTurniPage() {
                 title={savingAutocalc
                   ? 'Salvataggio impostazione…'
                   : autocalcSubMed
-                    ? 'Autocalc SUB/MED attivo (impostazione condivisa fra admin): cambiare un TC redistribuisce automaticamente i placement del giorno. Disattivalo per gestire SUB/MED a mano.'
-                    : 'Autocalc SUB/MED disattivato (impostazione condivisa fra admin): il cambio TC tocca solo la cella interessata. Trascina i pallini Sub/Med dalla legenda per assegnarli manualmente.'}>
+                    ? 'Autocalc SUB/MED attivo (impostazione condivisa fra admin): cambiare un TC redistribuisce automaticamente i placement SUB/MED del giorno. RM/RP vengono SEMPRE ricalcolati automaticamente (regola schema: RM↔P, RP↔M). Disattivalo per gestire SUB/MED a mano.'
+                    : 'Autocalc SUB/MED disattivato (impostazione condivisa fra admin): il cambio TC preserva i placement SUB/MED esistenti. RM/RP continuano ad essere ricalcolati automaticamente (regola schema: RM↔P, RP↔M). Trascina i pallini Sub/Med dalla legenda per assegnarli manualmente.'}>
                 <input
                   type="checkbox"
                   checked={autocalcSubMed}
