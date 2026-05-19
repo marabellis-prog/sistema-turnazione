@@ -79,6 +79,44 @@ export interface Ferie {
   created_at: string
 }
 
+// ─── Cambi turno ────────────────────────────────────────────────────
+
+/** Singola modifica all'interno di una richiesta di cambio turno.
+ *  Rappresenta UNA cella del calendario (medico/data) che cambia dal
+ *  valore "da" al valore "a". Una richiesta puo` contenerne piu` di una
+ *  (es. scambio reciproco = 2 elementi). */
+export interface ModificaCambio {
+  medico_id: string
+  data:      string          // ISO date "YYYY-MM-DD"
+  da: {
+    tc: TurnoClinico
+    tr: TurnoRicerca
+    slot_mattina:    SlotPlacement
+    slot_pomeriggio: SlotPlacement
+  }
+  a: {
+    tc: TurnoClinico
+    tr: TurnoRicerca
+    slot_mattina:    SlotPlacement
+    slot_pomeriggio: SlotPlacement
+  }
+}
+
+export interface CambioTurno {
+  id:                    string
+  created_at:            string
+  medico_richiedente_id: string
+  /** Array JSONB di {medico_id, data, da, a}. Una richiesta puo` toccare
+   *  piu` celle in una sola operazione (utile per scambi reciproci o
+   *  multi-medico). */
+  modifiche:             ModificaCambio[]
+  motivo:                string | null
+  stato:                 'pending' | 'approved' | 'rejected'
+  resolved_at:           string | null
+  resolved_by:           string | null
+  rejection_reason:      string | null
+}
+
 export interface UtenteAutorizzato {
   id: string
   email: string

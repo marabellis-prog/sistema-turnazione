@@ -12,6 +12,7 @@ import { AdminLayout }       from './pages/admin/AdminLayout'
 import { GeneraCalendarioPage } from './pages/admin/GeneraCalendarioPage'
 import { GestioneMediciPage }   from './pages/admin/GestioneMediciPage'
 import { GestioneFeriePage }    from './pages/admin/GestioneFeriePage'
+import { GestioneCambiPage }   from './pages/admin/GestioneCambiPage'
 import { ModificaTurniPage }   from './pages/admin/ModificaTurniPage'
 import { GestioneUtentiPage }   from './pages/admin/GestioneUtentiPage'
 import { ConfigPage }           from './pages/admin/ConfigPage'
@@ -134,6 +135,7 @@ function AppRoutes() {
           <Route path="genera"  element={<GeneraCalendarioPage />} />
           <Route path="medici"  element={<GestioneMediciPage />} />
           <Route path="ferie"   element={<GestioneFeriePage />} />
+          <Route path="cambi"   element={<GestioneCambiPage />} />
           <Route path="utenti"  element={<GestioneUtentiPage />} />
           <Route path="config"  element={<ConfigPage />} />
           <Route path="schema"  element={<GestioneSchemaPage />} />

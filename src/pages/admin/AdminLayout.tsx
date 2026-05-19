@@ -1,8 +1,9 @@
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
-import { Users, Calendar, UserCheck, Zap, Table2, AlertCircle } from 'lucide-react'
+import { Users, Calendar, UserCheck, Zap, Table2, AlertCircle, ArrowRightLeft } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
+import { useCambiTurnoRealtime } from '../../hooks/useCambiTurnoRealtime'
 import { supabase } from '../../lib/supabase'
 
 const links = [
@@ -10,6 +11,7 @@ const links = [
   { to: '/admin/genera',  label: 'Genera Calendario', Icon: Zap },
   { to: '/admin/turni',   label: 'Modifica Turni',    Icon: Calendar },
   { to: '/admin/ferie',   label: 'Gestione Ferie',    Icon: Calendar },
+  { to: '/admin/cambi',   label: 'Cambi Turno',       Icon: ArrowRightLeft },
   { to: '/admin/medici',  label: 'Medici/Turnisti',   Icon: Users },
   { to: '/admin/utenti',  label: 'Utenti',            Icon: UserCheck },
 ]
@@ -19,17 +21,14 @@ export function AdminLayout() {
   const location = useLocation()
   const { navGuard } = usePendingActions()
 
-  // Realtime sulle ferie: garantisce che il count di "Ferie da approvare"
-  // si aggiorni istantaneamente qualunque sia la sotto-pagina admin
-  // attiva (anche /admin/medici o /admin/utenti che non si occupano
-  // di ferie autonomamente). Idempotente: piu` hook nello stesso tab
-  // ascoltano canali distinti grazie al random suffix.
+  // Realtime sulle ferie + cambi turno: garantisce che i count dei badge
+  // si aggiornino istantaneamente qualunque sia la sotto-pagina admin
+  // attiva. Idempotente: piu` hook nello stesso tab ascoltano canali
+  // distinti grazie al random suffix.
   useFerieRealtime()
+  useCambiTurnoRealtime()
 
-  // Count ferie ancora da approvare → driver del badge arancione
-  // nella sidebar. queryKey `ferie-pending-count` e` invalidata dal
-  // useFerieRealtime ad ogni cambiamento sulla tabella ferie, e
-  // dal polling 30s come safety net se realtime non e` attivo.
+  // Count ferie ancora da approvare → driver del badge arancione.
   const { data: ferieDaApprovare = 0 } = useQuery({
     queryKey: ['ferie-pending-count'],
     queryFn: async () => {
@@ -37,6 +36,23 @@ export function AdminLayout() {
         .from('ferie')
         .select('*', { count: 'exact', head: true })
         .eq('approvate', false)
+      if (error) throw error
+      return count ?? 0
+    },
+    staleTime:                   0,
+    refetchOnMount:              'always',
+    refetchInterval:             30_000,
+    refetchIntervalInBackground: false,
+  })
+
+  // Count richieste cambio turno pending → secondo badge arancione.
+  const { data: cambiDaApprovare = 0 } = useQuery({
+    queryKey: ['cambi-turno-pending-count'],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from('cambi_turno')
+        .select('*', { count: 'exact', head: true })
+        .eq('stato', 'pending')
       if (error) throw error
       return count ?? 0
     },
@@ -54,6 +70,30 @@ export function AdminLayout() {
       if (!canProceed) return   // il guard ha mostrato un modal
     }
     navigate(to)
+  }
+
+  // Helper per renderizzare un badge "X da approvare" uniforme.
+  // Lo riuso per ferie e cambi turno con label/count diversi.
+  function PendingBadge({ count, label, to }: { count: number; label: string; to: string }) {
+    if (count === 0) return null
+    return (
+      <button
+        onClick={() => handleNav(to)}
+        className="mx-3 mt-2 flex items-center gap-2 px-3 py-2 rounded-md text-xs font-semibold
+                   transition-all animate-pulse hover:opacity-90 text-left"
+        style={{ background: '#d97706', color: '#fff' }}
+        title={`Vai a ${label} — ${count} richiest${count === 1 ? 'a' : 'e'} in attesa`}
+      >
+        <AlertCircle size={14} className="shrink-0" />
+        <span className="leading-tight">
+          {label}
+          <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+            style={{ background: 'rgba(255,255,255,0.25)' }}>
+            {count}
+          </span>
+        </span>
+      </button>
+    )
   }
 
   return (
@@ -84,29 +124,14 @@ export function AdminLayout() {
           )
         })}
 
-        {/* Badge "Ferie da approvare" — visibile SOLO se ci sono ferie
-            in attesa. Cliccabile, porta direttamente a /admin/ferie.
-            Arancione = chiama attenzione senza essere allarmante come il
-            rosso (riservato a "Rigenera calendario" nella navbar). Si
-            aggiorna in realtime via useFerieRealtime + polling 30s. */}
-        {ferieDaApprovare > 0 && (
-          <button
-            onClick={() => handleNav('/admin/ferie')}
-            className="mx-3 mt-3 flex items-center gap-2 px-3 py-2 rounded-md text-xs font-semibold
-                       transition-all animate-pulse hover:opacity-90 text-left"
-            style={{ background: '#d97706', color: '#fff' }}
-            title={`Vai a Gestione Ferie — ${ferieDaApprovare} richiest${ferieDaApprovare === 1 ? 'a' : 'e'} in attesa`}
-          >
-            <AlertCircle size={14} className="shrink-0" />
-            <span className="leading-tight">
-              Ferie da approvare
-              <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold"
-                style={{ background: 'rgba(255,255,255,0.25)' }}>
-                {ferieDaApprovare}
-              </span>
-            </span>
-          </button>
-        )}
+        {/* Badge pending — sotto la lista link, una riga ciascuno (se presenti).
+            Arancione = chiama attenzione senza essere allarmante come il rosso
+            (riservato a "Rigenera calendario" nella navbar). Aggiornamento
+            realtime via useFerieRealtime / useCambiTurnoRealtime + polling. */}
+        <div className="mt-2">
+          <PendingBadge count={ferieDaApprovare} label="Ferie da approvare" to="/admin/ferie" />
+          <PendingBadge count={cambiDaApprovare} label="Cambi turno da approvare" to="/admin/cambi" />
+        </div>
       </aside>
 
       {/* Contenuto */}
