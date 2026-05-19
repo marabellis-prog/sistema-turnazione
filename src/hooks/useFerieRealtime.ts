@@ -34,6 +34,10 @@ export function useFerieRealtime() {
         () => {
           qc.invalidateQueries({ queryKey: ['ferie'] })
           qc.invalidateQueries({ queryKey: ['ferie-ranges'] })
+          // Count ferie pending per il badge "Ferie da approvare"
+          // nell'AdminLayout sidebar — deve aggiornarsi in realtime
+          // quando un user richiede o un admin approva.
+          qc.invalidateQueries({ queryKey: ['ferie-pending-count'] })
         }
       )
       .subscribe(status => {

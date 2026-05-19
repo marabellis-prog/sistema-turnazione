@@ -434,7 +434,7 @@ function EditableCell({
           }}
           maxLength={6}
           spellCheck={false}
-          placeholder={tipo === 'clinica' ? 'M/P/L/REP' : 'RM/RP'}
+          placeholder=""
           style={{
             width: '100%', height: '100%',
             border: 'none', outline: 'none',
