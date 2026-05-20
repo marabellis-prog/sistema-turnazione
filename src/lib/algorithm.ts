@@ -9,6 +9,7 @@ import type {
   TurnoRicerca,
   SlotPlacement,
   ColonnaCal,
+  Turno,
 } from '../types'
 
 // ─── Utility data ──────────────────────────────────────────────────
@@ -439,6 +440,116 @@ export function ricalcolaGiorno(ctx: RicalcContext): Map<string, RicalcCell> {
     })
   }
   return out
+}
+
+// ─── Wrapper di alto livello per ricalcolaGiorno ───────────────────
+
+/**
+ * Wrapper "tutto compreso" attorno a ricalcolaGiorno. Prende i dati grezzi
+ * (config, schemi, medici, turniByKey, colonne) + override TC e calcola
+ * lo stato finale (TC, TR, slot SUB/MED) di TUTTI i medici per il giorno
+ * `data`, applicando le regole di schema (RM↔P, RP↔M) e tie-break.
+ *
+ * Usato in:
+ * - ModificaTurniPage (al click "Salva" o "Ricalcola RM/RP")
+ * - GestioneCambiPage (dopo l'approvazione di un cambio turno, per
+ *   riallineare RM/RP)
+ *
+ * `statoAttuale` e` opzionale: se passato, viene letto come "modifiche
+ * locali" sovrapposte al DB. Se non passato, si legge solo dal DB.
+ */
+export function eseguiRicalcoloGiorno(params: {
+  config:       Configurazione
+  schemi:       SchemaModello[]
+  medici:       Medico[]                 // verra` filtrato per attivo+ordinato
+  colonne:      ColonnaCal[]
+  turniByKey:   Map<string, Turno>
+  data:         string                   // YYYY-MM-DD
+  tcOverrides:  Map<string, TurnoClinico>
+  statoAttuale?: Map<string, RicalcCell>
+}): Map<string, RicalcCell> {
+  const { config, schemi, medici, colonne, turniByKey, data, tcOverrides } = params
+  const statoAttuale = params.statoAttuale ?? new Map<string, RicalcCell>()
+
+  if (schemi.length === 0 || medici.length === 0) return statoAttuale
+
+  const mediciAttivi = [...medici].filter(m => m.attivo)
+                                  .sort((a, b) => a.numero_ordine - b.numero_ordine)
+  const numMedici = mediciAttivi.length
+
+  // Schema del giorno_settimana di `data`
+  const dataObj = new Date(data + 'T00:00:00')
+  const dWeek = getDayOfWeek(dataObj)
+  const schemiGiorno = schemi.filter(s =>
+    s.schema_num === config.schema_attivo && s.giorno_settimana === dWeek
+  )
+
+  const capacita = {
+    rm:    schemiGiorno.filter(s => s.numero_medico_rm  !== null).length,
+    rp:    schemiGiorno.filter(s => s.numero_medico_rp  !== null).length,
+    sub_m: schemiGiorno.filter(s => s.is_sub && s.numero_medico_mattina    !== null).length,
+    sub_p: schemiGiorno.filter(s => s.is_sub && s.numero_medico_pomeriggio !== null).length,
+    med_m: schemiGiorno.filter(s => s.is_med && s.numero_medico_mattina    !== null).length,
+    med_p: schemiGiorno.filter(s => s.is_med && s.numero_medico_pomeriggio !== null).length,
+  }
+
+  // tcGiorno: TC corrente per ogni medico. Override > stato locale > DB > vuoto
+  const tcGiorno = new Map<string, TurnoClinico>()
+  for (const m of mediciAttivi) {
+    if (tcOverrides.has(m.id)) { tcGiorno.set(m.id, tcOverrides.get(m.id)!); continue }
+    const key = `${m.id}|${data}`
+    const cur = statoAttuale.get(key)
+    if (cur) tcGiorno.set(m.id, cur.tc)
+    else {
+      const dbT = turniByKey.get(key)
+      tcGiorno.set(m.id, (dbT?.turno_clinico ?? '') as TurnoClinico)
+    }
+  }
+
+  // flagsOriginali: placement teorico del giorno (dallo schema)
+  const flagsOriginali = new Map<string, { slot_mattina: SlotPlacement; slot_pomeriggio: SlotPlacement }>()
+  const dataInizioPeriodo = new Date(config.anno_inizio, config.mese_inizio - 1, 1)
+  dataInizioPeriodo.setHours(0, 0, 0, 0)
+  const dataRifRotazione = primoLunediDelPeriodo(dataInizioPeriodo)
+  for (let i = 0; i < numMedici; i++) {
+    const teorico = calcolaTurnoTeorico(i, dataObj, dataRifRotazione, numMedici, schemiGiorno)
+    flagsOriginali.set(mediciAttivi[i].id, {
+      slot_mattina:    teorico.slot_mattina,
+      slot_pomeriggio: teorico.slot_pomeriggio,
+    })
+  }
+
+  // contaPeriodo: count rm/rp + sub/med per ogni medico, ESCLUSO il
+  // giorno target. SUB/MED contano la somma delle meta` giornate
+  // (un L con SUB-SUB conta 2 SUB).
+  const contaPeriodo = new Map<string, { rm: number; rp: number; sub: number; med: number }>()
+  for (const m of mediciAttivi) contaPeriodo.set(m.id, { rm: 0, rp: 0, sub: 0, med: 0 })
+  for (const col of colonne) {
+    if (col.data === data) continue
+    for (const m of mediciAttivi) {
+      const key = `${m.id}|${col.data}`
+      const cur = statoAttuale.get(key)
+      const dbT = turniByKey.get(key)
+      const tr = (cur?.tr ?? dbT?.turno_ricerca ?? '') as TurnoRicerca
+      const sm = cur?.slot_mattina    ?? dbT?.slot_mattina    ?? null
+      const sp = cur?.slot_pomeriggio ?? dbT?.slot_pomeriggio ?? null
+      const c = contaPeriodo.get(m.id)!
+      if (tr === 'RM') c.rm++
+      else if (tr === 'RP') c.rp++
+      if (sm === 'SUB') c.sub++
+      if (sp === 'SUB') c.sub++
+      if (sm === 'MED') c.med++
+      if (sp === 'MED') c.med++
+    }
+  }
+
+  return ricalcolaGiorno({
+    capacita,
+    medici: mediciAttivi,
+    tcGiorno,
+    flagsOriginali,
+    contaPeriodo,
+  })
 }
 
 // ─── Generazione colonne calendario (per la UI) ────────────────────

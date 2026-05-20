@@ -28,9 +28,11 @@ import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
 import { useCambiTurnoRealtime } from '../../hooks/useCambiTurnoRealtime'
 import { ConfirmModal } from '../../components/ConfirmModal'
+import { eseguiRicalcoloGiorno, generaColonne } from '../../lib/algorithm'
+import { useFestivitaCustom } from '../../hooks/useFestivitaCustom'
 import type {
   Medico, CambioTurno, ModificaCambio, TurnoClinico, TurnoRicerca,
-  SlotPlacement,
+  SlotPlacement, Configurazione, SchemaModello, Turno,
 } from '../../types'
 
 // ════════════════════════════════════════════════════════════════════
@@ -122,6 +124,34 @@ export function GestioneCambiPage() {
     return m
   }, [medici])
 
+  // ── Dati di contesto per il ricalcolo RM/RP post-approvazione ─────
+  // Servono solo al click "Approva" ma li precarico cosi` l'azione e`
+  // istantanea senza fetch in volo.
+  const { data: config } = useQuery<Configurazione | null>({
+    queryKey: ['configurazione'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('configurazione').select('*')
+        .order('updated_at', { ascending: false }).limit(1).maybeSingle()
+      if (error) throw error
+      return data
+    },
+  })
+  const { data: schemi = [] } = useQuery<SchemaModello[]>({
+    queryKey: ['schemi_modello'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('schemi_modello').select('*')
+        .order('giorno_settimana').order('slot')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+  const { set: festivitaCustomSet } = useFestivitaCustom()
+  const colonne = useMemo(
+    () => config ? generaColonne(config, festivitaCustomSet) : [],
+    [config, festivitaCustomSet]
+  )
+
   const pending  = cambi.filter(c => c.stato === 'pending')
   const archivio = cambi.filter(c => c.stato !== 'pending')
 
@@ -188,6 +218,72 @@ export function GestioneCambiPage() {
         .upsert(turniRows, { onConflict: 'medico_id,data' })
       if (upErr) throw upErr
 
+      // 1.5) Ricalcola automaticamente RM/RP per i giorni toccati
+      // Il modal di richiesta cambio salva m.a.tr preservato dalla "DA";
+      // dopo aver cambiato il TC quel TR puo` essere fuori regola
+      // (es. "P + RP" non e` valido: RP va a chi fa M, non chi fa P).
+      // Qui eseguiamo `eseguiRicalcoloGiorno` per ogni giorno toccato
+      // dal cambio, leggiamo lo stato turni AGGIORNATO (dopo l'upsert
+      // sopra), e applichiamo le correzioni RM/RP via un secondo upsert
+      // — preservando TC e SUB/MED che sono gli output dell'admin.
+      let cellsRicalcolate = 0
+      if (config && schemi.length > 0 && medici.length > 0) {
+        // a) Fetch stato turni aggiornato per i giorni toccati
+        const dateToccate = Array.from(new Set(c.modifiche.map(m => m.data)))
+        const { data: turniAggiornati, error: fetchErr } = await supabase
+          .from('turni').select('*')
+          .in('data', dateToccate)
+        if (fetchErr) throw fetchErr
+        const turniByKey = new Map<string, Turno>()
+        for (const t of (turniAggiornati ?? []) as Turno[]) {
+          turniByKey.set(`${t.medico_id}|${t.data}`, t)
+        }
+
+        // b) Per ogni giorno, ricalcola e accumula le celle da aggiornare
+        const ricalcRows: Array<{
+          medico_id: string; data: string;
+          turno_clinico: TurnoClinico; turno_ricerca: TurnoRicerca;
+          modificato_manualmente: boolean;
+          slot_mattina: SlotPlacement; slot_pomeriggio: SlotPlacement;
+          is_sub: boolean; is_med: boolean; is_ferie: boolean;
+        }> = []
+        for (const data of dateToccate) {
+          const result = eseguiRicalcoloGiorno({
+            config, schemi, medici, colonne, turniByKey,
+            data,
+            tcOverrides: new Map(),  // nessun override: usiamo lo stato gia` aggiornato
+          })
+          for (const [medId, newCell] of result) {
+            const key = `${medId}|${data}`
+            const dbT = turniByKey.get(key)
+            const dbTc = (dbT?.turno_clinico ?? '') as TurnoClinico
+            const dbTr = (dbT?.turno_ricerca  ?? '') as TurnoRicerca
+            const dbSm = dbT?.slot_mattina    ?? null
+            const dbSp = dbT?.slot_pomeriggio ?? null
+            // Preservo TC e SUB/MED dal DB (gia` aggiornati con il cambio),
+            // aggiorno solo TR se cambiato.
+            if (newCell.tr === dbTr) continue
+            ricalcRows.push({
+              medico_id: medId, data,
+              turno_clinico:          dbTc,
+              turno_ricerca:          newCell.tr,
+              modificato_manualmente: dbT?.modificato_manualmente ?? true,
+              slot_mattina:           dbSm,
+              slot_pomeriggio:        dbSp,
+              is_sub: dbSm === 'SUB' || dbSp === 'SUB',
+              is_med: dbSm === 'MED' || dbSp === 'MED',
+              is_ferie: dbT?.is_ferie ?? false,
+            })
+          }
+        }
+        if (ricalcRows.length > 0) {
+          const { error: rcErr } = await supabase.from('turni')
+            .upsert(ricalcRows, { onConflict: 'medico_id,data' })
+          if (rcErr) throw rcErr
+          cellsRicalcolate = ricalcRows.length
+        }
+      }
+
       // 2) Marca la richiesta come approvata
       const { data: authData } = await supabase.auth.getUser()
       const { error: rsErr } = await supabase.from('cambi_turno')
@@ -204,7 +300,7 @@ export function GestioneCambiPage() {
         'Cambio turno approvato',
         `Una richiesta di cambio turno che ti coinvolge e stata approvata dall'admin. Il calendario e stato aggiornato.`)
 
-      setMsg(`✓ Cambio turno approvato — ${c.modifiche.length} celle aggiornate, ${c.modifiche.length + 1 - c.modifiche.filter(m => m.medico_id === c.medico_richiedente_id).length + 1} messaggi inviati.`)
+      setMsg(`✓ Cambio turno approvato — ${c.modifiche.length} celle aggiornate${cellsRicalcolate > 0 ? `, ${cellsRicalcolate} RM/RP ricalcolati` : ''}.`)
       qc.invalidateQueries({ queryKey: ['cambi-turno'] })
       qc.invalidateQueries({ queryKey: ['cambi-turno-pending-count'] })
       qc.invalidateQueries({ queryKey: ['turni-modifica'] })
