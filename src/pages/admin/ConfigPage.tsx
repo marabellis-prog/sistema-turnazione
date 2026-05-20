@@ -356,12 +356,12 @@ export function ConfigPage() {
           {/* Nota su metriche non recuperabili via SQL */}
           <div className="mt-2 text-[10px] italic" style={{ color: boxColors.fg, opacity: 0.85 }}>
             Realtime Connections, Realtime Messages, Egress, Edge Functions e altre
-            metriche dettagliate sono visibili solo da{' '}
+            metriche dettagliate sono visibili da{' '}
             <a href="https://supabase.com/dashboard/project/_/settings/billing-and-usage"
               target="_blank" rel="noreferrer"
               className="underline font-semibold">
               Supabase Dashboard → Usage
-            </a> (richiederebbero una Edge Function con PAT per essere lette dall'app).
+            </a>.
           </div>
         </div>
       )}
