@@ -30,11 +30,21 @@ import { getItalianHolidaysWithNames } from '../../lib/holidays'
 import { MESI_IT } from '../../lib/algorithm'
 import type { Configurazione, DbStats } from '../../types'
 
-// Soglia free tier Supabase: 500 MB database storage
-const FREE_DB_LIMIT_BYTES = 500 * 1024 * 1024
+// Soglie free tier Supabase (al momento di scrittura).
+const FREE_DB_LIMIT_BYTES      = 500 * 1024 * 1024     // 500 MB
+const FREE_STORAGE_LIMIT_BYTES = 1024 * 1024 * 1024    // 1 GB
+const FREE_MAU_LIMIT           = 50_000                // 50k MAU
 
 function fmtMB(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/** Restituisce colori (bar + bg + fg) coerenti col livello di utilizzo. */
+function pctColors(pct: number) {
+  if (pct < 50)  return { bar: '#16a34a', bg: '#dcfce7', fg: '#166534' }
+  if (pct < 75)  return { bar: '#d97706', bg: '#fef3c7', fg: '#92400e' }
+  return            { bar: '#dc2626', bg: '#fee2e2', fg: '#991b1b' }
 }
 
 const MESI_ABBR = [
@@ -263,50 +273,95 @@ export function ConfigPage() {
     )
   }
 
-  // ── DB stats: percentuale + colori ────────────────────────────
-  const dbPct = dbStats ? (dbStats.db_size_bytes / FREE_DB_LIMIT_BYTES) * 100 : 0
-  const dbBarColor = dbPct < 50 ? '#16a34a' : dbPct < 75 ? '#d97706' : '#dc2626'
-  const dbBgColor  = dbPct < 50 ? '#dcfce7' : dbPct < 75 ? '#fef3c7' : '#fee2e2'
-  const dbFgColor  = dbPct < 50 ? '#166534' : dbPct < 75 ? '#92400e' : '#991b1b'
+  // ── Metriche e percentuali ────────────────────────────────────
+  const dbPct      = dbStats ? (dbStats.db_size_bytes / FREE_DB_LIMIT_BYTES) * 100 : 0
+  const storagePct = dbStats ? (dbStats.storage_bytes / FREE_STORAGE_LIMIT_BYTES) * 100 : 0
+  const mauPct     = dbStats ? (dbStats.mau_approx    / FREE_MAU_LIMIT)        * 100 : 0
+  // Box bg/border: peggior livello fra tutte le 3 metriche
+  const worstPct = Math.max(dbPct, storagePct, mauPct)
+  const boxColors = pctColors(worstPct)
+
+  // Componente locale per una singola barra metrica
+  function MetricBar({ label, used, total, pct }: {
+    label: string; used: string; total: string; pct: number
+  }) {
+    const col = pctColors(pct)
+    return (
+      <div>
+        <div className="flex items-baseline justify-between text-[11px] mb-0.5">
+          <span style={{ color: col.fg }}>
+            <strong>{label}</strong>
+            <span className="opacity-75 ml-1">({used} / {total})</span>
+          </span>
+          <span className="font-mono font-bold" style={{ color: col.bar }}>
+            {pct < 0.1 ? '<0.1' : pct.toFixed(1)}%
+          </span>
+        </div>
+        <div className="w-full h-1.5 rounded-full overflow-hidden"
+          style={{ background: 'rgba(0,0,0,0.08)' }}>
+          <div className="h-full rounded-full transition-all"
+            style={{ width: `${Math.min(100, pct)}%`, background: col.bar }} />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-4 max-w-3xl">
-      {/* ── DB Stats Supabase (in cima) ────────────────────────────── */}
+      {/* ── Box utilizzo free tier Supabase (in cima) ────────────── */}
       {dbStats && (
         <div className="rounded-lg border p-3"
-          style={{ background: dbBgColor, borderColor: dbBarColor }}>
-          <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-            <div className="flex items-center gap-2">
-              <Database size={16} style={{ color: dbFgColor }} />
-              <span className="font-bold text-sm" style={{ color: dbFgColor }}>
-                Database Supabase
-              </span>
-              <span className="text-xs" style={{ color: dbFgColor, opacity: 0.85 }}>
-                ({fmtMB(dbStats.db_size_bytes)} su {fmtMB(FREE_DB_LIMIT_BYTES)} — free tier)
-              </span>
-            </div>
-            <span className="text-sm font-bold font-mono" style={{ color: dbBarColor }}>
-              {dbPct.toFixed(1)}%
+          style={{ background: boxColors.bg, borderColor: boxColors.bar }}>
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            <Database size={16} style={{ color: boxColors.fg }} />
+            <span className="font-bold text-sm" style={{ color: boxColors.fg }}>
+              Utilizzo Supabase (free tier)
             </span>
           </div>
 
-          {/* Bar di utilizzo */}
-          <div className="w-full h-2 rounded-full overflow-hidden mb-2"
-            style={{ background: 'rgba(0,0,0,0.08)' }}>
-            <div className="h-full rounded-full transition-all"
-              style={{ width: `${Math.min(100, dbPct)}%`, background: dbBarColor }} />
+          <div className="space-y-2">
+            <MetricBar
+              label="Database"
+              used={fmtMB(dbStats.db_size_bytes)}
+              total="500 MB"
+              pct={dbPct}
+            />
+            <MetricBar
+              label="Storage (file)"
+              used={fmtMB(dbStats.storage_bytes)}
+              total="1 GB"
+              pct={storagePct}
+            />
+            <MetricBar
+              label="MAU (approx 30g)"
+              used={String(dbStats.mau_approx)}
+              total="50 000"
+              pct={mauPct}
+            />
           </div>
 
-          {/* Riga conteggi per tabella */}
-          <div className="flex flex-wrap gap-1.5 text-[10px]">
+          {/* Conteggi righe per tabella */}
+          <div className="flex flex-wrap gap-1.5 text-[10px] mt-3 pt-2"
+            style={{ borderTop: `1px dashed ${boxColors.bar}66` }}>
             {dbStats.tables.map(t => (
               <span key={t.name}
                 className="px-2 py-0.5 rounded bg-white/70 font-mono"
-                style={{ color: dbFgColor }}
+                style={{ color: boxColors.fg }}
                 title={`${t.name}: ${t.rows} righe`}>
                 {t.name}: <strong>{t.rows}</strong>
               </span>
             ))}
+          </div>
+
+          {/* Nota su metriche non recuperabili via SQL */}
+          <div className="mt-2 text-[10px] italic" style={{ color: boxColors.fg, opacity: 0.85 }}>
+            Realtime Connections, Realtime Messages, Egress, Edge Functions e altre
+            metriche dettagliate sono visibili solo da{' '}
+            <a href="https://supabase.com/dashboard/project/_/settings/billing-and-usage"
+              target="_blank" rel="noreferrer"
+              className="underline font-semibold">
+              Supabase Dashboard → Usage
+            </a> (richiederebbero una Edge Function con PAT per essere lette dall'app).
           </div>
         </div>
       )}

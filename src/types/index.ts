@@ -52,10 +52,18 @@ export interface TurnoBackup {
   snapshot:    { turni: unknown[] }
 }
 
-// ─── Statistiche DB (free tier monitoring) ──────────────────────────
+// ─── Statistiche DB / Storage / Auth (free tier monitoring) ────────
 
 export interface DbStats {
+  /** Dimensione del database PostgreSQL (bytes). Free tier: 500 MB. */
   db_size_bytes: number
+  /** Somma byte di tutti gli oggetti in storage. Free tier: 1 GB. */
+  storage_bytes: number
+  /** MAU approssimata (utenti auth.users con last_sign_in_at negli ultimi 30 giorni).
+   *  Non e` esattamente la MAU di Supabase ma una sua approssimazione lato DB. */
+  mau_approx:    number
+  /** Utenti totali auth.users (anche mai loggati). */
+  users_total:   number
   tables: Array<{ name: string; rows: number }>
 }
 

@@ -51,17 +51,31 @@ CREATE POLICY tb_modify ON public.turni_backup
   WITH CHECK (public.is_admin());
 
 -- ── 4) RPC get_db_stats — monitoraggio free tier ─────────────────────
--- Ritorna dimensione DB (bytes) + count righe per tabella principale.
--- SECURITY DEFINER cosi` puo` leggere pg_database_size anche se chi
--- chiama non ha il privilegio diretto. search_path esplicito per safety.
+-- Ritorna metriche dirette da Postgres + Storage + Auth:
+--  - db_size_bytes:  pg_database_size del DB attivo
+--  - storage_bytes:  somma di metadata->>'size' su storage.objects
+--  - mau_approx:     count utenti auth.users con last_sign_in_at < 30gg
+--  - users_total:    count utenti totali in auth.users
+--  - tables:         count righe per tabella principale
+--
+-- Le altre metriche del free tier Supabase (Realtime, Egress, Edge
+-- Function Invocations, ecc.) NON sono interrogabili da Postgres: vivono
+-- in servizi separati e si vedono solo dalla Management API o dal
+-- Dashboard. Per il monitoraggio rapido in-app, queste sono sufficienti.
+--
+-- SECURITY DEFINER + search_path esplicito per accedere a storage/auth
+-- anche da utenti che non hanno privilegi diretti su quegli schemi.
 CREATE OR REPLACE FUNCTION public.get_db_stats()
 RETURNS JSONB
 LANGUAGE sql
 SECURITY DEFINER
-SET search_path = public, pg_catalog
+SET search_path = public, storage, auth, pg_catalog
 AS $$
   SELECT jsonb_build_object(
-    'db_size_bytes', pg_database_size(current_database()),
+    'db_size_bytes',  pg_database_size(current_database()),
+    'storage_bytes',  COALESCE((SELECT SUM((metadata->>'size')::bigint) FROM storage.objects), 0),
+    'mau_approx',     (SELECT count(*)::int FROM auth.users WHERE last_sign_in_at > NOW() - INTERVAL '30 days'),
+    'users_total',    (SELECT count(*)::int FROM auth.users),
     'tables', jsonb_build_array(
       jsonb_build_object('name', 'turni',              'rows', (SELECT count(*) FROM public.turni)),
       jsonb_build_object('name', 'ferie',              'rows', (SELECT count(*) FROM public.ferie)),
