@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useLocation, useNavigate, useHref } from 'react-router-dom'
 import { LogOut, Calendar, CalendarDays, Settings, Users, AlertTriangle, RefreshCw, Mail } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { usePendingActions } from '../contexts/PendingActionsContext'
 import { useVersionCheck } from '../hooks/useVersionCheck'
 import { useMessaggiRealtime } from '../hooks/useMessaggiRealtime'
@@ -49,8 +49,27 @@ export function NavBar({ user, onSignOut }: Props) {
   // Realtime su `messaggi` per aggiornare il badge e mostrare toast pop-up
   // su nuovi messaggi senza ricaricare la pagina.
   useMessaggiRealtime()
+  const qc = useQueryClient()
   const [showMessaggi, setShowMessaggi] = useState(false)
   const [toast, setToast] = useState<{ titolo: string; corpo: string | null } | null>(null)
+
+  // Safety net per il badge unread: rinfresca quando la tab torna in
+  // primo piano. Safari mobile/iOS in particolare puo` chiudere la
+  // WebSocket realtime quando la tab e` in background → al rientro
+  // alcuni eventi potrebbero essere stati persi. Il visibilitychange
+  // + focus garantiscono che il badge si riallinei al DB.
+  useEffect(() => {
+    function refresh() {
+      qc.invalidateQueries({ queryKey: ['messaggi'] })
+      qc.invalidateQueries({ queryKey: ['messaggi-unread-count'] })
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [qc])
 
   // Cerco il medico associato all'utente loggato (match per nome, come
   // gia` fa CalendarioPage.mioMedico). Solo gli account "medico" hanno un
@@ -71,7 +90,10 @@ export function NavBar({ user, onSignOut }: Props) {
     return medici.find(m => m.nome.toUpperCase().trim() === myName)
   }, [user?.nome, medici])
 
-  // Count unread per il badge sulla busta. Invalidata dal realtime.
+  // Count unread per il badge sulla busta. Invalidata dal realtime +
+  // polling 30s + refetch su window focus / visibility change come
+  // safety net se la WebSocket fa cilecca (es. Safari mobile chiude
+  // la connessione quando la tab e` in background).
   const { data: unreadCount = 0 } = useQuery({
     queryKey: ['messaggi-unread-count', mioMedico?.id],
     queryFn: async () => {
@@ -84,9 +106,12 @@ export function NavBar({ user, onSignOut }: Props) {
       if (error) throw error
       return count ?? 0
     },
-    enabled: !!mioMedico,
-    staleTime: 0,
-    refetchOnMount: 'always',
+    enabled:                     !!mioMedico,
+    staleTime:                   0,
+    refetchOnMount:              'always',
+    refetchOnWindowFocus:        true,    // override global (false)
+    refetchInterval:             30_000,  // polling 30s
+    refetchIntervalInBackground: false,   // niente polling quando tab nascosta
   })
 
   // Toast pop-up su nuovi messaggi indirizzati al medico loggato.

@@ -109,8 +109,11 @@ export function MessaggiModal({ medico, onClose }: Props) {
       if (error) throw error
       return (data ?? []) as Messaggio[]
     },
-    staleTime: 0,
-    refetchOnMount: 'always',
+    staleTime:                   0,
+    refetchOnMount:              'always',
+    refetchOnWindowFocus:        true,    // safety net se realtime non arriva
+    refetchInterval:             30_000,
+    refetchIntervalInBackground: false,
   })
 
   // ── Richieste in attesa del medico (ferie + cambi turno) ──────────
