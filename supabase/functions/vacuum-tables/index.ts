@@ -17,11 +17,11 @@
  *   Authorization: Bearer <user JWT>
  *
  * Secrets richiesti:
- *   SUPABASE_PAT          → Personal Access Token Supabase (sbp_...)
+ *   MGMT_API_PAT          → Personal Access Token Supabase (sbp_...)
  *   SUPABASE_PROJECT_REF  → ref del progetto (opzionale: dedotto da SUPABASE_URL)
  *
  * Deploy:
- *   supabase secrets set SUPABASE_PAT=sbp_...
+ *   supabase secrets set MGMT_API_PAT=sbp_...
  *   supabase functions deploy vacuum-tables
  */
 
@@ -67,10 +67,10 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseUrl     = Deno.env.get('SUPABASE_URL')!
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!
-    const pat             = Deno.env.get('SUPABASE_PAT')
+    const pat             = Deno.env.get('MGMT_API_PAT')
     if (!pat) {
       return new Response(JSON.stringify({
-        error: 'SUPABASE_PAT non configurato. Esegui:  supabase secrets set SUPABASE_PAT=sbp_...',
+        error: 'MGMT_API_PAT non configurato. Esegui:  supabase secrets set MGMT_API_PAT=sbp_...',
       }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

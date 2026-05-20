@@ -32,11 +32,11 @@ supabase link --project-ref mreftuajsrinrsvpeicq
 
 Devi creare/usare un Personal Access Token Supabase (https://supabase.com/dashboard/account/tokens).
 
-Il PAT che hai già in `.env.local` va benissimo (`SUPABASE_PAT=sbp_...`).
+Il PAT che hai già in `.env.local` va benissimo (`MGMT_API_PAT=sbp_...`).
 
 ```bash
 # Imposta il secret (sostituisci con il TUO PAT)
-supabase secrets set SUPABASE_PAT=sbp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+supabase secrets set MGMT_API_PAT=sbp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 ### 4. Deploy della funzione
