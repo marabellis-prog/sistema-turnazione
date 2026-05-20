@@ -25,7 +25,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Calendar, Save, Layers, Rows3, RefreshCw } from 'lucide-react'
+import { Calendar, Save, Layers, Rows3, RefreshCw, AlertTriangle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import {
   calcolaCalendarioCompleto, calcolaTurnoTeorico, primoLunediDelPeriodo,
@@ -64,6 +64,15 @@ const DAY_LETTERS = ['D', 'L', 'M', 'M', 'G', 'V', 'S']
 function dayLetter(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number)
   return DAY_LETTERS[new Date(y, m - 1, d).getDay()]
+}
+
+/** Formatta una data ISO "YYYY-MM-DD" in "24 lug" (formato breve italiano).
+ *  Usato dal banner warning SUB/MED per mostrare la data in modo umano. */
+const MESI_ABBR = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic']
+function fmtDataItaliana(iso: string): string {
+  const [, m, d] = iso.split('-').map(s => parseInt(s, 10))
+  if (!m || !d) return iso
+  return `${d} ${MESI_ABBR[m - 1] ?? '?'}`
 }
 
 // Colore pastello per ogni placement nel cerchio mezzo/mezzo
@@ -245,6 +254,11 @@ interface EditableCellProps {
    * - committed=false → Esc, niente modifiche, mantieni selected
    */
   onEditEnd?:       (committed: boolean, moveDown: boolean) => void
+
+  /** ID DOM univoco della cella (es. "cell-${medicoId}-${data}"). Serve
+   *  al banner warning "SUB/MED mancante" per fare scrollIntoView su
+   *  una specifica cella. Solo le celle clinica lo ricevono. */
+  cellAnchorId?:    string
 }
 
 function EditableCell({
@@ -253,6 +267,7 @@ function EditableCell({
   slot_mattina = null, slot_pomeriggio = null, readOnly = false,
   onChangeClinico, onChangeRicerca, onPasteRange, onDropFromLegend,
   isSelected = false, pendingEditChar, onSelect, onEditEnd,
+  cellAnchorId,
 }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   const [draft,   setDraft]   = useState('')
@@ -352,6 +367,9 @@ function EditableCell({
 
   return (
     <td
+      // ID DOM (solo clinica): target dello scrollIntoView del banner
+      // warning "SUB/MED mancante".
+      id={cellAnchorId}
       // data-clinica-cell serve al listener click globale del parent per
       // capire se il click è "dentro" una cella editabile (e quindi NON
       // resettare la selezione corrente).
@@ -1346,6 +1364,64 @@ export function ModificaTurniPage() {
     return m
   }, [config, colonne, medici, ferieRanges.approved, getCella])
 
+  // ── Warning: turni senza assegnazione SUB/MED ─────────────────────
+  // Scansiona TUTTE le celle clinica del periodo e raccoglie quelle con
+  // TC ∈ {M, P, L} dove il placement SUB/MED e` mancante per la meta`
+  // giornata pertinente:
+  //   - M: serve slot_mattina ∈ {SUB, MED}
+  //   - P: serve slot_pomeriggio
+  //   - L: servono entrambi
+  // Le celle in ferie approvate sono saltate (il medico non lavora,
+  // niente placement da fare).
+  const issuesPlacement = useMemo(() => {
+    const out: Array<{
+      medicoId:    string
+      medicoNome:  string
+      data:        string
+      tipoCella:   'M' | 'P' | 'L'
+      dettaglio:   'manca mattina' | 'manca pomeriggio' | 'manca entrambi'
+    }> = []
+    if (!config || colonne.length === 0 || medici.length === 0) return out
+    for (const col of colonne) {
+      for (const m of medici) {
+        if (ferieStatus(m.id, col.data) === 'approved') continue
+        const cur = getCella(m.id, col.data)
+        let dett: 'manca mattina' | 'manca pomeriggio' | 'manca entrambi' | null = null
+        if (cur.tc === 'M' && !cur.slot_mattina)        dett = 'manca mattina'
+        else if (cur.tc === 'P' && !cur.slot_pomeriggio) dett = 'manca pomeriggio'
+        else if (cur.tc === 'L') {
+          if (!cur.slot_mattina && !cur.slot_pomeriggio)      dett = 'manca entrambi'
+          else if (!cur.slot_mattina)                          dett = 'manca mattina'
+          else if (!cur.slot_pomeriggio)                       dett = 'manca pomeriggio'
+        }
+        if (dett) {
+          out.push({
+            medicoId:   m.id,
+            medicoNome: m.nome,
+            data:       col.data,
+            tipoCella:  cur.tc as 'M' | 'P' | 'L',
+            dettaglio:  dett,
+          })
+        }
+      }
+    }
+    return out
+  }, [config, colonne, medici, getCella, ferieStatus])
+
+  // Scroll-to-cell handler. Trova il td via id="cell-${medicoId}-${data}"
+  // (settato in EditableCell.cellAnchorId) e fa scrollIntoView centrato.
+  // Imposta anche selectedCell, cosi` l'outline grigio della selezione
+  // serve da feedback visivo "questa e` la cella incriminata".
+  // Nota: con vista mensile abbiamo `content-visibility: auto` sui blocchi
+  // mese, ma scrollIntoView triggera il render della sezione target.
+  function scrollToCella(medicoId: string, data: string) {
+    const el = document.getElementById(`cell-${medicoId}-${data}`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
+      setSelectedCell({ medicoId, data })
+    }
+  }
+
   // ── Render di una singola cella ───────────────────────────────────
   // Il "tipo" determina quale parte della cella visualizzare/editare:
   //   - 'clinica'  → mostra/edita TC, lascia TR invariato
@@ -1388,6 +1464,9 @@ export function ModificaTurniPage() {
         // Selezione + editing tastiera (solo clinica, vedi pendingChar/isSel sopra)
         isSelected={isSel}
         pendingEditChar={pendingChar}
+        // Anchor DOM solo per le celle clinica (usato dal banner warning
+        // SUB/MED per scrollIntoView su una specifica cella)
+        cellAnchorId={tipo === 'clinica' ? `cell-${medicoId}-${col.data}` : undefined}
         onSelect={tipo === 'clinica'
           ? () => setSelectedCell({ medicoId, data: col.data })
           : undefined}
@@ -1762,6 +1841,42 @@ export function ModificaTurniPage() {
         <div className="px-3 py-2 rounded-lg text-xs"
           style={{ background: '#fde0e0', color: '#7a2020', border: '1px solid #f0c0c0' }}>
           Errore: {err}
+        </div>
+      )}
+
+      {/* Warning SUB/MED mancante — banner con lista cliccabile.
+          Ogni chip "Nome - data - tc (manca …)" porta scrollIntoView
+          sulla cella nella tabella clinica + la seleziona. */}
+      {issuesPlacement.length > 0 && (
+        <div className="rounded-lg border-2 p-3"
+          style={{ background: '#fef3c7', borderColor: '#fbbf24' }}>
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle size={16} style={{ color: '#a16207' }} />
+            <span className="text-sm font-bold" style={{ color: '#92400e' }}>
+              {issuesPlacement.length} turn{issuesPlacement.length === 1 ? 'o' : 'i'} senza assegnazione SUB/MED
+            </span>
+            <span className="text-[10px] text-stone-600 ml-1">
+              · clicca un chip per andare alla cella
+            </span>
+          </div>
+          <div className="overflow-auto" style={{ maxHeight: 120 }}>
+            <div className="flex flex-wrap gap-1.5">
+              {issuesPlacement.map((iss, i) => (
+                <button key={`${iss.medicoId}-${iss.data}-${i}`}
+                  onClick={() => scrollToCella(iss.medicoId, iss.data)}
+                  className="text-[11px] px-2 py-1 rounded bg-white hover:bg-amber-50 transition-colors border shadow-sm"
+                  style={{ borderColor: '#fbbf24', color: '#92400e' }}
+                  title={`Vai alla cella di ${iss.medicoNome} del ${fmtDataItaliana(iss.data)}`}>
+                  <span className="font-semibold">{iss.medicoNome}</span>
+                  <span className="text-stone-500"> · </span>
+                  <span className="font-mono">{fmtDataItaliana(iss.data)}</span>
+                  <span className="text-stone-500"> · </span>
+                  <span className="font-bold">{iss.tipoCella}</span>
+                  <span className="text-stone-600"> ({iss.dettaglio})</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
