@@ -601,7 +601,7 @@ export function SettimanaleAltPage() {
 
       {config && medici.length > 0 && (
         <div className="overflow-auto rounded-lg border border-stone-300 bg-white">
-          <table className="border-collapse text-xs" style={{ borderSpacing: 0, width: '100%', minWidth: 980 }}>
+          <table className="border-collapse text-xs settimanale-table" style={{ borderSpacing: 0, width: '100%', minWidth: 980 }}>
             <thead>
               <tr>
                 <th style={hData}>Data</th>
