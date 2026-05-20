@@ -20,10 +20,14 @@ import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Mail, Check, X, RotateCcw, Plane, ChevronLeft, ChevronRight,
-  CheckCheck, Loader2,
+  CheckCheck, Loader2, Clock, ArrowRightLeft, ArrowRight,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import type { Medico, Messaggio, TipoMessaggio } from '../types'
+import { useFerieRealtime } from '../hooks/useFerieRealtime'
+import { useCambiTurnoRealtime } from '../hooks/useCambiTurnoRealtime'
+import type {
+  Medico, Messaggio, TipoMessaggio, Ferie, CambioTurno,
+} from '../types'
 
 const PAGE_SIZE = 20
 
@@ -53,11 +57,24 @@ function fmtDataOra(iso: string): string {
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${String(d.getFullYear()).slice(2)} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+/** Formatta una data SQL "YYYY-MM-DD" in dd/mm (anno omesso se = corrente). */
+function fmtDataBreve(sqlDate: string): string {
+  const [y, m, d] = sqlDate.split('-')
+  const curY = String(new Date().getFullYear())
+  return y !== curY ? `${d}/${m}/${y.slice(2)}` : `${d}/${m}`
+}
+
 export function MessaggiModal({ medico, onClose }: Props) {
   const qc = useQueryClient()
   const [page,    setPage]    = useState(0)
   const [marking, setMarking] = useState<string | null>(null)
   const [bulkLoading, setBulkLoading] = useState(false)
+
+  // Realtime su ferie e cambi turno: cosi` se il medico apre il modal e
+  // submitta una nuova richiesta (es. da un'altra tab) o viene approvata
+  // dall'admin, le sezioni "in attesa" si aggiornano automaticamente.
+  useFerieRealtime()
+  useCambiTurnoRealtime()
 
   // ── Query messaggi del medico ─────────────────────────────────────
   // Tutti in una sola fetch (max ~poche centinaia in pratica). La
@@ -72,6 +89,42 @@ export function MessaggiModal({ medico, onClose }: Props) {
         .order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as Messaggio[]
+    },
+    staleTime: 0,
+    refetchOnMount: 'always',
+  })
+
+  // ── Richieste in attesa del medico (ferie + cambi turno) ──────────
+  // QueryKey con prefisso 'ferie' / 'cambi-turno' cosi` le invalidazioni
+  // partial-match dei realtime hook (useFerieRealtime / useCambiTurnoRealtime)
+  // toccano anche queste query. L'utente vede le proprie pending in cima
+  // alla lista, indipendentemente dalla data di inserimento.
+  const { data: feriePending = [] } = useQuery<Ferie[]>({
+    queryKey: ['ferie', 'pending-mie', medico.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ferie').select('*')
+        .eq('medico_id', medico.id)
+        .eq('approvate', false)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data ?? []
+    },
+    staleTime: 0,
+    refetchOnMount: 'always',
+  })
+  const { data: cambiPending = [] } = useQuery<CambioTurno[]>({
+    queryKey: ['cambi-turno', 'pending-miei', medico.id],
+    queryFn: async () => {
+      // RLS ct_select filtra gia` per medico_richiedente_id = my_medico_id().
+      // L'eq('medico_richiedente_id') e` superfluo ma esplicito per chiarezza.
+      const { data, error } = await supabase
+        .from('cambi_turno').select('*')
+        .eq('medico_richiedente_id', medico.id)
+        .eq('stato', 'pending')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as CambioTurno[]
     },
     staleTime: 0,
     refetchOnMount: 'always',
@@ -146,10 +199,15 @@ export function MessaggiModal({ medico, onClose }: Props) {
               <p className="text-xs text-stone-500">
                 {messaggi.length === 0
                   ? 'Nessun messaggio'
-                  : `${messaggi.length} messagg${messaggi.length === 1 ? 'io' : 'i'} totali`}
+                  : `${messaggi.length} messagg${messaggi.length === 1 ? 'io' : 'i'}`}
                 {unreadCount > 0 && <span className="ml-1 font-semibold" style={{ color: '#d97706' }}>
                   · {unreadCount} non lett{unreadCount === 1 ? 'o' : 'i'}
                 </span>}
+                {(feriePending.length + cambiPending.length) > 0 && (
+                  <span className="ml-1 font-semibold" style={{ color: '#a16207' }}>
+                    · {feriePending.length + cambiPending.length} in attesa
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -178,13 +236,117 @@ export function MessaggiModal({ medico, onClose }: Props) {
             <div className="text-stone-500 text-sm flex items-center justify-center py-8">
               <Loader2 size={18} className="animate-spin mr-2" /> Caricamento…
             </div>
-          ) : messaggi.length === 0 ? (
+          ) : (messaggi.length === 0 && feriePending.length === 0 && cambiPending.length === 0) ? (
             <div className="text-stone-500 text-sm text-center py-10">
               <Mail size={32} className="mx-auto mb-2 opacity-30" />
               Nessun messaggio. Le notifiche su cambi turno e ferie compariranno qui.
             </div>
           ) : (
-            <div className="space-y-2">
+            <>
+              {/* ── Sezione "In attesa di approvazione" — SEMPRE in cima ── */}
+              {(feriePending.length > 0 || cambiPending.length > 0) && (
+                <div className="mb-4">
+                  <div className="flex items-center gap-1.5 mb-2 text-[11px] font-bold uppercase tracking-wider px-1"
+                    style={{ color: '#a16207' }}>
+                    <Clock size={12} />
+                    In attesa di approvazione ({feriePending.length + cambiPending.length})
+                  </div>
+                  <div className="space-y-2">
+                    {/* Ferie pending */}
+                    {feriePending.map(f => (
+                      <div key={`fp-${f.id}`} className="rounded-lg border-2 p-3"
+                        style={{ background: '#fef3c7', borderColor: '#fbbf24' }}>
+                        <div className="flex items-start gap-3">
+                          <div className="rounded-full p-1.5 shrink-0"
+                            style={{ background: '#fde68a' }}>
+                            <Plane size={13} style={{ color: '#a16207' }} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="text-sm font-semibold text-stone-800 truncate">
+                                Richiesta ferie in attesa
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider shrink-0"
+                                style={{ background: '#fbbf24', color: '#78350f' }}>
+                                IN ATTESA
+                              </span>
+                            </div>
+                            <p className="text-xs text-stone-700 mt-1">
+                              {f.data_inizio === f.data_fine
+                                ? <>Per il <strong>{fmtDataBreve(f.data_inizio)}</strong></>
+                                : <>Dal <strong>{fmtDataBreve(f.data_inizio)}</strong> al <strong>{fmtDataBreve(f.data_fine)}</strong></>}
+                            </p>
+                            <p className="text-[10px] text-stone-500 mt-1 font-mono">
+                              Inviata il {fmtDataOra(f.created_at)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {/* Cambi turno pending */}
+                    {cambiPending.map(c => (
+                      <div key={`cp-${c.id}`} className="rounded-lg border-2 p-3"
+                        style={{ background: '#fef3c7', borderColor: '#fbbf24' }}>
+                        <div className="flex items-start gap-3">
+                          <div className="rounded-full p-1.5 shrink-0"
+                            style={{ background: '#fde68a' }}>
+                            <ArrowRightLeft size={13} style={{ color: '#a16207' }} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="text-sm font-semibold text-stone-800 truncate">
+                                Richiesta cambio turno in attesa
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider shrink-0"
+                                style={{ background: '#fbbf24', color: '#78350f' }}>
+                                IN ATTESA
+                              </span>
+                            </div>
+                            <p className="text-xs text-stone-700 mt-1">
+                              {c.modifiche.length} modific{c.modifiche.length === 1 ? 'a' : 'he'} proposta{c.modifiche.length === 1 ? '' : ''}
+                              {c.motivo && <span className="block italic text-stone-600 mt-0.5">"{c.motivo}"</span>}
+                            </p>
+                            {/* Dettagli sintetici delle modifiche (TC da → a) */}
+                            <div className="mt-2 space-y-0.5">
+                              {c.modifiche.slice(0, 3).map((mod, idx) => (
+                                <div key={idx} className="text-[10px] text-stone-600 flex items-center gap-1.5">
+                                  <span className="font-mono">{fmtDataBreve(mod.data)}</span>
+                                  <span className="font-mono px-1 rounded bg-white border border-stone-200">
+                                    {mod.da.tc || '—'}
+                                  </span>
+                                  <ArrowRight size={9} />
+                                  <span className="font-mono px-1 rounded bg-white border border-stone-300 font-semibold">
+                                    {mod.a.tc || '—'}
+                                  </span>
+                                </div>
+                              ))}
+                              {c.modifiche.length > 3 && (
+                                <div className="text-[10px] italic text-stone-500">
+                                  …e altre {c.modifiche.length - 3} modific{c.modifiche.length - 3 === 1 ? 'a' : 'he'}
+                                </div>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-stone-500 mt-1 font-mono">
+                              Inviata il {fmtDataOra(c.created_at)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Header sezione "Storico messaggi" — visibile solo se ci sono
+                  sia pending che messaggi (altrimenti la lista parla da sola) */}
+              {(feriePending.length + cambiPending.length) > 0 && messaggi.length > 0 && (
+                <div className="text-[11px] font-bold uppercase tracking-wider px-1 mb-2 text-stone-500">
+                  Storico
+                </div>
+              )}
+
+              {/* Lista messaggi paginati */}
+              <div className="space-y-2">
               {pageSlice.map(m => {
                 const cfg = TIPO_CONFIG[m.tipo]
                 const Icon = cfg.Icon
@@ -231,7 +393,8 @@ export function MessaggiModal({ medico, onClose }: Props) {
                   </button>
                 )
               })}
-            </div>
+              </div>
+            </>
           )}
         </div>
 
