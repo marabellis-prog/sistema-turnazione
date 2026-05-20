@@ -1968,11 +1968,11 @@ export function ModificaTurniPage() {
                       onClick={() => scrollToGiorno(iss.data)}
                       className="text-[11px] px-2 py-1 rounded bg-white hover:bg-amber-50 transition-colors border-2 shadow-sm"
                       style={{ borderColor: '#f97316', color: '#9a3412' }}
-                      title={`Vai al giorno ${fmtDataItaliana(iss.data)}`}>
+                      title={`Vai al giorno ${fmtDataItaliana(iss.data)} — atteso ${iss.expected}, attuale ${iss.actual}`}>
                       <span className="font-mono">{fmtDataItaliana(iss.data)}</span>
                       <span className="text-stone-500"> · </span>
                       <span className="font-bold">{iss.slotLabel}</span>
-                      <span className="text-stone-600"> {iss.actual}/{iss.expected} ({labelDiff})</span>
+                      <span className="text-stone-600"> ({labelDiff})</span>
                     </button>
                   )
                 }
