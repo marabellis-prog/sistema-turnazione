@@ -68,6 +68,20 @@
 
   .cal-row-selected td { background: #eae8e0 !important; }
 
+  /* Cerchio del turno clinico (M/P/L con colore di placement).
+     Default desktop: 22x22 fisso. Su mobile l'altezza viene
+     sovrascritta dal media query qui sotto cosi` scala col CSS
+     custom --cal-cell-h-clinica calcolato in JS in CalendarioPage. */
+  .cal-clinic-circle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    line-height: 1;
+  }
+
   /* ── No pull-to-refresh su mobile/touch ──────────────────────
      Su mobile Safari/Chrome, lo sliding al fondo della pagina
      triggera spesso il refresh per errore. overscroll-behavior-y:
@@ -95,6 +109,25 @@
       min-width: 75px;
       padding-top:    2px;
       padding-bottom: 2px;
+    }
+
+    /* Tabella CLINICA: altezza riga calcolata in JS via
+       --cal-cell-h-clinica (CalendarioPage useEffect). Cosi`
+       11 medici entrano sempre nello schermo a qualunque
+       device, da iPhone SE a Pro Max a Samsung Galaxy Fold.
+       Fallback 22px se la var non e` settata (loading, desktop
+       in modalita` responsive con devtools, etc.).
+       Tabella RICERCA: nessuna override → mantiene 22px. */
+    .cal-table-clinica .cal-cell {
+      height: var(--cal-cell-h-clinica, 22px);
+    }
+    /* Cerchio del turno (M/P/L): scala con l'altezza della cella.
+       Padding interno 4px (.cal-cell padding 1px + border 1px = 4px tot
+       verticale, ma per estetica togliamo 4px nominali). Min 14px,
+       max 26px cosi` su schermi grandi non diventa esagerato. */
+    .cal-table-clinica .cal-clinic-circle {
+      width:  clamp(14px, calc(var(--cal-cell-h-clinica, 22px) - 4px), 26px);
+      height: clamp(14px, calc(var(--cal-cell-h-clinica, 22px) - 4px), 26px);
     }
 
     /* Tabelle Settimanale / Settimanale Alt: rimuovi min-width che

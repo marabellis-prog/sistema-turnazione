@@ -82,14 +82,14 @@ function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
   if (!bg) {
     return <span style={{ fontSize, fontWeight: 700, color, letterSpacing: tc === 'REP' ? '-0.3px' : undefined }}>{tc}</span>
   }
+  // width/height sono in CSS (.cal-clinic-circle) cosi` su mobile possono
+  // scalare dinamicamente con --cal-cell-h-clinica per far entrare tutta
+  // la tabella clinica nello schermo.
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      width: 22, height: 22, borderRadius: '50%',
+    <span className="cal-clinic-circle" style={{
       background: bg,
       fontSize, fontWeight: 800, color,
       letterSpacing: tc === 'REP' ? '-0.3px' : undefined,
-      lineHeight: 1,
     }}>{tc}</span>
   )
 }
@@ -363,6 +363,55 @@ export function CalendarioPage() {
     return s
   }, [colonne])
 
+  // ── Altezza dinamica celle tabella CLINICA (mobile/tablet sotto lg) ──
+  // Misura lo spazio verticale del container scrollabile e divide per il
+  // numero di medici → tutta la tabella clinica entra nello schermo senza
+  // bisogno di scroll, indipendentemente dal device (iPhone SE, Pro Max,
+  // Samsung qualunque, iPad mini...). Su desktop (>= 1024px) la variable
+  // viene rimossa cosi` CSS torna alle altezze fisse standard.
+  //
+  // Setta una CSS custom property `--cal-cell-h-clinica` su `:root`. Il
+  // CSS (index.css, sotto @media max-width 1023px) la consuma su
+  // .cal-table-clinica .cal-cell + .cal-clinic-circle.
+  useEffect(() => {
+    function recalc() {
+      const root = document.documentElement
+      // Solo sotto lg: su desktop usa l'altezza fissa da CSS (36px)
+      if (window.innerWidth >= 1024) {
+        root.style.removeProperty('--cal-cell-h-clinica')
+        return
+      }
+      if (medici.length === 0) return
+      const scrollEl = document.querySelector<HTMLElement>('[data-cal-scroll]')
+      if (!scrollEl) return
+      // Header tabella clinica: 2 righe sticky (mese ~22px + giorni ~28px)
+      const HEADER_H = 52
+      // Margin di sicurezza per non aderire perfettamente al bordo
+      const SAFETY = 4
+      const usable = scrollEl.clientHeight - HEADER_H - SAFETY
+      if (usable <= 0) return
+      // Clamp: minimo 18 (cerchi diventano stretti ma leggibili),
+      // massimo 36 (oltre diventa esagerato per cellulare).
+      const cellH = Math.max(18, Math.min(36, Math.floor(usable / medici.length)))
+      root.style.setProperty('--cal-cell-h-clinica', `${cellH}px`)
+    }
+    // Doppio passaggio: subito + dopo layout settle (legenda modal,
+    // safe-area iOS, rotazione...).
+    recalc()
+    const raf = requestAnimationFrame(recalc)
+    const t1  = setTimeout(recalc, 150)
+    const t2  = setTimeout(recalc, 600)
+    window.addEventListener('resize',            recalc)
+    window.addEventListener('orientationchange', recalc)
+    return () => {
+      cancelAnimationFrame(raf)
+      clearTimeout(t1); clearTimeout(t2)
+      window.removeEventListener('resize',            recalc)
+      window.removeEventListener('orientationchange', recalc)
+      document.documentElement.style.removeProperty('--cal-cell-h-clinica')
+    }
+  }, [medici.length, mostraLegenda, loadDone])
+
   // ── Loading screen ───────────────────────────────────────────────
   // Renderizzata da subito (frame 1), struttura COMPLETA con placeholder.
   // I valori si riempiono mano a mano che arrivano i dati — mai blank.
@@ -424,7 +473,7 @@ export function CalendarioPage() {
       }))
     }
     return (
-      <table className="cal-table">
+      <table className={`cal-table ${tipo === 'clinica' ? 'cal-table-clinica' : 'cal-table-ricerca'}`}>
         <thead>
           <tr>
             <th className="cal-td-nome-header" rowSpan={2}
@@ -741,7 +790,7 @@ export function CalendarioPage() {
         </>
       )}
 
-      <div className="overflow-auto flex-1">
+      <div className="overflow-auto flex-1" data-cal-scroll>
         {turni.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-stone-500">
             <p className="text-sm font-medium">Nessun turno nel calendario</p>
