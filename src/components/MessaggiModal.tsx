@@ -449,22 +449,32 @@ export function MessaggiModal({ medico, onClose }: Props) {
         {/* Footer: paginazione compatta — << < [1] [2] (3) [4] [5] > >>
             Mostra max 5 numeri pagina centrati sulla corrente. Prima/ultima
             pagina come scorciatoie per liste lunghe.
-            La sezione Pending (sopra) non e` interessata da questa paginazione. */}
+            La sezione Pending (sopra) non e` interessata da questa paginazione.
+
+            Stile bottoni icona: sfondo crema chiaro + bordo + color esplicito
+            scuro cosi` si distinguono nettamente dallo sfondo bianco del modal.
+            Prima erano transparent senza bordo → invisibili. */}
         {messaggi.length > PAGE_SIZE && (
-          <div className="px-3 py-2 border-t border-stone-200 flex items-center justify-center gap-1 shrink-0">
+          <div className="px-3 py-2 border-t border-stone-200 flex items-center justify-center gap-1.5 shrink-0">
             {/* Prima pagina */}
             <button onClick={() => setPage(0)}
               disabled={page === 0}
-              className="flex items-center justify-center w-7 h-7 rounded text-xs font-semibold disabled:opacity-30 hover:bg-stone-100 transition-colors"
+              className="flex items-center justify-center w-8 h-8 rounded border text-xs font-semibold disabled:opacity-30 transition-colors"
+              style={{ background: '#faf8f3', borderColor: '#d5ccb8', color: '#3a3d30' }}
+              onMouseEnter={e => { if (page !== 0) (e.currentTarget as HTMLElement).style.background = '#e0e8d8' }}
+              onMouseLeave={e => { if (page !== 0) (e.currentTarget as HTMLElement).style.background = '#faf8f3' }}
               title="Prima pagina">
-              <ChevronsLeft size={14} />
+              <ChevronsLeft size={15} />
             </button>
             {/* Precedente */}
             <button onClick={() => setPage(p => Math.max(0, p - 1))}
               disabled={page === 0}
-              className="flex items-center justify-center w-7 h-7 rounded text-xs font-semibold disabled:opacity-30 hover:bg-stone-100 transition-colors"
+              className="flex items-center justify-center w-8 h-8 rounded border text-xs font-semibold disabled:opacity-30 transition-colors"
+              style={{ background: '#faf8f3', borderColor: '#d5ccb8', color: '#3a3d30' }}
+              onMouseEnter={e => { if (page !== 0) (e.currentTarget as HTMLElement).style.background = '#e0e8d8' }}
+              onMouseLeave={e => { if (page !== 0) (e.currentTarget as HTMLElement).style.background = '#faf8f3' }}
               title="Precedente">
-              <ChevronLeft size={14} />
+              <ChevronLeft size={15} />
             </button>
             {/* Window di max 5 numeri pagina centrati sulla corrente */}
             {getPageWindow(page, totPagine, 5).map(p => {
@@ -472,12 +482,12 @@ export function MessaggiModal({ medico, onClose }: Props) {
               return (
                 <button key={p}
                   onClick={() => setPage(p)}
-                  className="flex items-center justify-center min-w-[28px] h-7 rounded text-xs font-semibold transition-colors px-1.5"
+                  className="flex items-center justify-center min-w-[32px] h-8 rounded border text-xs font-semibold transition-colors px-1.5"
                   style={isCurrent
-                    ? { background: '#476540', color: '#fff' }
-                    : { background: 'transparent', color: '#5a5a4a' }}
-                  onMouseEnter={e => { if (!isCurrent) (e.currentTarget as HTMLElement).style.background = '#f4f1ea' }}
-                  onMouseLeave={e => { if (!isCurrent) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                    ? { background: '#476540', borderColor: '#2b3c24', color: '#fff' }
+                    : { background: '#faf8f3', borderColor: '#d5ccb8', color: '#3a3d30' }}
+                  onMouseEnter={e => { if (!isCurrent) (e.currentTarget as HTMLElement).style.background = '#e0e8d8' }}
+                  onMouseLeave={e => { if (!isCurrent) (e.currentTarget as HTMLElement).style.background = '#faf8f3' }}
                   title={`Pagina ${p + 1}`}>
                   {p + 1}
                 </button>
@@ -486,16 +496,22 @@ export function MessaggiModal({ medico, onClose }: Props) {
             {/* Successiva */}
             <button onClick={() => setPage(p => Math.min(totPagine - 1, p + 1))}
               disabled={page >= totPagine - 1}
-              className="flex items-center justify-center w-7 h-7 rounded text-xs font-semibold disabled:opacity-30 hover:bg-stone-100 transition-colors"
+              className="flex items-center justify-center w-8 h-8 rounded border text-xs font-semibold disabled:opacity-30 transition-colors"
+              style={{ background: '#faf8f3', borderColor: '#d5ccb8', color: '#3a3d30' }}
+              onMouseEnter={e => { if (page < totPagine - 1) (e.currentTarget as HTMLElement).style.background = '#e0e8d8' }}
+              onMouseLeave={e => { if (page < totPagine - 1) (e.currentTarget as HTMLElement).style.background = '#faf8f3' }}
               title="Successiva">
-              <ChevronRight size={14} />
+              <ChevronRight size={15} />
             </button>
             {/* Ultima pagina */}
             <button onClick={() => setPage(totPagine - 1)}
               disabled={page >= totPagine - 1}
-              className="flex items-center justify-center w-7 h-7 rounded text-xs font-semibold disabled:opacity-30 hover:bg-stone-100 transition-colors"
+              className="flex items-center justify-center w-8 h-8 rounded border text-xs font-semibold disabled:opacity-30 transition-colors"
+              style={{ background: '#faf8f3', borderColor: '#d5ccb8', color: '#3a3d30' }}
+              onMouseEnter={e => { if (page < totPagine - 1) (e.currentTarget as HTMLElement).style.background = '#e0e8d8' }}
+              onMouseLeave={e => { if (page < totPagine - 1) (e.currentTarget as HTMLElement).style.background = '#faf8f3' }}
               title="Ultima pagina">
-              <ChevronsRight size={14} />
+              <ChevronsRight size={15} />
             </button>
           </div>
         )}
