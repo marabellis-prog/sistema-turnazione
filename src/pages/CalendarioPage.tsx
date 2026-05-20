@@ -363,35 +363,33 @@ export function CalendarioPage() {
     return s
   }, [colonne])
 
-  // ── Altezza dinamica celle tabella CLINICA (mobile/tablet sotto lg) ──
+  // ── Altezza dinamica celle tabella CLINICA (SEMPRE attivo) ──────
   // Misura lo spazio verticale del container scrollabile e divide per il
   // numero di medici → tutta la tabella clinica entra nello schermo senza
-  // bisogno di scroll, indipendentemente dal device (iPhone SE, Pro Max,
-  // Samsung qualunque, iPad mini...). Su desktop (>= 1024px) la variable
-  // viene rimossa cosi` CSS torna alle altezze fisse standard.
+  // bisogno di scroll, indipendentemente dal device:
+  //   - iPhone SE / Pro Max landscape (viewport < 700px)
+  //   - Samsung Galaxy A/S landscape
+  //   - iPad mini / Air / Pro in landscape (> 1024px ma altezza compressa
+  //     da Safari chrome + tab bar → la tabella non entra coi 36px default)
+  //   - Laptop / desktop: lo schermo ha sempre abbondante spazio, il clamp
+  //     a 36px max conserva il look originale (nessun cambiamento visibile)
   //
   // Setta una CSS custom property `--cal-cell-h-clinica` su `:root`. Il
-  // CSS (index.css, sotto @media max-width 1023px) la consuma su
-  // .cal-table-clinica .cal-cell + .cal-clinic-circle.
+  // CSS la consuma su .cal-table-clinica .cal-cell + .cal-clinic-circle.
   useEffect(() => {
     function recalc() {
       const root = document.documentElement
-      // Solo sotto lg: su desktop usa l'altezza fissa da CSS (36px)
-      if (window.innerWidth >= 1024) {
-        root.style.removeProperty('--cal-cell-h-clinica')
-        return
-      }
       if (medici.length === 0) return
       const scrollEl = document.querySelector<HTMLElement>('[data-cal-scroll]')
       if (!scrollEl) return
       // Header tabella clinica: 2 righe sticky (mese ~22px + giorni ~28px)
-      const HEADER_H = 52
+      const HEADER_H = 56
       // Margin di sicurezza per non aderire perfettamente al bordo
       const SAFETY = 4
       const usable = scrollEl.clientHeight - HEADER_H - SAFETY
       if (usable <= 0) return
       // Clamp: minimo 18 (cerchi diventano stretti ma leggibili),
-      // massimo 36 (oltre diventa esagerato per cellulare).
+      // massimo 36 (default desktop, oltre diventa esagerato).
       const cellH = Math.max(18, Math.min(36, Math.floor(usable / medici.length)))
       root.style.setProperty('--cal-cell-h-clinica', `${cellH}px`)
     }
