@@ -130,6 +130,24 @@ export function MessaggiModal({ medico, onClose }: Props) {
     refetchOnMount: 'always',
   })
 
+  // Lookup nome medico per id, usato nelle preview delle modifiche dei
+  // cambi turno pending. Solo i medici attivi (sufficiente per i cambi
+  // sul calendario corrente).
+  const { data: tuttiMedici = [] } = useQuery<{ id: string; nome: string }[]>({
+    queryKey: ['medici'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('medici').select('id, nome').eq('attivo', true)
+      if (error) throw error
+      return data ?? []
+    },
+  })
+  const mediciById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const x of tuttiMedici) m.set(x.id, x.nome)
+    return m
+  }, [tuttiMedici])
+
   const totPagine = Math.max(1, Math.ceil(messaggi.length / PAGE_SIZE))
   const pageSlice = useMemo(
     () => messaggi.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE),
@@ -306,11 +324,16 @@ export function MessaggiModal({ medico, onClose }: Props) {
                               {c.modifiche.length} modific{c.modifiche.length === 1 ? 'a' : 'he'} proposta{c.modifiche.length === 1 ? '' : ''}
                               {c.motivo && <span className="block italic text-stone-600 mt-0.5">"{c.motivo}"</span>}
                             </p>
-                            {/* Dettagli sintetici delle modifiche (TC da → a) */}
+                            {/* Dettagli sintetici delle modifiche (medico + data + TC da → a) */}
                             <div className="mt-2 space-y-0.5">
-                              {c.modifiche.slice(0, 3).map((mod, idx) => (
-                                <div key={idx} className="text-[10px] text-stone-600 flex items-center gap-1.5">
-                                  <span className="font-mono">{fmtDataBreve(mod.data)}</span>
+                              {c.modifiche.slice(0, 4).map((mod, idx) => (
+                                <div key={idx} className="text-[10px] text-stone-700 flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-semibold">
+                                    {mediciById.get(mod.medico_id) ?? '?'}
+                                  </span>
+                                  <span className="font-mono text-stone-500">
+                                    {fmtDataBreve(mod.data)}
+                                  </span>
                                   <span className="font-mono px-1 rounded bg-white border border-stone-200">
                                     {mod.da.tc || '—'}
                                   </span>
@@ -320,9 +343,9 @@ export function MessaggiModal({ medico, onClose }: Props) {
                                   </span>
                                 </div>
                               ))}
-                              {c.modifiche.length > 3 && (
+                              {c.modifiche.length > 4 && (
                                 <div className="text-[10px] italic text-stone-500">
-                                  …e altre {c.modifiche.length - 3} modific{c.modifiche.length - 3 === 1 ? 'a' : 'he'}
+                                  …e altre {c.modifiche.length - 4} modific{c.modifiche.length - 4 === 1 ? 'a' : 'he'}
                                 </div>
                               )}
                             </div>

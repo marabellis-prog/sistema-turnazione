@@ -198,6 +198,7 @@ export function GestioneFeriePage() {
     qc.invalidateQueries({ queryKey: ['ferie-ranges'] })
     qc.invalidateQueries({ queryKey: ['turni'] })
     qc.invalidateQueries({ queryKey: ['messaggi'] })
+    qc.invalidateQueries({ queryKey: ['messaggi-unread-count'] })
   }
 
   // ── Elimina ferie ────────────────────────────────────────────
@@ -209,24 +210,17 @@ export function GestioneFeriePage() {
     })
     if (!ok) return
 
-    // Snapshot prima della DELETE: serve per generare il messaggio dopo,
-    // anche se il record non esiste piu` in DB.
     const wasApproved = f.approvate
 
-    await supabase.from('ferie').delete().eq('id', f.id)
-    if (f.approvate) {
-      await supabase.from('turni')
-        .update({ is_ferie: false })
-        .eq('medico_id', f.medico_id)
-        .gte('data', f.data_inizio).lte('data', f.data_fine)
-    }
-
-    // Notifica il medico: rifiuto (se la richiesta era ancora pending) o
-    // cancellazione (se le ferie erano gia` approvate e l'admin le rimuove).
-    // Il tipo e` lo stesso 'ferie_rifiutate' per semplicita`; il titolo/corpo
-    // chiariscono il contesto specifico.
+    // 1) Genera messaggio PRIMA della DELETE: la colonna messaggi.ferie_id
+    //    e` una FK con ON DELETE SET NULL, quindi se cancelliamo la ferie
+    //    prima dell'INSERT del messaggio, l'INSERT fallisce per foreign
+    //    key violation (la riga di destinazione non esiste piu`). Facendo
+    //    INSERT prima, il messaggio si lega correttamente; la successiva
+    //    DELETE della ferie fa cascading SET NULL su messaggi.ferie_id,
+    //    ma il messaggio resta in casella col suo corpo gia` valorizzato.
     await insertFerieMessaggio(
-      { ...f, id: f.id },  // f.id resta utile per il riferimento; la FK ferie_id passera` a NULL via ON DELETE SET NULL
+      f,
       'ferie_rifiutate',
       wasApproved ? 'Ferie cancellate' : 'Richiesta ferie rifiutata',
       wasApproved
@@ -234,10 +228,20 @@ export function GestioneFeriePage() {
         : `La tua richiesta di ferie dal ${fmtIt(f.data_inizio)} al ${fmtIt(f.data_fine)} e stata rifiutata.`,
     )
 
+    // 2) Delete della ferie + reset is_ferie sui turni del range (se era approvata)
+    await supabase.from('ferie').delete().eq('id', f.id)
+    if (wasApproved) {
+      await supabase.from('turni')
+        .update({ is_ferie: false })
+        .eq('medico_id', f.medico_id)
+        .gte('data', f.data_inizio).lte('data', f.data_fine)
+    }
+
     qc.invalidateQueries({ queryKey: ['ferie'] })
     qc.invalidateQueries({ queryKey: ['ferie-ranges'] })
     qc.invalidateQueries({ queryKey: ['turni'] })
     qc.invalidateQueries({ queryKey: ['messaggi'] })
+    qc.invalidateQueries({ queryKey: ['messaggi-unread-count'] })
   }
 
   // ── Helpers display ──────────────────────────────────────────

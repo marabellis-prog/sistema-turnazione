@@ -209,6 +209,7 @@ export function GestioneCambiPage() {
       qc.invalidateQueries({ queryKey: ['cambi-turno-pending-count'] })
       qc.invalidateQueries({ queryKey: ['turni-modifica'] })
       qc.invalidateQueries({ queryKey: ['messaggi'] })
+      qc.invalidateQueries({ queryKey: ['messaggi-unread-count'] })
     } catch (e) {
       setErr('Errore in approvazione: ' + (e as Error).message)
     } finally {
@@ -244,6 +245,7 @@ export function GestioneCambiPage() {
       qc.invalidateQueries({ queryKey: ['cambi-turno'] })
       qc.invalidateQueries({ queryKey: ['cambi-turno-pending-count'] })
       qc.invalidateQueries({ queryKey: ['messaggi'] })
+      qc.invalidateQueries({ queryKey: ['messaggi-unread-count'] })
       setRejectFor(null); setRejectMsg('')
     } catch (e) {
       setErr('Errore nel rifiuto: ' + (e as Error).message)
@@ -307,6 +309,7 @@ export function GestioneCambiPage() {
       qc.invalidateQueries({ queryKey: ['cambi-turno'] })
       qc.invalidateQueries({ queryKey: ['turni-modifica'] })
       qc.invalidateQueries({ queryKey: ['messaggi'] })
+      qc.invalidateQueries({ queryKey: ['messaggi-unread-count'] })
     } catch (e) {
       setErr('Errore nel ripristino: ' + (e as Error).message)
     } finally {
