@@ -80,6 +80,15 @@ export interface Turno {
   updated_at: string
 }
 
+// ─── Festività custom (oltre a quelle nazionali italiane) ───────────
+
+export interface FestivitaCustom {
+  id:          string
+  data:        string         // ISO "YYYY-MM-DD"
+  descrizione: string
+  created_at:  string
+}
+
 export interface Ferie {
   id: string
   medico_id: string

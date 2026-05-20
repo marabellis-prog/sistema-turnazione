@@ -6,6 +6,7 @@ import { useConfirm } from '../../hooks/useConfirm'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { FerieModal, expandRange, toRanges, type DayChange } from '../../components/FerieModal'
+import { useFestivitaCustom } from '../../hooks/useFestivitaCustom'
 import type { Medico, Ferie, Configurazione } from '../../types'
 
 // ══════════════════════════════════════════════════════════════════
@@ -26,6 +27,7 @@ function fmtIt(iso: string): string {
 export function GestioneFeriePage() {
   const qc = useQueryClient()
   const { confirm, confirmState } = useConfirm()
+  const { set: festivitaCustomSet } = useFestivitaCustom()
 
   const [modalMedico,    setModalMedico]    = useState<Medico | null>(null)
   const [insertMedicoId, setInsertMedicoId] = useState('')
@@ -310,6 +312,7 @@ export function GestioneFeriePage() {
           ferie={ferieByMedico.get(modalMedico.id) ?? []}
           onSave={changes => handleSaveChanges(modalMedico.id, changes)}
           onClose={() => { setModalMedico(null); setInsertMedicoId('') }}
+          festivitaCustomSet={festivitaCustomSet}
         />
       )}
 

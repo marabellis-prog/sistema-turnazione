@@ -17,10 +17,24 @@
 
 import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Settings, Save, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import {
+  Settings, Save, AlertTriangle, CheckCircle2, CalendarPlus, Trash2, Loader2,
+} from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfigurazioneRealtime } from '../../hooks/useConfigurazioneRealtime'
+import { useFestivitaCustom, useFestivitaCustomRealtime } from '../../hooks/useFestivitaCustom'
+import { useConfirm } from '../../hooks/useConfirm'
+import { ConfirmModal } from '../../components/ConfirmModal'
 import type { Configurazione } from '../../types'
+
+const MESI_IT = [
+  'gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic',
+]
+function fmtDataLunga(iso: string): string {
+  const [y, m, d] = iso.split('-').map(s => parseInt(s, 10))
+  if (!y || !m || !d) return iso
+  return `${d} ${MESI_IT[m-1] ?? '?'} ${y}`
+}
 
 // Le 8 chiavi delle impostazioni in ordine di rendering
 const KEYS = [
@@ -39,6 +53,8 @@ type SettingKey = typeof KEYS[number]
 export function ConfigPage() {
   const qc = useQueryClient()
   useConfigurazioneRealtime()
+  useFestivitaCustomRealtime()
+  const { confirm, confirmState } = useConfirm()
 
   // Local form state — uso stringhe per evitare problemi con input "0"
   // e con eventuali valori non ancora sincronizzati dal DB.
@@ -47,6 +63,13 @@ export function ConfigPage() {
   const [saving,  setSaving]  = useState(false)
   const [msg,     setMsg]     = useState<string | null>(null)
   const [err,     setErr]     = useState<string | null>(null)
+
+  // Form festività custom
+  const [festData,    setFestData]    = useState('')
+  const [festDescr,   setFestDescr]   = useState('')
+  const [festSaving,  setFestSaving]  = useState(false)
+  const [festErr,     setFestErr]     = useState<string | null>(null)
+  const { festivita: festivitaList } = useFestivitaCustom()
 
   const { data: config } = useQuery<Configurazione | null>({
     queryKey: ['configurazione'],
@@ -95,6 +118,51 @@ export function ConfigPage() {
       setErr((e as Error).message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  // ── Aggiungi festività custom ─────────────────────────────────
+  async function handleAggiungiFestivita() {
+    setFestErr(null)
+    if (!festData)  { setFestErr('Seleziona una data.'); return }
+    if (!festDescr.trim()) { setFestErr('Inserisci una descrizione (es. "Santo Patrono").'); return }
+    setFestSaving(true)
+    try {
+      const { error } = await supabase.from('festivita_custom').insert({
+        data:        festData,
+        descrizione: festDescr.trim(),
+      })
+      if (error) throw error
+      setFestData(''); setFestDescr('')
+      qc.invalidateQueries({ queryKey: ['festivita-custom'] })
+    } catch (e) {
+      const msg = (e as Error).message
+      // Vincolo UNIQUE su data → messaggio piu` chiaro
+      setFestErr(msg.includes('duplicate') || msg.includes('unique')
+        ? 'Esiste gia una festività su questa data.'
+        : 'Errore: ' + msg)
+    } finally {
+      setFestSaving(false)
+    }
+  }
+
+  // ── Elimina festività custom ──────────────────────────────────
+  async function handleEliminaFestivita(id: string, descrizione: string, data: string) {
+    const ok = await confirm({
+      title:   'Eliminare la festività?',
+      message: 'Eliminare "' + descrizione + '" del ' + fmtDataLunga(data) +
+        '? Quel giorno tornera ad essere considerato feriale ' +
+        '(se non e domenica o festivita nazionale).',
+      confirmLabel: 'Elimina',
+      danger: true,
+    })
+    if (!ok) return
+    try {
+      const { error } = await supabase.from('festivita_custom').delete().eq('id', id)
+      if (error) throw error
+      qc.invalidateQueries({ queryKey: ['festivita-custom'] })
+    } catch (e) {
+      setFestErr('Errore eliminazione: ' + (e as Error).message)
     }
   }
 
@@ -228,6 +296,95 @@ export function ConfigPage() {
         <code> slot_pomeriggio=MED</code> conta 1 per "SUB mattina" e 1 per "MED pomeriggio". Una <code>M</code>
         con <code>slot_mattina=SUB</code> conta 1 per "SUB mattina" (e niente pomeriggio).
       </div>
+
+      {/* ── SEZIONE FESTIVITÀ E RICORRENZE CUSTOM ───────────────────── */}
+      <div className="mt-4">
+        <h3 className="text-lg font-bold text-stone-800 flex items-center gap-2">
+          <CalendarPlus size={18} style={{ color: '#476540' }} />
+          Festività e ricorrenze
+        </h3>
+        <p className="text-sm text-stone-600 mt-0.5">
+          Aggiungi date che devono essere trattate come festive oltre alle festività nazionali italiane
+          (es. <strong>santo patrono</strong>, eventi locali). Da quel momento in poi quel giorno appare
+          come festivo nel calendario, nel conteggio "F" del riepilogo e nei check di consistenza
+          (atteso "festivo" invece di "feriale").
+        </p>
+
+        {/* Form aggiunta */}
+        <div className="mt-3 rounded-lg border border-stone-300 bg-white p-3">
+          <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr_auto] gap-2 items-end">
+            <label className="text-xs">
+              <span className="block text-stone-600 mb-0.5">Data</span>
+              <input type="date"
+                value={festData}
+                onChange={e => setFestData(e.target.value)}
+                className="px-2 py-1.5 rounded border border-stone-300 text-sm" />
+            </label>
+            <label className="text-xs">
+              <span className="block text-stone-600 mb-0.5">Descrizione</span>
+              <input type="text"
+                value={festDescr}
+                onChange={e => setFestDescr(e.target.value)}
+                placeholder="Es. Santo Patrono, San Vito, …"
+                className="w-full px-2 py-1.5 rounded border border-stone-300 text-sm" />
+            </label>
+            <button
+              onClick={handleAggiungiFestivita}
+              disabled={festSaving}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold text-white shadow disabled:opacity-50 transition-colors"
+              style={{ background: '#476540' }}>
+              {festSaving ? <Loader2 size={13} className="animate-spin" /> : <CalendarPlus size={13} />}
+              Aggiungi
+            </button>
+          </div>
+          {festErr && (
+            <div className="mt-2 px-2 py-1 rounded text-xs"
+              style={{ background: '#fde0e0', color: '#7a2020', border: '1px solid #f0c0c0' }}>
+              {festErr}
+            </div>
+          )}
+        </div>
+
+        {/* Lista festività esistenti */}
+        {festivitaList.length === 0 ? (
+          <p className="mt-3 text-xs text-stone-500 italic">
+            Nessuna festività custom configurata. Aggiungi date sopra per integrarle col calendario italiano.
+          </p>
+        ) : (
+          <div className="mt-3 rounded-lg border border-stone-300 bg-white overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ background: '#f4f1ea' }}>
+                  <th className="px-3 py-2 text-left font-semibold text-stone-700" style={{ width: 180 }}>Data</th>
+                  <th className="px-3 py-2 text-left font-semibold text-stone-700">Descrizione</th>
+                  <th className="px-3 py-2" style={{ width: 60 }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {festivitaList.map(f => (
+                  <tr key={f.id} className="border-t border-stone-200">
+                    <td className="px-3 py-2 font-mono text-xs">
+                      {fmtDataLunga(f.data)}
+                    </td>
+                    <td className="px-3 py-2 text-stone-700">{f.descrizione}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        onClick={() => handleEliminaFestivita(f.id, f.descrizione, f.data)}
+                        className="text-red-600 hover:text-red-800 transition-colors p-1"
+                        title="Elimina festività">
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <ConfirmModal {...confirmState.opts} open={confirmState.open}
+        onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
     </div>
   )
 }

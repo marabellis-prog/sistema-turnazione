@@ -20,12 +20,22 @@ export function getPasqua(year: number): Date {
 }
 
 /**
- * Restituisce true se la data è un festivo italiano.
+ * Restituisce true se la data è un festivo italiano (nazionale) o se
+ * compare nel set opzionale `customSet` (festività configurabili
+ * dall'admin via Impostazioni — es. santo patrono).
+ *
+ * `customSet` accetta date in formato ISO "YYYY-MM-DD".
  */
-export function isFestivo(date: Date): boolean {
+export function isFestivo(date: Date, customSet?: Set<string>): boolean {
   const d = date.getDate()
   const m = date.getMonth() + 1
   const y = date.getFullYear()
+
+  // Festività custom (admin-defined)
+  if (customSet && customSet.size > 0) {
+    const pad = (n: number) => String(n).padStart(2, '0')
+    if (customSet.has(`${y}-${pad(m)}-${pad(d)}`)) return true
+  }
 
   // Festività fisse
   if (d === 1  && m === 1)  return true  // Capodanno
@@ -53,6 +63,6 @@ export function isFestivo(date: Date): boolean {
 /**
  * Restituisce true se la data è domenica O festivo.
  */
-export function isDomenicaOFestivo(date: Date): boolean {
-  return date.getDay() === 0 || isFestivo(date)
+export function isDomenicaOFestivo(date: Date, customSet?: Set<string>): boolean {
+  return date.getDay() === 0 || isFestivo(date, customSet)
 }

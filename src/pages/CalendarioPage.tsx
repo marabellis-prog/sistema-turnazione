@@ -12,6 +12,7 @@ import { calcolaColoreFerie, COLORI_FERIE, ETICHETTA_COLORE } from '../lib/ferie
 import { useAuth } from '../hooks/useAuth'
 import { useFerieRealtime } from '../hooks/useFerieRealtime'
 import { useTurniRealtime } from '../hooks/useTurniRealtime'
+import { useFestivitaCustom, useFestivitaCustomRealtime } from '../hooks/useFestivitaCustom'
 import type {
   Medico, Turno, Ferie, Configurazione, ColonnaCal,
   TurnoClinico, TurnoRicerca, SlotPlacement,
@@ -346,7 +347,14 @@ export function CalendarioPage() {
     return map
   }, [turni])
 
-  const colonne = useMemo<ColonnaCal[]>(() => config ? generaColonne(config) : [], [config])
+  // Festività custom (santo patrono, eventi locali) — affette il flag
+  // isFestivo delle colonne calendario.
+  const { set: festivitaCustomSet } = useFestivitaCustom()
+  useFestivitaCustomRealtime()
+  const colonne = useMemo<ColonnaCal[]>(
+    () => config ? generaColonne(config, festivitaCustomSet) : [],
+    [config, festivitaCustomSet]
+  )
   const gruppiMese = useMemo(() => {
     const g: { mese: number; anno: number; count: number }[] = []
     colonne.forEach(col => {
@@ -775,6 +783,7 @@ export function CalendarioPage() {
           subtitle="Clicca i giorni per richiederli · le ferie già approvate sono bloccate · le richieste in attesa puoi annullarle ricliccandole"
           onSave={handleSaveSelfFerie}
           onClose={() => setShowRichiediFerie(false)}
+          festivitaCustomSet={festivitaCustomSet}
         />
       )}
 
@@ -836,6 +845,7 @@ export function CalendarioPage() {
               <RiepilogoTurni
                 medici={medici}
                 colonne={colonne}
+                festivitaCustomSet={festivitaCustomSet}
                 getCellInfo={(mid, data) => {
                   const cell = turniMap.get(mid)?.get(data)
                   return {

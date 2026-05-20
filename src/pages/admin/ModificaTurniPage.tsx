@@ -41,6 +41,7 @@ import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
 import { useTurniRealtime } from '../../hooks/useTurniRealtime'
 import { useConfigurazioneRealtime } from '../../hooks/useConfigurazioneRealtime'
+import { useFestivitaCustom, useFestivitaCustomRealtime } from '../../hooks/useFestivitaCustom'
 import type {
   Configurazione, Medico, SchemaModello, Turno, Ferie,
   TurnoClinico, TurnoRicerca, SlotPlacement, ColonnaCal,
@@ -636,10 +637,15 @@ export function ModificaTurniPage() {
     return map
   }, [turni])
 
+  // Festività custom (santo patrono, eventi locali) — affette il flag
+  // isFestivo delle colonne calendario e i check di consistenza.
+  const { set: festivitaCustomSet } = useFestivitaCustom()
+  useFestivitaCustomRealtime()
+
   // ── Colonne (giorni) e raggruppamento per mese ─────────────────────
   const colonne = useMemo<ColonnaCal[]>(
-    () => config ? generaColonne(config) : [],
-    [config],
+    () => config ? generaColonne(config, festivitaCustomSet) : [],
+    [config, festivitaCustomSet],
   )
 
   const colonnePerMese = useMemo(() => {
@@ -2038,6 +2044,7 @@ export function ModificaTurniPage() {
             <RiepilogoTurni
               medici={medici}
               colonne={colonne}
+              festivitaCustomSet={festivitaCustomSet}
               getCellInfo={(mid, data) => {
                 const cur = getCella(mid, data)
                 return {

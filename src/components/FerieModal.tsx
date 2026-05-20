@@ -85,7 +85,10 @@ function getEaster(year: number): Date {
   return new Date(year, month - 1, day)
 }
 
-export function getItalianHolidays(year: number): Set<string> {
+/** Calcola le festività italiane per l'anno + opzionalmente le date custom
+ *  (santo patrono, eventi locali) configurate dall'admin. Le custom passate
+ *  con `customSet` vengono filtrate per restare solo quelle dell'anno. */
+export function getItalianHolidays(year: number, customSet?: Set<string>): Set<string> {
   const pad = (n: number) => String(n).padStart(2, '0')
   const iso  = (y: number, m: number, d: number) => `${y}-${pad(m)}-${pad(d)}`
 
@@ -111,11 +114,21 @@ export function getItalianHolidays(year: number): Set<string> {
   const easter    = getEaster(year)
   const easterMon = new Date(easter.getFullYear(), easter.getMonth(), easter.getDate() + 1)
 
-  return new Set([
+  const out = new Set([
     ...fixed,
     localIso(easter),       // Pasqua
     localIso(easterMon),    // Lunedì dell'Angelo
   ])
+
+  // Aggiungi le festività custom che ricadono nell'anno richiesto
+  if (customSet) {
+    const yearStr = String(year)
+    for (const iso of customSet) {
+      if (iso.startsWith(yearStr + '-')) out.add(iso)
+    }
+  }
+
+  return out
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -166,15 +179,19 @@ const DAY_STYLE: Record<DayState, React.CSSProperties> = {
 
 const DOW = ['L','M','M','G','V','S','D']
 
-function MonthBlock({ year, month, approved, pending, changes, onDayClick, mode }: {
+function MonthBlock({ year, month, approved, pending, changes, onDayClick, mode, festivitaCustomSet }: {
   year: number; month: number   // month 0-based
   approved: Set<string>; pending: Set<string>
   changes: Map<string, DayChange>
   onDayClick: (d: string) => void
   mode: 'admin' | 'self'
+  festivitaCustomSet?: Set<string>
 }) {
-  // Festività italiane per questo anno (Pasqua calcolata)
-  const holidays = useMemo(() => getItalianHolidays(year), [year])
+  // Festività italiane + custom configurate dall'admin in /admin/config
+  const holidays = useMemo(
+    () => getItalianHolidays(year, festivitaCustomSet),
+    [year, festivitaCustomSet]
+  )
 
   const firstDow    = (new Date(year, month, 1).getDay() + 6) % 7  // 0=Mon
   const daysInMonth = new Date(year, month + 1, 0).getDate()
@@ -267,11 +284,14 @@ interface FerieModalProps {
   title?:    string
   /** Sottotitolo personalizzato (es. "Stai richiedendo ferie per…") */
   subtitle?: string
+  /** Set ISO "YYYY-MM-DD" delle festività custom (santo patrono, ecc.)
+   *  configurate in /admin/config. Aggiunte alle festività italiane standard. */
+  festivitaCustomSet?: Set<string>
 }
 
 export function FerieModal({
   medico, ferie, onSave, onClose,
-  mode = 'admin', title, subtitle,
+  mode = 'admin', title, subtitle, festivitaCustomSet,
 }: FerieModalProps) {
   const [view,    setView]    = useState<ViewMode>('quarterly')
   const [anchor,  setAnchor]  = useState(() => { const d = new Date(); d.setDate(1); return d })
@@ -412,7 +432,8 @@ export function FerieModal({
                 year={year} month={month}
                 approved={approved} pending={pending}
                 changes={changes} onDayClick={handleDayClick}
-                mode={mode} />
+                mode={mode}
+                festivitaCustomSet={festivitaCustomSet} />
             ))}
           </div>
         </div>

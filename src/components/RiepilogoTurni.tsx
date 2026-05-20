@@ -32,6 +32,9 @@ interface Props {
   getCellInfo:     (medicoId: string, data: string) => CellInfo
   /** Se presente, filtra il riepilogo a quel solo medico */
   filtroMedicoId?: string
+  /** Set ISO "YYYY-MM-DD" delle festività custom (santo patrono, ecc.).
+   *  Sommate alle italiane nel conteggio "F" (festivi lavorati). */
+  festivitaCustomSet?: Set<string>
 }
 
 interface RowStats {
@@ -47,13 +50,14 @@ interface RowStats {
   totale: number   // (M + P) + 2L
 }
 
-export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId }: Props) {
+export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, festivitaCustomSet }: Props) {
   const stats = useMemo<RowStats[]>(() => {
-    // Pre-calcolo festività italiane per gli anni coperti dal periodo
+    // Pre-calcolo festività italiane + custom (admin-defined) per gli
+    // anni coperti dal periodo.
     const annoSet = new Set<number>()
     colonne.forEach(c => annoSet.add(c.anno))
     const festivi = new Set<string>()
-    for (const a of annoSet) for (const d of getItalianHolidays(a)) festivi.add(d)
+    for (const a of annoSet) for (const d of getItalianHolidays(a, festivitaCustomSet)) festivi.add(d)
 
     const list = filtroMedicoId
       ? medici.filter(m => m.id === filtroMedicoId)
@@ -81,7 +85,7 @@ export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId }:
       }
       return { medico: m, M, P, L, S, D, F, SUB, MED, totale: (M + P) + 2 * L }
     })
-  }, [medici, colonne, getCellInfo, filtroMedicoId])
+  }, [medici, colonne, getCellInfo, filtroMedicoId, festivitaCustomSet])
 
   // Stili condivisi per le celle
   const headBg = '#7eb6d4'   // azzurro pastello (stesso della riga TURNI TOTALI)

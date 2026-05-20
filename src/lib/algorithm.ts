@@ -445,15 +445,22 @@ export function ricalcolaGiorno(ctx: RicalcContext): Map<string, RicalcCell> {
 
 /**
  * Crea la lista ordinata di ColonnaCal per l'intervallo di configurazione.
+ *
+ * @param festivitaCustomSet  Set opzionale di date ISO "YYYY-MM-DD" che
+ *   sono considerate festive in aggiunta a quelle italiane standard
+ *   (es. santo patrono, eventi locali — gestiti in /admin/config).
  */
-export function generaColonne(config: Configurazione): ColonnaCal[] {
+export function generaColonne(
+  config: Configurazione,
+  festivitaCustomSet?: Set<string>,
+): ColonnaCal[] {
   const colonne: ColonnaCal[] = []
 
   const corrente = new Date(config.anno_inizio, config.mese_inizio - 1, 1)
   const fine = new Date(config.anno_fine, config.mese_fine, 0) // ultimo giorno del mese fine
 
   while (corrente <= fine) {
-    const festivo = isFestivo(corrente)
+    const festivo = isFestivo(corrente, festivitaCustomSet)
     const domenica = corrente.getDay() === 0
 
     colonne.push({
