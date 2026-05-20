@@ -230,15 +230,33 @@ export function NavBar({ user, onSignOut }: Props) {
         href={href}
         target={tabName}
         onClick={e => handleSmartNav(e, to, href, tabName, active)}
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+        className={`flex items-center gap-1.5 px-2 py-1.5 lg:px-3 rounded-lg text-sm font-medium transition-colors
           ${active ? '' : 'hover:text-white'}`}
         style={active
           ? { background: 'rgba(255,255,255,0.15)', color: '#fff' }
           : { color: '#9ab488' }}
       >
-        <Icon size={15} />
-        {label}
+        <Icon size={16} />
+        {/* Label nascosta sotto lg (1024px): mobile + tablet piccoli
+            mostrano icona-only per stare comodi in landscape. */}
+        <span className="hidden lg:inline">{label}</span>
       </a>
+    )
+  }
+
+  /** Variante CalendarDays con piccola badge "A" che indica
+   *  "Settimanale Alternativo". Usata come Icon per il link
+   *  /settimanale-alt cosi` non si confonde con /settimanale. */
+  function AltCalendarIcon({ size = 16 }: { size?: number }) {
+    return (
+      <span className="relative inline-flex items-center">
+        <CalendarDays size={size} />
+        <span className="absolute -top-1.5 -right-1.5 leading-none px-0.5 py-px rounded-sm font-bold"
+          style={{
+            background: '#fbbf24', color: '#1c2818',
+            fontSize: 7, lineHeight: 1,
+          }}>A</span>
+      </span>
     )
   }
 
@@ -247,10 +265,10 @@ export function NavBar({ user, onSignOut }: Props) {
       style={{ background: '#2b3c24' }}>
       <div className="max-w-screen-xl mx-auto px-4 flex items-center gap-3 h-12">
 
-        {/* Logo + nome app */}
+        {/* Logo + nome app (testo nascosto sotto lg per stare in landscape mobile) */}
         <div className="flex items-center gap-2 shrink-0">
           <Calendar size={17} style={{ color: '#9ab488' }} />
-          <span className="font-bold text-sm tracking-tight" style={{ color: '#e0e8d8' }}>
+          <span className="hidden lg:inline font-bold text-sm tracking-tight" style={{ color: '#e0e8d8' }}>
             Sistema Turni
           </span>
         </div>
@@ -311,7 +329,7 @@ export function NavBar({ user, onSignOut }: Props) {
             {user.ruolo !== 'ospite' &&
               smartLink('/calendario',      hrefCalendario,     TAB_TURNI, 'Calendario',      Calendar)}
             {smartLink('/settimanale',      hrefSettimanale,    TAB_TURNI, 'Settimanale',     CalendarDays)}
-            {smartLink('/settimanale-alt',  hrefSettimanaleAlt, TAB_TURNI, 'Settimanale Alt', CalendarDays)}
+            {smartLink('/settimanale-alt',  hrefSettimanaleAlt, TAB_TURNI, 'Settimanale Alt', AltCalendarIcon)}
             {user.ruolo === 'admin' &&
               smartLink('/admin',           hrefAdmin,          TAB_ADMIN, 'Admin',           Settings)}
           </div>
@@ -323,7 +341,7 @@ export function NavBar({ user, onSignOut }: Props) {
         {/* Utente + casella messaggi + logout + versione */}
         {user && (
           <div className="flex items-center gap-3">
-            <span className="hidden sm:flex items-center gap-1.5 text-xs"
+            <span className="hidden lg:flex items-center gap-1.5 text-xs"
               style={{ color: '#9ab488' }}>
               <Users size={13} />
               {user.nome || user.email}
@@ -366,7 +384,7 @@ export function NavBar({ user, onSignOut }: Props) {
               title="Esci"
             >
               <LogOut size={14} />
-              <span className="hidden sm:inline">Esci</span>
+              <span className="hidden lg:inline">Esci</span>
             </button>
           </div>
         )}
@@ -405,7 +423,7 @@ export function NavBar({ user, onSignOut }: Props) {
         )}
 
         {/* Versione build — dopo il pulsante Esci */}
-        <span className="hidden sm:block text-[10px] font-mono shrink-0"
+        <span className="hidden lg:block text-[10px] font-mono shrink-0"
           style={{ color: '#c0d0b0' }}
           title={`Commit ${__APP_VERSION__} — build del ${__BUILD_DATE__}`}>
           v{__APP_VERSION__} · {__BUILD_DATE__}

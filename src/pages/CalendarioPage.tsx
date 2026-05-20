@@ -618,8 +618,12 @@ export function CalendarioPage() {
   }
 
   // ── Tabella calendario ────────────────────────────────────────────
+  // Uso 100dvh (dynamic viewport height) cosi` su Safari mobile l'altezza
+  // si aggiusta quando la barra URL si nasconde/mostra. Su browser meno
+  // recenti, dvh non e` supportato → fallback CSS a 100vh.
   return (
-    <div className="flex flex-col h-[calc(100vh-48px)]">
+    <div className="flex flex-col h-[calc(100vh-48px)]"
+      style={{ height: 'calc(100dvh - 48px)' }}>
       {/* Overlay full-screen che invita a ruotare il telefono in landscape.
           Visibile SOLO su dispositivi mobile (max-width 1024px) in portrait. */}
       <ForceLandscapeOverlay />
@@ -629,71 +633,69 @@ export function CalendarioPage() {
           Calendario {config.anno_inizio}
           {config.anno_fine !== config.anno_inizio ? `–${config.anno_fine}` : ''}
         </h1>
-        {/* Info turni — nascosta su schermi piccoli */}
-        <span className="text-xs hidden sm:inline" style={{ color: '#6b6b5a' }}>
+        {/* Info turni — nascosta sotto lg per non gonfiare la toolbar */}
+        <span className="text-xs hidden lg:inline" style={{ color: '#6b6b5a' }}>
           {medici.length} medici · Schema {config.schema_attivo} ·{' '}
           {turni.length.toLocaleString('it-IT')} turni
         </span>
-        <div className="ml-auto flex items-center gap-2">
-          {/* Toggle legenda — di default aperta su desktop, chiusa su mobile */}
+        {/* I bottoni su mobile mostrano SOLO icona, su lg+ anche testo.
+            Padding piu` generoso su mobile (py-2) per tap-target ~44px. */}
+        <div className="ml-auto flex items-center gap-1.5 lg:gap-2">
+          {/* Toggle legenda */}
           <button onClick={() => setMostraLegenda(v => !v)}
-            className="btn-secondary py-1 px-2 text-xs"
-            style={mostraLegenda ? { background: '#e0e8d8', borderColor: '#9ab488' } : {}}>
-            <Info size={13} /> Legenda
+            className="btn-secondary py-2 lg:py-1 px-2.5 lg:px-2 text-xs"
+            style={mostraLegenda ? { background: '#e0e8d8', borderColor: '#9ab488' } : {}}
+            title="Mostra/nascondi legenda">
+            <Info size={14} />
+            <span className="hidden lg:inline ml-1">Legenda</span>
           </button>
-          {/* Riepilogo turni — visibile SOLO ai medici turnisti loggati.
-              Apre un modal con il conteggio M/P/L/S/D/Totale del medico. */}
+          {/* Riepilogo turni — visibile SOLO ai medici turnisti loggati. */}
           {mioMedico && (
             <button onClick={() => setShowRiepilogo(true)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-white shadow-sm transition-colors"
+              className="flex items-center gap-1 px-2.5 py-2 lg:py-1 rounded-lg text-xs font-medium text-white shadow-sm transition-colors"
               style={{ background: '#7eb6d4' }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#5d9bc1'}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#7eb6d4'}
               title={`Riepilogo turni di ${mioMedico.nome}`}>
-              <BarChart3 size={13} />
-              <span className="hidden sm:inline">Riepilogo turni</span>
+              <BarChart3 size={14} />
+              <span className="hidden lg:inline">Riepilogo turni</span>
             </button>
           )}
           {/* Richiedi Ferie — visibile SOLO se l'utente loggato corrisponde
-              ad un medico in elenco (match per nome). Account "supervisore"
-              senza assegnazione ad un medico non vede questo pulsante. */}
+              ad un medico in elenco (match per nome). */}
           {mioMedico && (
             <button onClick={() => setShowRichiediFerie(true)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-white shadow-sm transition-colors"
+              className="flex items-center gap-1 px-2.5 py-2 lg:py-1 rounded-lg text-xs font-medium text-white shadow-sm transition-colors"
               style={{ background: '#476540' }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#456b3a'}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#476540'}
               title={`Richiedi ferie per ${mioMedico.nome}`}>
-              <Plane size={13} />
-              <span className="hidden sm:inline">Richiedi ferie</span>
+              <Plane size={14} />
+              <span className="hidden lg:inline">Richiedi ferie</span>
             </button>
           )}
-          {/* Richiedi Cambio Turno — accanto a Richiedi Ferie, stesso vincolo
-              (visibile solo se mioMedico). Apre il CambioTurnoModal dove
-              l'utente descrive all'admin le modifiche concordate offline. */}
+          {/* Richiedi Cambio Turno — accanto a Richiedi Ferie. */}
           {mioMedico && (
             <button onClick={() => setShowRichiediCambio(true)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-white shadow-sm transition-colors"
+              className="flex items-center gap-1 px-2.5 py-2 lg:py-1 rounded-lg text-xs font-medium text-white shadow-sm transition-colors"
               style={{ background: '#7a5a2f' }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#6a4d28'}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#7a5a2f'}
-              title={`Richiedi cambio turno`}>
-              <ArrowRightLeft size={13} />
-              <span className="hidden sm:inline">Richiedi cambio</span>
+              title="Richiedi cambio turno">
+              <ArrowRightLeft size={14} />
+              <span className="hidden lg:inline">Richiedi cambio</span>
             </button>
           )}
           <button onClick={() => {
-              // Aggiorna esplicitamente TUTTO: turni (fetch manuale) + ferie + medici.
-              // Senza l'invalidate sui ferie-ranges, una richiesta cambiata di stato
-              // (es. respinta o approvata dall'admin) non si rifletterebbe nei colori.
               if (config && mesi.length > 0) caricaTurni(config, mesi)
               qc.invalidateQueries({ queryKey: ['ferie-ranges'] })
               qc.invalidateQueries({ queryKey: ['medici'] })
               qc.invalidateQueries({ queryKey: ['configurazione'] })
             }}
-            className="btn-secondary py-1 px-2 text-xs">
-            <RefreshCw size={13} />
-            <span className="hidden sm:inline ml-1">Aggiorna</span>
+            className="btn-secondary py-2 lg:py-1 px-2.5 lg:px-2 text-xs"
+            title="Aggiorna i dati">
+            <RefreshCw size={14} />
+            <span className="hidden lg:inline ml-1">Aggiorna</span>
           </button>
         </div>
       </div>

@@ -68,6 +68,24 @@
 
   .cal-row-selected td { background: #eae8e0 !important; }
 
+  /* ── Mobile/landscape compatti — sotto lg (1024px) ─────
+     Riduce drasticamente l'altezza delle celle del calendario per
+     fare entrare tutti gli 11 medici della tabella clinica nello
+     spazio verticale ristretto del telefono in landscape (~300px). */
+  @media (max-width: 1023px) {
+    .cal-cell {
+      height: 22px;
+      width:  28px;
+      min-width: 28px;
+    }
+    .cal-td-nome,
+    .cal-td-nome-header {
+      min-width: 75px;
+      padding-top:    2px;
+      padding-bottom: 2px;
+    }
+  }
+
   /* ── Badge turni — pastello muto, niente glow ──────── */
   .badge-m   {
     display: inline-block;
