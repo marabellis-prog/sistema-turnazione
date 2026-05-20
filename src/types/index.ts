@@ -173,16 +173,29 @@ export interface CambioTurno {
 // ─── Messaggi (casella di posta utente) ─────────────────────────────
 
 export type TipoMessaggio =
+  // medico ← admin
   | 'cambio_approvato'
   | 'cambio_rifiutato'
   | 'cambio_ripristinato'
   | 'ferie_approvate'
   | 'ferie_rifiutate'
+  // admin ← medico (richieste / annullamenti)
+  | 'ferie_richiesta'
+  | 'ferie_annullata'
+  | 'cambio_richiesto'
+  | 'cambio_annullato'
+  // admin ← admin (log condiviso fra admin di azioni eseguite)
+  | 'admin_azione'
+
+export type DestinatarioRuolo = 'medico' | 'admin'
 
 export interface Messaggio {
   id:              string
   created_at:      string
-  medico_id:       string         // destinatario
+  /** NULL se destinatario_ruolo='admin' (broadcast a tutti gli admin). */
+  medico_id:       string | null
+  /** 'medico' = messaggio per il medico_id; 'admin' = broadcast a tutti gli admin. */
+  destinatario_ruolo: DestinatarioRuolo
   tipo:            TipoMessaggio
   titolo:          string
   corpo:           string | null

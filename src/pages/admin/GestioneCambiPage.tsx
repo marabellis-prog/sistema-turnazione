@@ -158,9 +158,9 @@ export function GestioneCambiPage() {
   // ── Helper: genera messaggi per TUTTI i medici coinvolti in un cambio ─
   // I medici coinvolti = richiedente + tutti i medico_id presenti nelle
   // modifiche JSONB (dedup via Set). Ogni medico riceve un suo messaggio
-  // nella casella di posta. L'INSERT e` permesso dalla policy m_insert
-  // (solo admin) → questo handler funziona perche` chi clicca approva/rifiuta
-  // e` in /admin.
+  // nella casella di posta. Inoltre viene generato UN messaggio broadcast
+  // di tipo `admin_azione` per tutti gli admin, cosi` il log dell'azione
+  // e` visibile nella loro casella (utile se piu` admin gestiscono).
   async function insertCambioMessaggi(
     c: CambioTurno,
     tipo: 'cambio_approvato' | 'cambio_rifiutato' | 'cambio_ripristinato',
@@ -170,14 +170,31 @@ export function GestioneCambiPage() {
     const mediciCoinvolti = new Set<string>([c.medico_richiedente_id])
     for (const m of c.modifiche) mediciCoinvolti.add(m.medico_id)
     const rows = Array.from(mediciCoinvolti).map(medicoId => ({
-      medico_id:       medicoId,
+      medico_id:          medicoId,
+      destinatario_ruolo: 'medico' as const,
       tipo,
       titolo,
       corpo,
-      cambio_turno_id: c.id,
+      cambio_turno_id:    c.id,
     }))
     const { error } = await supabase.from('messaggi').insert(rows)
     if (error) throw error
+
+    // Log broadcast admin (tipo 'admin_azione')
+    const azione = tipo === 'cambio_approvato'    ? 'approvato'
+                 : tipo === 'cambio_rifiutato'    ? 'rifiutato'
+                 :                                  'ripristinato'
+    const richiedenteNome =
+      medici.find(m => m.id === c.medico_richiedente_id)?.nome ?? '—'
+    const { error: e2 } = await supabase.from('messaggi').insert({
+      medico_id:          null,
+      destinatario_ruolo: 'admin',
+      tipo:               'admin_azione',
+      titolo:             `Cambio turno ${azione} — ${richiedenteNome}`,
+      corpo:              `La richiesta di cambio turno di ${richiedenteNome} (${c.modifiche.length} modific${c.modifiche.length === 1 ? 'a' : 'he'}) e' stata ${azione} dall'admin.`,
+      cambio_turno_id:    c.id,
+    })
+    if (e2) console.error('[cambi] insert log admin:', e2.message)
   }
 
   // ── Approva ────────────────────────────────────────────────────────

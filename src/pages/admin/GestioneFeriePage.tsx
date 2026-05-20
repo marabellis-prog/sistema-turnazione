@@ -164,22 +164,42 @@ export function GestioneFeriePage() {
   }
 
   // ── Helper: genera messaggio per il medico interessato ───────
-  // L'INSERT su messaggi e` permesso dalla policy m_insert (solo admin)
-  // → funziona qui perche` chi clicca approva/elimina e` in /admin/ferie.
+  // L'INSERT su messaggi e` permesso dalla policy m_insert (admin).
+  // Genera DUE messaggi:
+  //   1. per il medico interessato (la notifica vera e propria)
+  //   2. broadcast a tutti gli admin con tipo 'admin_azione', cosi`
+  //      gli altri admin vedono il log dell'azione (utile se piu` admin
+  //      gestiscono insieme e qualcuno vuole sapere chi ha fatto cosa).
   async function insertFerieMessaggio(
     f: Ferie,
     tipo: 'ferie_approvate' | 'ferie_rifiutate',
     titolo: string,
     corpo: string,
   ): Promise<void> {
-    const { error } = await supabase.from('messaggi').insert({
-      medico_id: f.medico_id,
+    const medicoNome = medici.find(m => m.id === f.medico_id)?.nome ?? '—'
+
+    // 1) Notifica al medico
+    const { error: e1 } = await supabase.from('messaggi').insert({
+      medico_id:          f.medico_id,
+      destinatario_ruolo: 'medico',
       tipo,
       titolo,
       corpo,
-      ferie_id:  f.id,
+      ferie_id:           f.id,
     })
-    if (error) console.error('[ferie] insert messaggio:', error.message)
+    if (e1) console.error('[ferie] insert messaggio medico:', e1.message)
+
+    // 2) Log condiviso admin
+    const azione = tipo === 'ferie_approvate' ? 'approvate' : 'rifiutate/cancellate'
+    const { error: e2 } = await supabase.from('messaggi').insert({
+      medico_id:          null,
+      destinatario_ruolo: 'admin',
+      tipo:               'admin_azione',
+      titolo:             `Ferie ${azione} — ${medicoNome}`,
+      corpo:              `Le ferie di ${medicoNome} dal ${fmtIt(f.data_inizio)} al ${fmtIt(f.data_fine)} sono state ${azione} dall'admin.`,
+      ferie_id:           f.id,
+    })
+    if (e2) console.error('[ferie] insert log admin:', e2.message)
   }
 
   // ── Approva ferie ────────────────────────────────────────────

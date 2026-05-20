@@ -1,19 +1,27 @@
 /**
  * MessaggiModal
  *
- * Casella di posta personale per i medici turnisti. Si apre dall'icona busta
- * nella NavBar. Mostra i messaggi del medico loggato in ordine cronologico
- * inverso (piu` recente in cima), paginati a 20 per pagina.
+ * Casella di posta personale.
+ *
+ * Due modalita`:
+ *   - mode='medico' (default): l'utente loggato e` un medico turnista.
+ *     Vede i propri messaggi (medico_id = me) ordinati cronologicamente,
+ *     piu` le proprie richieste pending in cima.
+ *
+ *   - mode='admin': l'utente loggato e` un admin. Vede i messaggi
+ *     destinatario_ruolo='admin' (broadcast a tutti gli admin), piu`
+ *     TUTTE le richieste pending del sistema (ferie + cambi turno) cosi`
+ *     puo` saltare alle pagine /admin/ferie o /admin/cambi per gestirle.
  *
  * Funzionalita`:
  *   - Click su un messaggio non letto → marca come letto (UPDATE messaggi.letto)
  *   - "Marca tutti come letti" → bulk update di tutti i non letti
  *   - Paginazione: prev/next con numero pagina visibile
- *   - Icona + colore per tipo (cambio ✓/✗/⟲ vs ferie 🌴 ✓/✗)
+ *   - Icona + colore per tipo
  *
- * NB: l'INSERT su messaggi e` riservato all'admin via policy m_insert.
- *     Qui l'utente fa solo SELECT e UPDATE.letto, gia` consentiti dalla
- *     policy m_select/m_update.
+ * Permessi RLS:
+ *   - SELECT/UPDATE: medico vede/marca i propri; admin vede/marca i broadcast
+ *   - INSERT: admin sempre; medico solo broadcast admin con tipi consentiti
  */
 
 import { useState, useMemo, useEffect } from 'react'
@@ -22,6 +30,7 @@ import {
   Mail, Check, X, RotateCcw, Plane, ChevronLeft, ChevronRight,
   ChevronsLeft, ChevronsRight,
   CheckCheck, Loader2, Clock, ArrowRightLeft, ArrowRight,
+  Send, Trash2, Shield,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useFerieRealtime } from '../hooks/useFerieRealtime'
@@ -51,7 +60,11 @@ function getPageWindow(current: number, total: number, windowSize: number): numb
 }
 
 interface Props {
-  medico:  Medico
+  /** 'medico' = casella personale del medico (richiede `medico`);
+   *  'admin'  = casella admin con broadcast e richieste pending del sistema. */
+  mode:    'medico' | 'admin'
+  /** Richiesto se mode='medico'. Ignorato se mode='admin'. */
+  medico?: Medico
   onClose: () => void
 }
 
@@ -62,11 +75,19 @@ const TIPO_CONFIG: Record<TipoMessaggio, {
   bg:    string
   label: string
 }> = {
-  cambio_approvato:    { Icon: Check,     color: '#166534', bg: '#dcfce7', label: 'Cambio turno approvato' },
-  cambio_rifiutato:    { Icon: X,         color: '#991b1b', bg: '#fee2e2', label: 'Cambio turno rifiutato' },
-  cambio_ripristinato: { Icon: RotateCcw, color: '#a16207', bg: '#fef3c7', label: 'Cambio turno ripristinato' },
-  ferie_approvate:     { Icon: Plane,     color: '#166534', bg: '#dcfce7', label: 'Ferie approvate' },
-  ferie_rifiutate:     { Icon: Plane,     color: '#991b1b', bg: '#fee2e2', label: 'Ferie rifiutate' },
+  // medico ← admin
+  cambio_approvato:    { Icon: Check,         color: '#166534', bg: '#dcfce7', label: 'Cambio turno approvato' },
+  cambio_rifiutato:    { Icon: X,             color: '#991b1b', bg: '#fee2e2', label: 'Cambio turno rifiutato' },
+  cambio_ripristinato: { Icon: RotateCcw,     color: '#a16207', bg: '#fef3c7', label: 'Cambio turno ripristinato' },
+  ferie_approvate:     { Icon: Plane,         color: '#166534', bg: '#dcfce7', label: 'Ferie approvate' },
+  ferie_rifiutate:     { Icon: Plane,         color: '#991b1b', bg: '#fee2e2', label: 'Ferie rifiutate' },
+  // admin ← medico
+  ferie_richiesta:     { Icon: Send,          color: '#1d4ed8', bg: '#dbeafe', label: 'Richiesta ferie' },
+  ferie_annullata:     { Icon: Trash2,        color: '#7c2d12', bg: '#fed7aa', label: 'Ferie annullate dal medico' },
+  cambio_richiesto:    { Icon: Send,          color: '#1d4ed8', bg: '#dbeafe', label: 'Richiesta cambio turno' },
+  cambio_annullato:    { Icon: Trash2,        color: '#7c2d12', bg: '#fed7aa', label: 'Cambio annullato dal medico' },
+  // admin ← admin
+  admin_azione:        { Icon: Shield,        color: '#475569', bg: '#e2e8f0', label: 'Log azione admin' },
 }
 
 /** Formatta una data ISO in "dd/mm/yy hh:mm" (formato breve italiano). */
@@ -83,32 +104,41 @@ function fmtDataBreve(sqlDate: string): string {
   return y !== curY ? `${d}/${m}/${y.slice(2)}` : `${d}/${m}`
 }
 
-export function MessaggiModal({ medico, onClose }: Props) {
+export function MessaggiModal({ mode, medico, onClose }: Props) {
   const qc = useQueryClient()
   const [page,    setPage]    = useState(0)
   const [marking, setMarking] = useState<string | null>(null)
   const [bulkLoading, setBulkLoading] = useState(false)
 
-  // Realtime su ferie e cambi turno: cosi` se il medico apre il modal e
-  // submitta una nuova richiesta (es. da un'altra tab) o viene approvata
-  // dall'admin, le sezioni "in attesa" si aggiornano automaticamente.
+  // Identita` per le query/invalidations: per il medico usiamo il suo id;
+  // per l'admin una stringa fissa cosi` ['messaggi', 'admin'] e
+  // ['messaggi-unread-count', 'admin'] non si scontrano con quelle medico.
+  const queryScopeId = mode === 'medico' ? (medico?.id ?? '') : 'admin'
+
+  // Realtime su ferie e cambi turno: cosi` se il modal e` aperto e
+  // arrivano nuove richieste (medico) o azioni dell'admin (altrove),
+  // le sezioni "in attesa" si aggiornano automaticamente.
   useFerieRealtime()
   useCambiTurnoRealtime()
 
-  // ── Query messaggi del medico ─────────────────────────────────────
-  // Tutti in una sola fetch (max ~poche centinaia in pratica). La
-  // paginazione e` client-side per semplicita`. Se in futuro i volumi
-  // crescono molto, si puo` passare a range/offset DB.
+  // ── Query messaggi ────────────────────────────────────────────────
+  // Per il medico: filtra per medico_id. Per l'admin: filtra per
+  // destinatario_ruolo='admin' (broadcast).
   const { data: messaggi = [], isLoading } = useQuery<Messaggio[]>({
-    queryKey: ['messaggi', medico.id],
+    queryKey: ['messaggi', queryScopeId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('messaggi').select('*')
-        .eq('medico_id', medico.id)
-        .order('created_at', { ascending: false })
+      let q = supabase.from('messaggi').select('*')
+      if (mode === 'medico') {
+        if (!medico) return []
+        q = q.eq('medico_id', medico.id)
+      } else {
+        q = q.eq('destinatario_ruolo', 'admin')
+      }
+      const { data, error } = await q.order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as Messaggio[]
     },
+    enabled:                     mode === 'admin' || !!medico,
     staleTime:                   0,
     refetchOnMount:              'always',
     refetchOnWindowFocus:        true,    // safety net se realtime non arriva
@@ -116,45 +146,37 @@ export function MessaggiModal({ medico, onClose }: Props) {
     refetchIntervalInBackground: false,
   })
 
-  // ── Richieste in attesa del medico (ferie + cambi turno) ──────────
-  // QueryKey con prefisso 'ferie' / 'cambi-turno' cosi` le invalidazioni
-  // partial-match dei realtime hook (useFerieRealtime / useCambiTurnoRealtime)
-  // toccano anche queste query. L'utente vede le proprie pending in cima
-  // alla lista, indipendentemente dalla data di inserimento.
+  // ── Richieste pending visibili nel modal ─────────────────────────
+  // Medico: SOLO le proprie. Admin: TUTTE le pending del sistema.
   const { data: feriePending = [] } = useQuery<Ferie[]>({
-    queryKey: ['ferie', 'pending-mie', medico.id],
+    queryKey: ['ferie', mode === 'admin' ? 'pending-tutte' : 'pending-mie', queryScopeId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('ferie').select('*')
-        .eq('medico_id', medico.id)
-        .eq('approvate', false)
-        .order('created_at', { ascending: false })
+      let q = supabase.from('ferie').select('*').eq('approvate', false)
+      if (mode === 'medico' && medico) q = q.eq('medico_id', medico.id)
+      const { data, error } = await q.order('created_at', { ascending: false })
       if (error) throw error
       return data ?? []
     },
+    enabled: mode === 'admin' || !!medico,
     staleTime: 0,
     refetchOnMount: 'always',
   })
   const { data: cambiPending = [] } = useQuery<CambioTurno[]>({
-    queryKey: ['cambi-turno', 'pending-miei', medico.id],
+    queryKey: ['cambi-turno', mode === 'admin' ? 'pending-tutti' : 'pending-miei', queryScopeId],
     queryFn: async () => {
-      // RLS ct_select filtra gia` per medico_richiedente_id = my_medico_id().
-      // L'eq('medico_richiedente_id') e` superfluo ma esplicito per chiarezza.
-      const { data, error } = await supabase
-        .from('cambi_turno').select('*')
-        .eq('medico_richiedente_id', medico.id)
-        .eq('stato', 'pending')
-        .order('created_at', { ascending: false })
+      let q = supabase.from('cambi_turno').select('*').eq('stato', 'pending')
+      if (mode === 'medico' && medico) q = q.eq('medico_richiedente_id', medico.id)
+      const { data, error } = await q.order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as CambioTurno[]
     },
+    enabled: mode === 'admin' || !!medico,
     staleTime: 0,
     refetchOnMount: 'always',
   })
 
-  // Lookup nome medico per id, usato nelle preview delle modifiche dei
-  // cambi turno pending. Solo i medici attivi (sufficiente per i cambi
-  // sul calendario corrente).
+  // Lookup nome medico per id. In admin mode serve sia per le pending
+  // (mostrare CHI ha richiesto) sia per i medici coinvolti nei cambi.
   const { data: tuttiMedici = [] } = useQuery<{ id: string; nome: string }[]>({
     queryKey: ['medici'],
     queryFn: async () => {
@@ -194,8 +216,8 @@ export function MessaggiModal({ medico, onClose }: Props) {
         .update({ letto: true })
         .eq('id', m.id)
       if (error) throw error
-      qc.invalidateQueries({ queryKey: ['messaggi', medico.id] })
-      qc.invalidateQueries({ queryKey: ['messaggi-unread-count', medico.id] })
+      qc.invalidateQueries({ queryKey: ['messaggi', queryScopeId] })
+      qc.invalidateQueries({ queryKey: ['messaggi-unread-count'] })
     } catch (e) {
       console.error('[messaggi] mark-as-read:', (e as Error).message)
     } finally {
@@ -208,19 +230,34 @@ export function MessaggiModal({ medico, onClose }: Props) {
     if (unreadCount === 0) return
     setBulkLoading(true)
     try {
-      const { error } = await supabase.from('messaggi')
-        .update({ letto: true })
-        .eq('medico_id', medico.id)
-        .eq('letto',     false)
+      let q = supabase.from('messaggi').update({ letto: true }).eq('letto', false)
+      if (mode === 'medico' && medico) {
+        q = q.eq('medico_id', medico.id)
+      } else {
+        q = q.eq('destinatario_ruolo', 'admin')
+      }
+      const { error } = await q
       if (error) throw error
-      qc.invalidateQueries({ queryKey: ['messaggi', medico.id] })
-      qc.invalidateQueries({ queryKey: ['messaggi-unread-count', medico.id] })
+      qc.invalidateQueries({ queryKey: ['messaggi', queryScopeId] })
+      qc.invalidateQueries({ queryKey: ['messaggi-unread-count'] })
     } catch (e) {
       console.error('[messaggi] bulk mark-as-read:', (e as Error).message)
     } finally {
       setBulkLoading(false)
     }
   }
+
+  // Copy header dinamico
+  const headerTitle = mode === 'admin' ? 'Notifiche admin' : 'Casella messaggi'
+  const headerSubtitleEmpty = mode === 'admin'
+    ? 'Nessuna notifica'
+    : 'Nessun messaggio'
+  const pendingHeading = mode === 'admin'
+    ? 'Richieste da approvare'
+    : 'In attesa di approvazione'
+  const emptyTotalText = mode === 'admin'
+    ? 'Nessuna notifica. Le richieste dei medici e i log delle azioni admin compariranno qui.'
+    : 'Nessun messaggio. Le notifiche su cambi turno e ferie compariranno qui.'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3"
@@ -236,19 +273,21 @@ export function MessaggiModal({ medico, onClose }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-stone-200 shrink-0">
           <div className="flex items-center gap-3">
-            <Mail size={20} style={{ color: '#476540' }} />
+            {mode === 'admin'
+              ? <Shield size={20} style={{ color: '#476540' }} />
+              : <Mail   size={20} style={{ color: '#476540' }} />}
             <div>
-              <h3 className="font-bold text-stone-800 text-base">Casella messaggi</h3>
+              <h3 className="font-bold text-stone-800 text-base">{headerTitle}</h3>
               <p className="text-xs text-stone-500">
                 {messaggi.length === 0
-                  ? 'Nessun messaggio'
-                  : `${messaggi.length} messagg${messaggi.length === 1 ? 'io' : 'i'}`}
+                  ? headerSubtitleEmpty
+                  : `${messaggi.length} ${mode === 'admin' ? 'notific' : 'messagg'}${messaggi.length === 1 ? (mode === 'admin' ? 'a' : 'io') : (mode === 'admin' ? 'he' : 'i')}`}
                 {unreadCount > 0 && <span className="ml-1 font-semibold" style={{ color: '#d97706' }}>
                   · {unreadCount} non lett{unreadCount === 1 ? 'o' : 'i'}
                 </span>}
                 {(feriePending.length + cambiPending.length) > 0 && (
                   <span className="ml-1 font-semibold" style={{ color: '#a16207' }}>
-                    · {feriePending.length + cambiPending.length} in attesa
+                    · {feriePending.length + cambiPending.length} {mode === 'admin' ? 'da gestire' : 'in attesa'}
                   </span>
                 )}
               </p>
@@ -282,105 +321,117 @@ export function MessaggiModal({ medico, onClose }: Props) {
           ) : (messaggi.length === 0 && feriePending.length === 0 && cambiPending.length === 0) ? (
             <div className="text-stone-500 text-sm text-center py-10">
               <Mail size={32} className="mx-auto mb-2 opacity-30" />
-              Nessun messaggio. Le notifiche su cambi turno e ferie compariranno qui.
+              {emptyTotalText}
             </div>
           ) : (
             <>
-              {/* ── Sezione "In attesa di approvazione" — SEMPRE in cima ── */}
+              {/* ── Sezione "In attesa di approvazione" / "Da approvare" ── */}
               {(feriePending.length > 0 || cambiPending.length > 0) && (
                 <div className="mb-4">
                   <div className="flex items-center gap-1.5 mb-2 text-[11px] font-bold uppercase tracking-wider px-1"
                     style={{ color: '#a16207' }}>
                     <Clock size={12} />
-                    In attesa di approvazione ({feriePending.length + cambiPending.length})
+                    {pendingHeading} ({feriePending.length + cambiPending.length})
                   </div>
                   <div className="space-y-2">
                     {/* Ferie pending */}
-                    {feriePending.map(f => (
-                      <div key={`fp-${f.id}`} className="rounded-lg border-2 p-3"
-                        style={{ background: '#fef3c7', borderColor: '#fbbf24' }}>
-                        <div className="flex items-start gap-3">
-                          <div className="rounded-full p-1.5 shrink-0"
-                            style={{ background: '#fde68a' }}>
-                            <Plane size={13} style={{ color: '#a16207' }} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span className="text-sm font-semibold text-stone-800 truncate">
-                                Richiesta ferie in attesa
-                              </span>
-                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider shrink-0"
-                                style={{ background: '#fbbf24', color: '#78350f' }}>
-                                IN ATTESA
-                              </span>
+                    {feriePending.map(f => {
+                      const richiedente = mode === 'admin'
+                        ? (mediciById.get(f.medico_id) ?? '?')
+                        : null
+                      return (
+                        <div key={`fp-${f.id}`} className="rounded-lg border-2 p-3"
+                          style={{ background: '#fef3c7', borderColor: '#fbbf24' }}>
+                          <div className="flex items-start gap-3">
+                            <div className="rounded-full p-1.5 shrink-0"
+                              style={{ background: '#fde68a' }}>
+                              <Plane size={13} style={{ color: '#a16207' }} />
                             </div>
-                            <p className="text-xs text-stone-700 mt-1">
-                              {f.data_inizio === f.data_fine
-                                ? <>Per il <strong>{fmtDataBreve(f.data_inizio)}</strong></>
-                                : <>Dal <strong>{fmtDataBreve(f.data_inizio)}</strong> al <strong>{fmtDataBreve(f.data_fine)}</strong></>}
-                            </p>
-                            <p className="text-[10px] text-stone-500 mt-1 font-mono">
-                              Inviata il {fmtDataOra(f.created_at)}
-                            </p>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-baseline justify-between gap-2">
+                                <span className="text-sm font-semibold text-stone-800 truncate">
+                                  {mode === 'admin'
+                                    ? <>Richiesta ferie da <strong>{richiedente}</strong></>
+                                    : 'Richiesta ferie in attesa'}
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider shrink-0"
+                                  style={{ background: '#fbbf24', color: '#78350f' }}>
+                                  {mode === 'admin' ? 'DA APPROVARE' : 'IN ATTESA'}
+                                </span>
+                              </div>
+                              <p className="text-xs text-stone-700 mt-1">
+                                {f.data_inizio === f.data_fine
+                                  ? <>Per il <strong>{fmtDataBreve(f.data_inizio)}</strong></>
+                                  : <>Dal <strong>{fmtDataBreve(f.data_inizio)}</strong> al <strong>{fmtDataBreve(f.data_fine)}</strong></>}
+                              </p>
+                              <p className="text-[10px] text-stone-500 mt-1 font-mono">
+                                Inviata il {fmtDataOra(f.created_at)}
+                              </p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                     {/* Cambi turno pending */}
-                    {cambiPending.map(c => (
-                      <div key={`cp-${c.id}`} className="rounded-lg border-2 p-3"
-                        style={{ background: '#fef3c7', borderColor: '#fbbf24' }}>
-                        <div className="flex items-start gap-3">
-                          <div className="rounded-full p-1.5 shrink-0"
-                            style={{ background: '#fde68a' }}>
-                            <ArrowRightLeft size={13} style={{ color: '#a16207' }} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span className="text-sm font-semibold text-stone-800 truncate">
-                                Richiesta cambio turno in attesa
-                              </span>
-                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider shrink-0"
-                                style={{ background: '#fbbf24', color: '#78350f' }}>
-                                IN ATTESA
-                              </span>
+                    {cambiPending.map(c => {
+                      const richiedente = mediciById.get(c.medico_richiedente_id) ?? '?'
+                      return (
+                        <div key={`cp-${c.id}`} className="rounded-lg border-2 p-3"
+                          style={{ background: '#fef3c7', borderColor: '#fbbf24' }}>
+                          <div className="flex items-start gap-3">
+                            <div className="rounded-full p-1.5 shrink-0"
+                              style={{ background: '#fde68a' }}>
+                              <ArrowRightLeft size={13} style={{ color: '#a16207' }} />
                             </div>
-                            <p className="text-xs text-stone-700 mt-1">
-                              {c.modifiche.length} modific{c.modifiche.length === 1 ? 'a' : 'he'} proposta{c.modifiche.length === 1 ? '' : ''}
-                              {c.motivo && <span className="block italic text-stone-600 mt-0.5">"{c.motivo}"</span>}
-                            </p>
-                            {/* Dettagli sintetici delle modifiche (medico + data + TC da → a) */}
-                            <div className="mt-2 space-y-0.5">
-                              {c.modifiche.slice(0, 4).map((mod, idx) => (
-                                <div key={idx} className="text-[10px] text-stone-700 flex items-center gap-1.5 flex-wrap">
-                                  <span className="font-semibold">
-                                    {mediciById.get(mod.medico_id) ?? '?'}
-                                  </span>
-                                  <span className="font-mono text-stone-500">
-                                    {fmtDataBreve(mod.data)}
-                                  </span>
-                                  <span className="font-mono px-1 rounded bg-white border border-stone-200">
-                                    {mod.da.tc || '—'}
-                                  </span>
-                                  <ArrowRight size={9} />
-                                  <span className="font-mono px-1 rounded bg-white border border-stone-300 font-semibold">
-                                    {mod.a.tc || '—'}
-                                  </span>
-                                </div>
-                              ))}
-                              {c.modifiche.length > 4 && (
-                                <div className="text-[10px] italic text-stone-500">
-                                  …e altre {c.modifiche.length - 4} modific{c.modifiche.length - 4 === 1 ? 'a' : 'he'}
-                                </div>
-                              )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-baseline justify-between gap-2">
+                                <span className="text-sm font-semibold text-stone-800 truncate">
+                                  {mode === 'admin'
+                                    ? <>Richiesta cambio da <strong>{richiedente}</strong></>
+                                    : 'Richiesta cambio turno in attesa'}
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider shrink-0"
+                                  style={{ background: '#fbbf24', color: '#78350f' }}>
+                                  {mode === 'admin' ? 'DA APPROVARE' : 'IN ATTESA'}
+                                </span>
+                              </div>
+                              <p className="text-xs text-stone-700 mt-1">
+                                {c.modifiche.length} modific{c.modifiche.length === 1 ? 'a' : 'he'} proposta{c.modifiche.length === 1 ? '' : ''}
+                                {c.motivo && <span className="block italic text-stone-600 mt-0.5">"{c.motivo}"</span>}
+                              </p>
+                              {/* Dettagli sintetici delle modifiche (medico + data + TC da → a) */}
+                              <div className="mt-2 space-y-0.5">
+                                {c.modifiche.slice(0, 4).map((mod, idx) => (
+                                  <div key={idx} className="text-[10px] text-stone-700 flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-semibold">
+                                      {mediciById.get(mod.medico_id) ?? '?'}
+                                    </span>
+                                    <span className="font-mono text-stone-500">
+                                      {fmtDataBreve(mod.data)}
+                                    </span>
+                                    <span className="font-mono px-1 rounded bg-white border border-stone-200">
+                                      {mod.da.tc || '—'}
+                                    </span>
+                                    <ArrowRight size={9} />
+                                    <span className="font-mono px-1 rounded bg-white border border-stone-300 font-semibold">
+                                      {mod.a.tc || '—'}
+                                    </span>
+                                  </div>
+                                ))}
+                                {c.modifiche.length > 4 && (
+                                  <div className="text-[10px] italic text-stone-500">
+                                    …e altre {c.modifiche.length - 4} modific{c.modifiche.length - 4 === 1 ? 'a' : 'he'}
+                                  </div>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-stone-500 mt-1 font-mono">
+                                Inviata il {fmtDataOra(c.created_at)}
+                              </p>
                             </div>
-                            <p className="text-[10px] text-stone-500 mt-1 font-mono">
-                              Inviata il {fmtDataOra(c.created_at)}
-                            </p>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               )}

@@ -96,31 +96,55 @@ export function NavBar({ user, onSignOut }: Props) {
     return medici.find(m => m.nome.toUpperCase().trim() === myName)
   }, [user?.nome, medici])
 
-  // Count "items da vedere" per il badge sulla busta. Somma:
-  //   1. Messaggi non letti (admin -> user via approvazione/rifiuto)
-  //   2. Ferie del medico ancora in attesa di approvazione
-  //   3. Cambi turno del medico (come richiedente) ancora in attesa
-  // Cosi` non appena l'utente invia una richiesta, il badge sale
-  // istantaneamente. Quando admin la risolve, scende di 1 ma sale di 1
-  // (messaggio nuovo) → numero stabile, ma "non letto" si.
-  //
-  // Invalidata da useMessaggiRealtime / useFerieRealtime /
+  // Mode busta: l'utente puo` essere un medico turnista, un admin, o
+  // entrambi. Decidiamo cosa mostrare:
+  //   - se admin → busta "admin" con i messaggi destinatario_ruolo='admin'
+  //     + tutte le richieste pending del sistema (broadcast)
+  //   - altrimenti, se medico → busta "medico" con i propri messaggi +
+  //     le proprie richieste pending
+  //   - se nessuno dei due (es. ospite) → nessuna busta
+  // Quando un admin e` anche un medico, prevale la vista admin (caso
+  // raro nella nostra app).
+  const mailMode: 'medico' | 'admin' | null =
+    user?.ruolo === 'admin' ? 'admin' :
+    mioMedico               ? 'medico' :
+    null
+
+  // Count "items da vedere" per il badge sulla busta. Definizione cambia
+  // per ruolo. Invalidata da useMessaggiRealtime / useFerieRealtime /
   // useCambiTurnoRealtime + polling 30s + window focus.
   const { data: unreadCount = 0 } = useQuery({
-    queryKey: ['messaggi-unread-count', mioMedico?.id],
+    queryKey: ['messaggi-unread-count', mailMode, mioMedico?.id],
     queryFn: async () => {
-      if (!mioMedico) return 0
-      const [msgRes, ferieRes, cambiRes] = await Promise.all([
-        supabase.from('messaggi').select('*', { count: 'exact', head: true })
-          .eq('medico_id', mioMedico.id).eq('letto', false),
-        supabase.from('ferie').select('*', { count: 'exact', head: true })
-          .eq('medico_id', mioMedico.id).eq('approvate', false),
-        supabase.from('cambi_turno').select('*', { count: 'exact', head: true })
-          .eq('medico_richiedente_id', mioMedico.id).eq('stato', 'pending'),
-      ])
-      return (msgRes.count ?? 0) + (ferieRes.count ?? 0) + (cambiRes.count ?? 0)
+      if (mailMode === 'medico' && mioMedico) {
+        // Medico: messaggi non letti + proprie ferie/cambi pending
+        const [msgRes, ferieRes, cambiRes] = await Promise.all([
+          supabase.from('messaggi').select('*', { count: 'exact', head: true })
+            .eq('medico_id', mioMedico.id).eq('letto', false),
+          supabase.from('ferie').select('*', { count: 'exact', head: true })
+            .eq('medico_id', mioMedico.id).eq('approvate', false),
+          supabase.from('cambi_turno').select('*', { count: 'exact', head: true })
+            .eq('medico_richiedente_id', mioMedico.id).eq('stato', 'pending'),
+        ])
+        return (msgRes.count ?? 0) + (ferieRes.count ?? 0) + (cambiRes.count ?? 0)
+      }
+      if (mailMode === 'admin') {
+        // Admin: messaggi broadcast admin non letti + tutte le richieste
+        // pending del sistema (cosi` il badge sale appena qualcuno
+        // richiede ferie o cambio, anche prima di leggere il messaggio).
+        const [msgRes, ferieRes, cambiRes] = await Promise.all([
+          supabase.from('messaggi').select('*', { count: 'exact', head: true })
+            .eq('destinatario_ruolo', 'admin').eq('letto', false),
+          supabase.from('ferie').select('*', { count: 'exact', head: true })
+            .eq('approvate', false),
+          supabase.from('cambi_turno').select('*', { count: 'exact', head: true })
+            .eq('stato', 'pending'),
+        ])
+        return (msgRes.count ?? 0) + (ferieRes.count ?? 0) + (cambiRes.count ?? 0)
+      }
+      return 0
     },
-    enabled:                     !!mioMedico,
+    enabled:                     mailMode !== null,
     staleTime:                   0,
     refetchOnMount:              'always',
     refetchOnWindowFocus:        true,    // override global (false)
@@ -128,21 +152,24 @@ export function NavBar({ user, onSignOut }: Props) {
     refetchIntervalInBackground: false,   // niente polling quando tab nascosta
   })
 
-  // Toast pop-up su nuovi messaggi indirizzati al medico loggato.
-  // Il CustomEvent 'messaggio-nuovo' viene dispatchato da useMessaggiRealtime
-  // ad ogni INSERT. Filtriamo qui per medico_id per evitare di mostrare
-  // toast di messaggi destinati ad altri (anche se RLS dovrebbe gia` filtrare).
+  // Toast pop-up su nuovi messaggi indirizzati al medico loggato O
+  // all'admin (in base a mailMode). Il CustomEvent 'messaggio-nuovo'
+  // viene dispatchato da useMessaggiRealtime ad ogni INSERT. Filtriamo
+  // qui per non mostrare toast di messaggi destinati ad altri (anche se
+  // RLS dovrebbe gia` filtrare).
   useEffect(() => {
     function onNuovoMessaggio(e: Event) {
       const m = (e as CustomEvent<Messaggio>).detail
-      if (!mioMedico || m.medico_id !== mioMedico.id) return
+      const mineMedico = mailMode === 'medico' && mioMedico && m.medico_id === mioMedico.id
+      const mineAdmin  = mailMode === 'admin'  && m.destinatario_ruolo === 'admin'
+      if (!mineMedico && !mineAdmin) return
       setToast({ titolo: m.titolo, corpo: m.corpo })
       const t = setTimeout(() => setToast(null), 5000)
       return () => clearTimeout(t)
     }
     window.addEventListener('messaggio-nuovo', onNuovoMessaggio)
     return () => window.removeEventListener('messaggio-nuovo', onNuovoMessaggio)
-  }, [mioMedico])
+  }, [mioMedico, mailMode])
 
   // Auto-rinomina la tab corrente in base alla "famiglia" di pagine.
   // - Su /admin/*       → window.name = TAB_ADMIN
@@ -366,10 +393,11 @@ export function NavBar({ user, onSignOut }: Props) {
                 </span>
               )}
             </span>
-            {/* Icona busta: visibile solo se l'utente corrisponde a un
-                medico in elenco (account "medico turnista"). Il badge
-                arancione si illumina quando ci sono messaggi non letti. */}
-            {mioMedico && (
+            {/* Icona busta: visibile per medici turnisti (con record in
+                `medici`) E per gli admin (per richieste pending da gestire
+                e log azioni). Il badge arancione si illumina quando ci
+                sono messaggi non letti / richieste pending. */}
+            {mailMode !== null && (
               <button
                 onClick={() => setShowMessaggi(true)}
                 className="relative flex items-center px-2 py-2 lg:py-1 rounded-lg transition-colors"
@@ -377,8 +405,8 @@ export function NavBar({ user, onSignOut }: Props) {
                 onMouseEnter={e => (e.currentTarget.style.color = '#fff')}
                 onMouseLeave={e => (e.currentTarget.style.color = unreadCount > 0 ? '#fbbf24' : '#9ab488')}
                 title={unreadCount > 0
-                  ? `Hai ${unreadCount} messagg${unreadCount === 1 ? 'io' : 'i'} non lett${unreadCount === 1 ? 'o' : 'i'}`
-                  : 'Casella messaggi'}>
+                  ? `Hai ${unreadCount} ${mailMode === 'admin' ? 'notific' : 'messagg'}${unreadCount === 1 ? (mailMode === 'admin' ? 'a' : 'io') : (mailMode === 'admin' ? 'he' : 'i')} non lett${unreadCount === 1 ? 'o' : 'i'}`
+                  : (mailMode === 'admin' ? 'Notifiche admin' : 'Casella messaggi')}>
                 <Mail size={18} />
                 {unreadCount > 0 && (
                   <span
@@ -404,8 +432,12 @@ export function NavBar({ user, onSignOut }: Props) {
         )}
 
         {/* Modal casella messaggi */}
-        {showMessaggi && mioMedico && (
-          <MessaggiModal medico={mioMedico} onClose={() => setShowMessaggi(false)} />
+        {showMessaggi && mailMode !== null && (
+          <MessaggiModal
+            mode={mailMode}
+            medico={mailMode === 'medico' ? mioMedico : undefined}
+            onClose={() => setShowMessaggi(false)}
+          />
         )}
 
         {/* Toast pop-up al nuovo messaggio (realtime). Cliccabile per

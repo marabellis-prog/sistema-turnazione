@@ -660,6 +660,47 @@ export function CalendarioPage() {
       if (error) throw error
     }
 
+    // ── Notifica broadcast admin ───────────────────────────────────
+    // Un messaggio aggregato per le aggiunte e uno per le rimozioni:
+    // serve a tutti gli admin di sapere che c'e` una nuova richiesta
+    // (o un annullamento) da gestire, senza dover navigare nelle
+    // pagine admin a caccia di pending. Errori silenziosi: se la
+    // notifica fallisce non blocchiamo il salvataggio principale.
+    const fmtBreve = (sql: string) => {
+      const [y, m, d] = sql.split('-')
+      const curY = String(new Date().getFullYear())
+      return y !== curY ? `${d}/${m}/${y.slice(2)}` : `${d}/${m}`
+    }
+    const rangesStr = (ranges: { start: string; end: string }[]) =>
+      ranges.map(({ start, end }) =>
+        start === end
+          ? `il ${fmtBreve(start)}`
+          : `dal ${fmtBreve(start)} al ${fmtBreve(end)}`
+      ).join(', ')
+
+    if (toAdd.length > 0) {
+      const detail = rangesStr(toRanges(toAdd))
+      const { error: notifErr } = await supabase.from('messaggi').insert({
+        medico_id:          null,
+        destinatario_ruolo: 'admin',
+        tipo:               'ferie_richiesta',
+        titolo:             `Richiesta ferie da ${mioMedico.nome}`,
+        corpo:              `${mioMedico.nome} ha richiesto ferie ${detail}. Vai in Admin → Gestione Ferie per approvare o rifiutare.`,
+      })
+      if (notifErr) console.warn('[ferie] notifica admin fallita:', notifErr.message)
+    }
+    if (toRemoveSet.size > 0) {
+      const detail = rangesStr(toRanges([...toRemoveSet].sort()))
+      const { error: notifErr } = await supabase.from('messaggi').insert({
+        medico_id:          null,
+        destinatario_ruolo: 'admin',
+        tipo:               'ferie_annullata',
+        titolo:             `Ferie annullate da ${mioMedico.nome}`,
+        corpo:              `${mioMedico.nome} ha annullato la richiesta ferie ${detail}.`,
+      })
+      if (notifErr) console.warn('[ferie] notifica annullamento admin fallita:', notifErr.message)
+    }
+
     qc.invalidateQueries({ queryKey: ['ferie'] })
     qc.invalidateQueries({ queryKey: ['ferie-ranges'] })
   }

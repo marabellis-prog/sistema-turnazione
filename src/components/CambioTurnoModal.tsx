@@ -221,6 +221,18 @@ export function CambioTurnoModal({
       })
       if (insErr) throw insErr
 
+      // Notifica broadcast a tutti gli admin: nuova richiesta cambio
+      // turno da approvare. Errore silenziato per non bloccare il flusso.
+      const nMod = modifiche.length
+      const { error: notifErr } = await supabase.from('messaggi').insert({
+        medico_id:          null,
+        destinatario_ruolo: 'admin',
+        tipo:               'cambio_richiesto',
+        titolo:             `Richiesta cambio turno da ${medicoRichiedente.nome}`,
+        corpo:              `${medicoRichiedente.nome} ha proposto ${nMod} modific${nMod === 1 ? 'a' : 'he'} al calendario${motivo.trim() ? ` (motivo: ${motivo.trim()})` : ''}. Vai in Admin → Gestione Cambi per approvare o rifiutare.`,
+      })
+      if (notifErr) console.warn('[cambio-turno] notifica admin fallita:', notifErr.message)
+
       qc.invalidateQueries({ queryKey: ['cambi-turno'] })
       qc.invalidateQueries({ queryKey: ['cambi-turno-pending-count'] })
       onSuccess?.()
