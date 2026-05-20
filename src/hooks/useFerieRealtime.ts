@@ -38,6 +38,10 @@ export function useFerieRealtime() {
           // nell'AdminLayout sidebar — deve aggiornarsi in realtime
           // quando un user richiede o un admin approva.
           qc.invalidateQueries({ queryKey: ['ferie-pending-count'] })
+          // Badge "posta" della NavBar conta anche ferie pending del
+          // medico loggato → invalida cosi` il numerello sale subito
+          // quando uno user inserisce una richiesta di ferie.
+          qc.invalidateQueries({ queryKey: ['messaggi-unread-count'] })
         }
       )
       .subscribe(status => {

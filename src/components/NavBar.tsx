@@ -5,6 +5,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { usePendingActions } from '../contexts/PendingActionsContext'
 import { useVersionCheck } from '../hooks/useVersionCheck'
 import { useMessaggiRealtime } from '../hooks/useMessaggiRealtime'
+import { useFerieRealtime } from '../hooks/useFerieRealtime'
+import { useCambiTurnoRealtime } from '../hooks/useCambiTurnoRealtime'
 import { MessaggiModal } from './MessaggiModal'
 import { supabase } from '../lib/supabase'
 import type { AuthUser, Medico, Messaggio } from '../types'
@@ -47,8 +49,12 @@ export function NavBar({ user, onSignOut }: Props) {
 
   // ── Casella messaggi (medici turnisti loggati) ───────────────────
   // Realtime su `messaggi` per aggiornare il badge e mostrare toast pop-up
-  // su nuovi messaggi senza ricaricare la pagina.
+  // su nuovi messaggi senza ricaricare la pagina. Anche su `ferie` e
+  // `cambi_turno` cosi` il badge include anche le richieste pending
+  // (es. quando il medico stesso le invia, devono apparire subito).
   useMessaggiRealtime()
+  useFerieRealtime()
+  useCambiTurnoRealtime()
   const qc = useQueryClient()
   const [showMessaggi, setShowMessaggi] = useState(false)
   const [toast, setToast] = useState<{ titolo: string; corpo: string | null } | null>(null)
@@ -90,21 +96,29 @@ export function NavBar({ user, onSignOut }: Props) {
     return medici.find(m => m.nome.toUpperCase().trim() === myName)
   }, [user?.nome, medici])
 
-  // Count unread per il badge sulla busta. Invalidata dal realtime +
-  // polling 30s + refetch su window focus / visibility change come
-  // safety net se la WebSocket fa cilecca (es. Safari mobile chiude
-  // la connessione quando la tab e` in background).
+  // Count "items da vedere" per il badge sulla busta. Somma:
+  //   1. Messaggi non letti (admin -> user via approvazione/rifiuto)
+  //   2. Ferie del medico ancora in attesa di approvazione
+  //   3. Cambi turno del medico (come richiedente) ancora in attesa
+  // Cosi` non appena l'utente invia una richiesta, il badge sale
+  // istantaneamente. Quando admin la risolve, scende di 1 ma sale di 1
+  // (messaggio nuovo) → numero stabile, ma "non letto" si.
+  //
+  // Invalidata da useMessaggiRealtime / useFerieRealtime /
+  // useCambiTurnoRealtime + polling 30s + window focus.
   const { data: unreadCount = 0 } = useQuery({
     queryKey: ['messaggi-unread-count', mioMedico?.id],
     queryFn: async () => {
       if (!mioMedico) return 0
-      const { count, error } = await supabase
-        .from('messaggi')
-        .select('*', { count: 'exact', head: true })
-        .eq('medico_id', mioMedico.id)
-        .eq('letto',     false)
-      if (error) throw error
-      return count ?? 0
+      const [msgRes, ferieRes, cambiRes] = await Promise.all([
+        supabase.from('messaggi').select('*', { count: 'exact', head: true })
+          .eq('medico_id', mioMedico.id).eq('letto', false),
+        supabase.from('ferie').select('*', { count: 'exact', head: true })
+          .eq('medico_id', mioMedico.id).eq('approvate', false),
+        supabase.from('cambi_turno').select('*', { count: 'exact', head: true })
+          .eq('medico_richiedente_id', mioMedico.id).eq('stato', 'pending'),
+      ])
+      return (msgRes.count ?? 0) + (ferieRes.count ?? 0) + (cambiRes.count ?? 0)
     },
     enabled:                     !!mioMedico,
     staleTime:                   0,

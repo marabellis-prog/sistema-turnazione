@@ -30,6 +30,10 @@ export function useCambiTurnoRealtime() {
         () => {
           qc.invalidateQueries({ queryKey: ['cambi-turno'] })
           qc.invalidateQueries({ queryKey: ['cambi-turno-pending-count'] })
+          // Badge "posta" della NavBar conta anche i cambi turno pending
+          // del medico richiedente → invalida cosi` il numerello sale
+          // subito quando uno user inserisce una richiesta di cambio.
+          qc.invalidateQueries({ queryKey: ['messaggi-unread-count'] })
         }
       )
       .subscribe(status => {
