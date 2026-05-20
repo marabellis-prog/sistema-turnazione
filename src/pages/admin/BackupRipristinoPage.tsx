@@ -14,7 +14,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Archive, Plus, Trash2, RotateCcw, AlertTriangle, CheckCircle2,
-  Loader2, Clock,
+  Loader2, Clock, Sparkles,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
@@ -47,6 +47,7 @@ export function BackupRipristinoPage() {
   const [descrManuale,  setDescrManuale]  = useState('')
   const [msg,           setMsg]           = useState<string | null>(null)
   const [err,           setErr]           = useState<string | null>(null)
+  const [vacuumLoading, setVacuumLoading] = useState(false)
 
   // ── Lista backup (senza snapshot, troppo pesante) ──────────────────
   const { data: backups = [], isLoading } = useQuery<BackupRow[]>({
@@ -151,20 +152,96 @@ export function BackupRipristinoPage() {
     }
   }
 
+  // ── Pulisci database (VACUUM FULL via Edge Function) ───────────────
+  // VACUUM FULL non gira dentro transazioni → non e` chiamabile dal
+  // PostgREST. Serve passare per la nostra Edge Function `vacuum-tables`
+  // che usa la Management API col PAT come secret.
+  // Se la function non e` deployata, mostriamo un messaggio chiaro che
+  // rimanda al README per il setup + suggerisce lo script CLI.
+  async function handlePulisciDb() {
+    const ok = await confirm({
+      title: 'Pulisci database?',
+      message:
+        'Eseguira` VACUUM FULL sulle tabelle principali per ricompattare ' +
+        'lo spazio occupato da DELETE precedenti. Operazione sicura: ' +
+        'recupera spazio fisico nel database. Richiede l\'Edge Function ' +
+        '`vacuum-tables` deployata su Supabase (vedi README in ' +
+        'supabase/functions/vacuum-tables/).',
+      confirmLabel: 'Esegui pulizia',
+    })
+    if (!ok) return
+    setVacuumLoading(true); setErr(null); setMsg(null)
+    try {
+      const { data, error } = await supabase.functions.invoke('vacuum-tables', {
+        method: 'POST',
+      })
+      if (error) {
+        // Function non deployata o errore di rete
+        const m = (error as Error).message || String(error)
+        if (m.includes('Failed to fetch') || m.includes('404')) {
+          setErr(
+            'Edge Function `vacuum-tables` non deployata. Vedi guida in ' +
+            'supabase/functions/vacuum-tables/README.md per il deploy, oppure ' +
+            'usa il fallback CLI: `node scripts/vacuum-full.mjs`'
+          )
+        } else {
+          setErr('Errore pulizia: ' + m)
+        }
+        return
+      }
+      const fmt = (b: number) =>
+        b >= 1024 * 1024 ? `${(b / (1024*1024)).toFixed(2)} MB`
+        : b >= 1024      ? `${(b / 1024).toFixed(1)} KB`
+        : `${b} bytes`
+      const r = data as {
+        size_before_bytes: number
+        size_after_bytes:  number
+        freed_bytes:       number
+        tables: Record<string, string>
+      }
+      const errs = Object.entries(r.tables).filter(([, v]) => v !== 'ok')
+      setMsg(
+        `Pulizia completata. DB: ${fmt(r.size_before_bytes)} → ${fmt(r.size_after_bytes)} ` +
+        `(liberati ${fmt(r.freed_bytes)})` +
+        (errs.length > 0 ? ` — ${errs.length} tabelle con errore` : '.')
+      )
+      // Invalida stats DB cosi` il box in /admin/config si aggiorna
+      qc.invalidateQueries({ queryKey: ['db-stats'] })
+      setTimeout(() => setMsg(null), 8000)
+    } catch (e) {
+      setErr('Errore pulizia: ' + (e as Error).message)
+    } finally {
+      setVacuumLoading(false)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4 max-w-4xl">
       {/* Header */}
-      <div>
-        <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
-          <Archive size={20} style={{ color: '#476540' }} />
-          Backup / Ripristino turni
-        </h2>
-        <p className="text-sm text-stone-600 mt-0.5">
-          Snapshot completi dei turni. Auto-backup ogni{' '}
-          <strong>{config?.backup_intervallo_giorni ?? '?'} giorni</strong>,
-          mantenuti gli ultimi <strong>{config?.backup_da_tenere ?? '?'}</strong>.
-          Modifica i parametri in <em>Impostazioni</em>.
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
+            <Archive size={20} style={{ color: '#476540' }} />
+            Backup / Ripristino turni
+          </h2>
+          <p className="text-sm text-stone-600 mt-0.5">
+            Snapshot completi dei turni. Auto-backup ogni{' '}
+            <strong>{config?.backup_intervallo_giorni ?? '?'} giorni</strong>,
+            mantenuti gli ultimi <strong>{config?.backup_da_tenere ?? '?'}</strong>.
+            Modifica i parametri in <em>Impostazioni</em>.
+          </p>
+        </div>
+        {/* Pulisci database (VACUUM FULL via Edge Function) */}
+        <button
+          onClick={handlePulisciDb}
+          disabled={vacuumLoading}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold text-white shadow disabled:opacity-50 transition-colors shrink-0"
+          style={{ background: '#7a5a2f' }}
+          title="Esegue VACUUM FULL per liberare spazio dopo eliminazioni"
+        >
+          {vacuumLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+          Pulisci database
+        </button>
       </div>
 
       {/* Messaggi */}
