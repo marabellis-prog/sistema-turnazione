@@ -251,7 +251,7 @@ export function BackupRipristinoPage() {
   return (
     <div className={`flex gap-4 ${previewId ? '' : 'max-w-4xl flex-col'}`}>
       {/* Colonna sinistra: header, form, tabella backups */}
-      <div className={`flex flex-col gap-4 ${previewId ? 'shrink-0 w-[520px]' : ''}`}>
+      <div className={`flex flex-col gap-4 ${previewId ? 'shrink-0 w-[640px]' : ''}`}>
 
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -346,7 +346,7 @@ export function BackupRipristinoPage() {
                   <th className="px-3 py-2 text-left font-semibold text-stone-700">Data</th>
                   <th className="px-3 py-2 text-left font-semibold text-stone-700">Descrizione</th>
                   <th className="px-3 py-2 text-right font-semibold text-stone-700" style={{ width: 100 }}>Turni</th>
-                  <th className="px-3 py-2 text-right font-semibold text-stone-700" style={{ width: 180 }}>Azioni</th>
+                  <th className="px-3 py-2 text-right font-semibold text-stone-700" style={{ width: 280 }}>Azioni</th>
                 </tr>
               </thead>
               <tbody>
@@ -361,11 +361,11 @@ export function BackupRipristinoPage() {
                     <td className="px-3 py-2 text-right text-xs font-mono text-stone-600">
                       {b.num_turni ?? '?'}
                     </td>
-                    <td className="px-3 py-2 text-right">
-                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
                         <button
                           onClick={() => setPreviewId(prev => prev === b.id ? null : b.id)}
-                          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+                          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-colors shrink-0"
                           style={previewId === b.id
                             ? { background: '#476540', color: '#fff', border: '1px solid #2b3c24' }
                             : { background: '#e0e8d8', color: '#456b3a', border: '1px solid #9ab488' }}
@@ -375,7 +375,7 @@ export function BackupRipristinoPage() {
                         <button
                           onClick={() => handleRipristina(b)}
                           disabled={busyId === b.id}
-                          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+                          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-colors shrink-0"
                           style={{
                             background: '#fef3c7', color: '#a16207',
                             border: '1px solid #fde68a',
@@ -387,7 +387,7 @@ export function BackupRipristinoPage() {
                         <button
                           onClick={() => handleElimina(b)}
                           disabled={busyId === b.id}
-                          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+                          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-colors shrink-0"
                           style={{
                             background: '#fee2e2', color: '#991b1b',
                             border: '1px solid #fecaca',
