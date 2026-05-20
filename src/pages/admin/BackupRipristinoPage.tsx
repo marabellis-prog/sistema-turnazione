@@ -14,7 +14,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Archive, Plus, Trash2, RotateCcw, AlertTriangle, CheckCircle2,
-  Loader2, Clock, Sparkles,
+  Loader2, Clock, Sparkles, Eye, X,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
@@ -22,7 +22,9 @@ import { ConfirmModal } from '../../components/ConfirmModal'
 import {
   createBackup, restoreBackup, deleteBackup, ruotaBackup,
 } from '../../hooks/useBackupManager'
-import type { Configurazione } from '../../types'
+import { BackupTurniPreview } from '../../components/BackupTurniPreview'
+import { useFestivitaCustom } from '../../hooks/useFestivitaCustom'
+import type { Configurazione, Medico, Turno } from '../../types'
 
 // Lista record che ritorno dal SELECT (senza il pesante snapshot JSONB).
 interface BackupRow {
@@ -48,6 +50,37 @@ export function BackupRipristinoPage() {
   const [msg,           setMsg]           = useState<string | null>(null)
   const [err,           setErr]           = useState<string | null>(null)
   const [vacuumLoading, setVacuumLoading] = useState(false)
+  const [previewId,     setPreviewId]     = useState<string | null>(null)
+  const { set: festivitaCustomSet } = useFestivitaCustom()
+
+  // ── Snapshot completo del backup selezionato per anteprima ────────
+  // Query separata che fetcha il JSONB snapshot (pesante: lo prendiamo
+  // solo quando l'utente clicca Anteprima). enabled gating + staleTime
+  // alto per evitare refetch inutili.
+  const { data: previewSnapshot, isLoading: previewLoading } = useQuery<
+    { turni: Turno[] } | null
+  >({
+    queryKey: ['turni-backup-snapshot', previewId],
+    queryFn: async () => {
+      if (!previewId) return null
+      const { data, error } = await supabase.from('turni_backup')
+        .select('snapshot').eq('id', previewId).single()
+      if (error) throw error
+      return (data as { snapshot: { turni: Turno[] } }).snapshot
+    },
+    enabled: !!previewId,
+    staleTime: 10 * 60_000,
+  })
+
+  // ── Medici per la preview ─────────────────────────────────────────
+  const { data: medici = [] } = useQuery<Medico[]>({
+    queryKey: ['medici-tutti'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('medici').select('*')
+      if (error) throw error
+      return data ?? []
+    },
+  })
 
   // ── Lista backup (senza snapshot, troppo pesante) ──────────────────
   const { data: backups = [], isLoading } = useQuery<BackupRow[]>({
@@ -216,7 +249,10 @@ export function BackupRipristinoPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4 max-w-4xl">
+    <div className={`flex gap-4 ${previewId ? '' : 'max-w-4xl flex-col'}`}>
+      {/* Colonna sinistra: header, form, tabella backups */}
+      <div className={`flex flex-col gap-4 ${previewId ? 'shrink-0 w-[520px]' : ''}`}>
+
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
@@ -326,7 +362,16 @@ export function BackupRipristinoPage() {
                       {b.num_turni ?? '?'}
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
+                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                        <button
+                          onClick={() => setPreviewId(prev => prev === b.id ? null : b.id)}
+                          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+                          style={previewId === b.id
+                            ? { background: '#476540', color: '#fff', border: '1px solid #2b3c24' }
+                            : { background: '#e0e8d8', color: '#456b3a', border: '1px solid #9ab488' }}
+                          title="Visualizza il calendario del backup nella colonna a destra">
+                          <Eye size={11} /> Anteprima
+                        </button>
                         <button
                           onClick={() => handleRipristina(b)}
                           disabled={busyId === b.id}
@@ -360,6 +405,43 @@ export function BackupRipristinoPage() {
           </div>
         )}
       </div>
+      </div>{/* /colonna sinistra */}
+
+      {/* Colonna destra: anteprima del backup selezionato */}
+      {previewId && (
+        <div className="flex-1 min-w-0 flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-stone-700 flex items-center gap-2">
+              <Eye size={14} style={{ color: '#476540' }} />
+              Anteprima backup
+              <span className="text-xs font-normal text-stone-500">
+                {backups.find(b => b.id === previewId)?.descrizione ?? ''}
+              </span>
+            </h3>
+            <button
+              onClick={() => setPreviewId(null)}
+              className="text-stone-400 hover:text-stone-700 transition-colors p-1"
+              title="Chiudi anteprima">
+              <X size={16} />
+            </button>
+          </div>
+          {previewLoading ? (
+            <div className="text-stone-500 text-sm flex items-center gap-2 p-4">
+              <Loader2 size={14} className="animate-spin" /> Caricamento snapshot…
+            </div>
+          ) : previewSnapshot && Array.isArray(previewSnapshot.turni) ? (
+            <BackupTurniPreview
+              turni={previewSnapshot.turni}
+              medici={medici}
+              festivitaCustomSet={festivitaCustomSet}
+            />
+          ) : (
+            <div className="text-stone-500 text-sm italic p-4">
+              Snapshot vuoto o non disponibile.
+            </div>
+          )}
+        </div>
+      )}
 
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
         onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
