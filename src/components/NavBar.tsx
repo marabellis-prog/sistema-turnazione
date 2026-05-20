@@ -1,9 +1,13 @@
-import { useEffect } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useLocation, useNavigate, useHref } from 'react-router-dom'
-import { LogOut, Calendar, CalendarDays, Settings, Users, AlertTriangle, RefreshCw } from 'lucide-react'
+import { LogOut, Calendar, CalendarDays, Settings, Users, AlertTriangle, RefreshCw, Mail } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { usePendingActions } from '../contexts/PendingActionsContext'
 import { useVersionCheck } from '../hooks/useVersionCheck'
-import type { AuthUser } from '../types'
+import { useMessaggiRealtime } from '../hooks/useMessaggiRealtime'
+import { MessaggiModal } from './MessaggiModal'
+import { supabase } from '../lib/supabase'
+import type { AuthUser, Medico, Messaggio } from '../types'
 
 interface Props {
   user: AuthUser | null
@@ -40,6 +44,66 @@ export function NavBar({ user, onSignOut }: Props) {
   const hrefSettimanale    = useHref('/settimanale')
   const hrefSettimanaleAlt = useHref('/settimanale-alt')
   const hrefAdmin          = useHref('/admin')
+
+  // ── Casella messaggi (medici turnisti loggati) ───────────────────
+  // Realtime su `messaggi` per aggiornare il badge e mostrare toast pop-up
+  // su nuovi messaggi senza ricaricare la pagina.
+  useMessaggiRealtime()
+  const [showMessaggi, setShowMessaggi] = useState(false)
+  const [toast, setToast] = useState<{ titolo: string; corpo: string | null } | null>(null)
+
+  // Cerco il medico associato all'utente loggato (match per nome, come
+  // gia` fa CalendarioPage.mioMedico). Solo gli account "medico" hanno un
+  // record nella tabella `medici` e quindi una casella di posta.
+  const { data: medici = [] } = useQuery<Medico[]>({
+    queryKey: ['medici'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('medici').select('*').eq('attivo', true)
+      if (error) throw error
+      return data ?? []
+    },
+    enabled: !!user,
+  })
+  const mioMedico = useMemo(() => {
+    const myName = (user?.nome ?? '').toUpperCase().trim()
+    if (!myName) return undefined
+    return medici.find(m => m.nome.toUpperCase().trim() === myName)
+  }, [user?.nome, medici])
+
+  // Count unread per il badge sulla busta. Invalidata dal realtime.
+  const { data: unreadCount = 0 } = useQuery({
+    queryKey: ['messaggi-unread-count', mioMedico?.id],
+    queryFn: async () => {
+      if (!mioMedico) return 0
+      const { count, error } = await supabase
+        .from('messaggi')
+        .select('*', { count: 'exact', head: true })
+        .eq('medico_id', mioMedico.id)
+        .eq('letto',     false)
+      if (error) throw error
+      return count ?? 0
+    },
+    enabled: !!mioMedico,
+    staleTime: 0,
+    refetchOnMount: 'always',
+  })
+
+  // Toast pop-up su nuovi messaggi indirizzati al medico loggato.
+  // Il CustomEvent 'messaggio-nuovo' viene dispatchato da useMessaggiRealtime
+  // ad ogni INSERT. Filtriamo qui per medico_id per evitare di mostrare
+  // toast di messaggi destinati ad altri (anche se RLS dovrebbe gia` filtrare).
+  useEffect(() => {
+    function onNuovoMessaggio(e: Event) {
+      const m = (e as CustomEvent<Messaggio>).detail
+      if (!mioMedico || m.medico_id !== mioMedico.id) return
+      setToast({ titolo: m.titolo, corpo: m.corpo })
+      const t = setTimeout(() => setToast(null), 5000)
+      return () => clearTimeout(t)
+    }
+    window.addEventListener('messaggio-nuovo', onNuovoMessaggio)
+    return () => window.removeEventListener('messaggio-nuovo', onNuovoMessaggio)
+  }, [mioMedico])
 
   // Auto-rinomina la tab corrente in base alla "famiglia" di pagine.
   // - Su /admin/*       → window.name = TAB_ADMIN
@@ -231,7 +295,7 @@ export function NavBar({ user, onSignOut }: Props) {
         {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Utente + logout + versione */}
+        {/* Utente + casella messaggi + logout + versione */}
         {user && (
           <div className="flex items-center gap-3">
             <span className="hidden sm:flex items-center gap-1.5 text-xs"
@@ -245,6 +309,29 @@ export function NavBar({ user, onSignOut }: Props) {
                 </span>
               )}
             </span>
+            {/* Icona busta: visibile solo se l'utente corrisponde a un
+                medico in elenco (account "medico turnista"). Il badge
+                arancione si illumina quando ci sono messaggi non letti. */}
+            {mioMedico && (
+              <button
+                onClick={() => setShowMessaggi(true)}
+                className="relative flex items-center transition-colors"
+                style={{ color: unreadCount > 0 ? '#fbbf24' : '#9ab488' }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#fff')}
+                onMouseLeave={e => (e.currentTarget.style.color = unreadCount > 0 ? '#fbbf24' : '#9ab488')}
+                title={unreadCount > 0
+                  ? `Hai ${unreadCount} messagg${unreadCount === 1 ? 'io' : 'i'} non lett${unreadCount === 1 ? 'o' : 'i'}`
+                  : 'Casella messaggi'}>
+                <Mail size={16} />
+                {unreadCount > 0 && (
+                  <span
+                    className="absolute -top-1.5 -right-2 min-w-[16px] h-[16px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center animate-pulse"
+                    style={{ background: '#d97706', color: '#fff' }}>
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
+            )}
             <button
               onClick={onSignOut}
               className="flex items-center gap-1 text-xs transition-colors"
@@ -257,6 +344,39 @@ export function NavBar({ user, onSignOut }: Props) {
               <span className="hidden sm:inline">Esci</span>
             </button>
           </div>
+        )}
+
+        {/* Modal casella messaggi */}
+        {showMessaggi && mioMedico && (
+          <MessaggiModal medico={mioMedico} onClose={() => setShowMessaggi(false)} />
+        )}
+
+        {/* Toast pop-up al nuovo messaggio (realtime). Cliccabile per
+            aprire la casella di posta. */}
+        {toast && (
+          <button
+            onClick={() => { setShowMessaggi(true); setToast(null) }}
+            className="fixed bottom-4 right-4 z-[60] flex items-start gap-3 px-4 py-3 rounded-xl shadow-2xl text-left max-w-sm animate-in fade-in slide-in-from-bottom"
+            style={{ background: '#fffbeb', border: '2px solid #fbbf24' }}>
+            <Mail size={20} style={{ color: '#d97706' }} className="mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-bold uppercase tracking-wider mb-0.5"
+                style={{ color: '#92400e' }}>
+                Nuovo messaggio
+              </div>
+              <div className="text-sm font-semibold text-stone-800 truncate">
+                {toast.titolo}
+              </div>
+              {toast.corpo && (
+                <div className="text-xs text-stone-600 mt-0.5 line-clamp-2">
+                  {toast.corpo}
+                </div>
+              )}
+              <div className="text-[10px] text-stone-500 mt-1">
+                Clicca per aprire la casella
+              </div>
+            </div>
+          </button>
         )}
 
         {/* Versione build — dopo il pulsante Esci */}
