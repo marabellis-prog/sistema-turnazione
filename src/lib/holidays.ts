@@ -66,3 +66,42 @@ export function isFestivo(date: Date, customSet?: Set<string>): boolean {
 export function isDomenicaOFestivo(date: Date, customSet?: Set<string>): boolean {
   return date.getDay() === 0 || isFestivo(date, customSet)
 }
+
+/**
+ * Restituisce l'elenco delle festività italiane per l'anno specificato,
+ * con la data ISO "YYYY-MM-DD" e il nome leggibile (es. "Pasqua").
+ * Ordinato per data crescente. Pasqua e Lunedi` dell'Angelo sono calcolati.
+ *
+ * Usato in /admin/config per mostrare quali festività cadono nel periodo
+ * della configurazione attiva.
+ */
+export function getItalianHolidaysWithNames(year: number): Array<{ data: string; nome: string }> {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const iso = (m: number, d: number) => `${year}-${pad(m)}-${pad(d)}`
+
+  const fixed = [
+    { data: iso(1,  1),  nome: 'Capodanno' },
+    { data: iso(1,  6),  nome: 'Epifania' },
+    { data: iso(4, 25),  nome: 'Liberazione' },
+    { data: iso(5,  1),  nome: 'Festa del Lavoro' },
+    { data: iso(6,  2),  nome: 'Festa della Repubblica' },
+    { data: iso(8, 15),  nome: 'Ferragosto' },
+    { data: iso(11, 1),  nome: 'Ognissanti' },
+    { data: iso(12, 8),  nome: 'Immacolata Concezione' },
+    { data: iso(12, 25), nome: 'Natale' },
+    { data: iso(12, 26), nome: 'Santo Stefano' },
+  ]
+
+  const pasqua = getPasqua(year)
+  const pasquetta = new Date(pasqua)
+  pasquetta.setDate(pasquetta.getDate() + 1)
+
+  const localIso = (d: Date) =>
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+
+  return [
+    ...fixed,
+    { data: localIso(pasqua),    nome: 'Pasqua' },
+    { data: localIso(pasquetta), nome: 'Lunedi\' dell\'Angelo' },
+  ].sort((a, b) => a.data.localeCompare(b.data))
+}

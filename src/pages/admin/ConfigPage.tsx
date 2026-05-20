@@ -15,25 +15,28 @@
  * realtime (useConfigurazioneRealtime).
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Settings, Save, AlertTriangle, CheckCircle2, CalendarPlus, Trash2, Loader2,
+  CalendarDays,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfigurazioneRealtime } from '../../hooks/useConfigurazioneRealtime'
 import { useFestivitaCustom, useFestivitaCustomRealtime } from '../../hooks/useFestivitaCustom'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
+import { getItalianHolidaysWithNames } from '../../lib/holidays'
+import { MESI_IT } from '../../lib/algorithm'
 import type { Configurazione } from '../../types'
 
-const MESI_IT = [
+const MESI_ABBR = [
   'gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic',
 ]
 function fmtDataLunga(iso: string): string {
   const [y, m, d] = iso.split('-').map(s => parseInt(s, 10))
   if (!y || !m || !d) return iso
-  return `${d} ${MESI_IT[m-1] ?? '?'} ${y}`
+  return `${d} ${MESI_ABBR[m-1] ?? '?'} ${y}`
 }
 
 // Le 8 chiavi delle impostazioni in ordine di rendering
@@ -81,6 +84,37 @@ export function ConfigPage() {
       return data
     },
   })
+
+  // Festività italiane che cadono nel periodo della configurazione attiva.
+  // Itera anno_inizio..anno_fine, prende le festività italiane di ogni anno
+  // e filtra quelle nel range [data_inizio, data_fine] del periodo.
+  const festivitaItaliane = useMemo(() => {
+    if (!config) return []
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const startISO = `${config.anno_inizio}-${pad(config.mese_inizio)}-01`
+    const lastDay = new Date(config.anno_fine, config.mese_fine, 0).getDate()
+    const endISO   = `${config.anno_fine}-${pad(config.mese_fine)}-${pad(lastDay)}`
+    const out: Array<{ data: string; nome: string }> = []
+    for (let y = config.anno_inizio; y <= config.anno_fine; y++) {
+      for (const f of getItalianHolidaysWithNames(y)) {
+        if (f.data >= startISO && f.data <= endISO) out.push(f)
+      }
+    }
+    return out.sort((a, b) => a.data.localeCompare(b.data))
+  }, [config])
+
+  // Etichetta del periodo per l'header della sezione festività italiane:
+  // - stesso anno → "Maggio - Ottobre 2026"
+  // - anni diversi → "Maggio 2026 - Aprile 2027"
+  const periodoLabel = useMemo(() => {
+    if (!config) return ''
+    const mIn  = MESI_IT[config.mese_inizio] ?? ''
+    const mFi  = MESI_IT[config.mese_fine]   ?? ''
+    if (config.anno_inizio === config.anno_fine) {
+      return `${mIn} - ${mFi} ${config.anno_inizio}`
+    }
+    return `${mIn} ${config.anno_inizio} - ${mFi} ${config.anno_fine}`
+  }, [config])
 
   // Sync iniziale del draft dal DB
   useEffect(() => {
@@ -297,17 +331,17 @@ export function ConfigPage() {
         con <code>slot_mattina=SUB</code> conta 1 per "SUB mattina" (e niente pomeriggio).
       </div>
 
-      {/* ── SEZIONE FESTIVITÀ E RICORRENZE CUSTOM ───────────────────── */}
+      {/* ── SEZIONE FESTIVITÀ LOCALI (custom) ───────────────────────── */}
       <div className="mt-4">
         <h3 className="text-lg font-bold text-stone-800 flex items-center gap-2">
           <CalendarPlus size={18} style={{ color: '#476540' }} />
-          Festività e ricorrenze
+          Festività Locali
         </h3>
         <p className="text-sm text-stone-600 mt-0.5">
-          Aggiungi date che devono essere trattate come festive oltre alle festività nazionali italiane
-          (es. <strong>santo patrono</strong>, eventi locali). Da quel momento in poi quel giorno appare
-          come festivo nel calendario, nel conteggio "F" del riepilogo e nei check di consistenza
-          (atteso "festivo" invece di "feriale").
+          Aggiungi date trattate come festive oltre alle festività nazionali italiane
+          (es. <strong>santo patrono</strong>, eventi locali). Quel giorno appare come
+          festivo nel calendario, nel conteggio "F" del riepilogo e nei check di consistenza
+          (atteso "festivo" invece di "feriale"). Eliminando una festività, tutto torna come prima.
         </p>
 
         {/* Form aggiunta */}
@@ -345,10 +379,10 @@ export function ConfigPage() {
           )}
         </div>
 
-        {/* Lista festività esistenti */}
+        {/* Lista festività locali */}
         {festivitaList.length === 0 ? (
           <p className="mt-3 text-xs text-stone-500 italic">
-            Nessuna festività custom configurata. Aggiungi date sopra per integrarle col calendario italiano.
+            Nessuna festività locale configurata.
           </p>
         ) : (
           <div className="mt-3 rounded-lg border border-stone-300 bg-white overflow-hidden">
@@ -382,6 +416,47 @@ export function ConfigPage() {
           </div>
         )}
       </div>
+
+      {/* ── SEZIONE FESTIVITÀ ITALIANE NEL PERIODO ──────────────────── */}
+      {/* Read-only: serve all'admin per ricordarsi quali festività nazionali
+          ricadono nel periodo della configurazione attiva. Non si possono
+          eliminare/modificare (sono hardcoded in src/lib/holidays.ts). */}
+      {config && festivitaItaliane.length > 0 && (
+        <div className="mt-2">
+          <h3 className="text-lg font-bold text-stone-800 flex items-center gap-2">
+            <CalendarDays size={18} style={{ color: '#7a2233' }} />
+            Festività Italiane nel periodo
+            <span className="text-xs font-normal text-stone-500">
+              ({periodoLabel})
+            </span>
+          </h3>
+          <p className="text-sm text-stone-600 mt-0.5">
+            Riferimento delle festività nazionali italiane (incluse Pasqua e Pasquetta
+            calcolate) che cadono nel periodo. Sono <strong>sempre</strong> considerate
+            festive nei calcoli e nei check.
+          </p>
+          <div className="mt-3 rounded-lg border border-stone-300 bg-white overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ background: '#f4f1ea' }}>
+                  <th className="px-3 py-2 text-left font-semibold text-stone-700" style={{ width: 180 }}>Data</th>
+                  <th className="px-3 py-2 text-left font-semibold text-stone-700">Festività</th>
+                </tr>
+              </thead>
+              <tbody>
+                {festivitaItaliane.map(f => (
+                  <tr key={f.data} className="border-t border-stone-200">
+                    <td className="px-3 py-2 font-mono text-xs">
+                      {fmtDataLunga(f.data)}
+                    </td>
+                    <td className="px-3 py-2 text-stone-700">{f.nome}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
         onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
