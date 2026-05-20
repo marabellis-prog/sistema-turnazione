@@ -6,18 +6,17 @@
  * Modifica Turni e Calendario, ma senza editing/drag/select.
  *
  * Layout:
- *   - Tabella CLINICA (TC con cerchio mezzo/mezzo per SUB/MED)
- *   - Tabella RICERCA (RM/RP)
+ *   - UNICO container scrollabile orizzontale (overflow-x: auto)
+ *   - Tabella CLINICA in alto + Tabella RICERCA in basso
+ *   - Header con 2 righe: MESE+ANNO e poi giorni
+ *   - Bordo destro piu` spesso sull'ultimo giorno di ogni mese
  *   - Sticky prima colonna (nome medico) e header date
- *   - Scroll orizzontale interno per i molti giorni
- *
- * Le colonne sono derivate dal range di date presenti nello snapshot
- * (min..max) cosi` la preview funziona anche se il periodo della
- * configurazione attuale non combacia con quello del backup.
+ *   - Le due tabelle scorrono INSIEME grazie al container condiviso
  */
 
 import { useMemo } from 'react'
 import { isFestivo } from '../lib/holidays'
+import { MESI_IT } from '../lib/algorithm'
 import type { Medico, Turno, ColonnaCal, SlotPlacement } from '../types'
 
 const CELL_COLORS: Record<string, { bg: string; fg: string }> = {
@@ -41,6 +40,9 @@ const PLACEMENT_BG: Record<'SUB'|'MED'|'NONE', string> = {
   MED:  '#bae6fd',
   NONE: 'transparent',
 }
+
+// Bordo destro sull'ultimo giorno di ogni mese (eccetto l'ultimo del periodo)
+const MONTH_END_BORDER = '2px solid #1a1a1a'
 
 /** Etichetta TC con cerchio mezzo/mezzo per SUB/MED. */
 function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
@@ -116,6 +118,24 @@ function buildColonneFromTurni(
   return out
 }
 
+/** Calcola gli "span" mese-per-mese in base alle colonne (per il colSpan). */
+function calcolaMonthSpans(colonne: ColonnaCal[]) {
+  const out: Array<{ anno: number; mese: number; span: number }> = []
+  let curMese = -1, curAnno = -1, curSpan = 0
+  for (const c of colonne) {
+    if (c.anno !== curAnno || c.mese !== curMese) {
+      if (curSpan > 0) out.push({ anno: curAnno, mese: curMese, span: curSpan })
+      curAnno = c.anno
+      curMese = c.mese
+      curSpan = 1
+    } else {
+      curSpan++
+    }
+  }
+  if (curSpan > 0) out.push({ anno: curAnno, mese: curMese, span: curSpan })
+  return out
+}
+
 interface Props {
   turni:               Turno[]
   medici:              Medico[]
@@ -139,6 +159,22 @@ export function BackupTurniPreview({ turni, medici, festivitaCustomSet }: Props)
     [medici]
   )
 
+  // Set dei "data" che corrispondono all'ultimo giorno di mese (per il
+  // bordo destro piu` spesso). NON applicato all'ultimissima colonna del
+  // periodo (gia` chiude il bordo della tabella).
+  const lastDaysOfMonth = useMemo(() => {
+    const s = new Set<string>()
+    for (let i = 0; i < colonne.length - 1; i++) {
+      const c = colonne[i]
+      const next = colonne[i + 1]
+      if (next.mese !== c.mese || next.anno !== c.anno) s.add(c.data)
+    }
+    return s
+  }, [colonne])
+
+  // Spans per la riga "MESE + ANNO" sopra i giorni
+  const monthSpans = useMemo(() => calcolaMonthSpans(colonne), [colonne])
+
   if (colonne.length === 0 || mediciOrd.length === 0) {
     return (
       <div className="text-xs text-stone-500 italic p-4">
@@ -147,26 +183,49 @@ export function BackupTurniPreview({ turni, medici, festivitaCustomSet }: Props)
     )
   }
 
-  /** Una tabella (clinica o ricerca) — read-only, no editing. */
+  /** Una tabella (clinica o ricerca) — read-only. Header con 2 righe:
+   *  mese+anno (rowSpan sulla prima colonna sticky) e poi giorni con
+   *  bordo a fine mese piu` spesso. */
   function Tabella({ tipo }: { tipo: 'clinica' | 'ricerca' }) {
     const headerBg     = tipo === 'clinica' ? '#456b3a' : '#7a2233'
     const headerBorder = tipo === 'clinica' ? '#2b3c24' : '#5a1a26'
     return (
       <table className="border-collapse" style={{ tableLayout: 'fixed', borderSpacing: 0 }}>
         <thead>
+          {/* Riga 1: MESE + ANNO con colSpan sui giorni del mese */}
           <tr>
-            <th style={{
+            <th rowSpan={2} style={{
               width: 140, minWidth: 140,
               position: 'sticky', left: 0, zIndex: 2,
               background: headerBg, color: '#fff',
               fontSize: 11, fontWeight: 700, padding: '6px 8px',
               border: `1px solid ${headerBorder}`, letterSpacing: '0.04em',
-              textAlign: 'left',
+              textAlign: 'left', verticalAlign: 'middle',
             }}>
               Medico — {tipo === 'clinica' ? 'Clinica' : 'Ricerca'}
             </th>
+            {monthSpans.map((m, i) => {
+              const lastCol = i < monthSpans.length - 1
+              return (
+                <th key={`${m.anno}-${m.mese}`} colSpan={m.span} style={{
+                  background: '#f0ece4',
+                  color: '#3a3d30',
+                  fontSize: 11, fontWeight: 700, padding: '4px 6px',
+                  border: '1px solid #c0b8a8',
+                  borderRight: lastCol ? MONTH_END_BORDER : '1px solid #c0b8a8',
+                  textAlign: 'center', letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                }}>
+                  {MESI_IT[m.mese] ?? '?'} {m.anno}
+                </th>
+              )
+            })}
+          </tr>
+          {/* Riga 2: numero del giorno + lettera giorno settimana */}
+          <tr>
             {colonne.map(c => {
               const isRedDay = c.isDomenica || c.isFestivo
+              const monthEnd = lastDaysOfMonth.has(c.data)
               return (
                 <th key={c.data} style={{
                   width: 32, minWidth: 32,
@@ -174,6 +233,7 @@ export function BackupTurniPreview({ turni, medici, festivitaCustomSet }: Props)
                   color:      isRedDay ? '#854d0e' : '#3a3d30',
                   fontSize: 10, padding: '2px 0',
                   border: '1px solid #c0b8a8',
+                  borderRight: monthEnd ? MONTH_END_BORDER : '1px solid #c0b8a8',
                   lineHeight: 1.1,
                 }}>
                   <div style={{ fontWeight: 700 }}>{c.giorno}</div>
@@ -202,7 +262,7 @@ export function BackupTurniPreview({ turni, medici, festivitaCustomSet }: Props)
                 const tc = t?.turno_clinico ?? ''
                 const tr = t?.turno_ricerca ?? ''
                 const isRedDay = c.isDomenica || c.isFestivo
-                // Background: ferie verde (priorita`), poi colore TC/TR, poi festivo/feriale
+                const monthEnd = lastDaysOfMonth.has(c.data)
                 let bg: string
                 if (tipo === 'clinica') {
                   if (t?.is_ferie) bg = '#d5e5d0'
@@ -216,6 +276,7 @@ export function BackupTurniPreview({ turni, medici, festivitaCustomSet }: Props)
                     width: 32, minWidth: 32, height: 28,
                     background: bg,
                     border: '1px solid #c0b8a8',
+                    borderRight: monthEnd ? MONTH_END_BORDER : '1px solid #c0b8a8',
                     textAlign: 'center', verticalAlign: 'middle',
                     padding: 0,
                   }}>
@@ -234,14 +295,14 @@ export function BackupTurniPreview({ turni, medici, festivitaCustomSet }: Props)
     )
   }
 
+  // UNICO container scrollabile: ospita entrambe le tabelle
+  // (clinica sopra, ricerca sotto). Le due tabelle hanno colonne
+  // di stessa larghezza (140 + 32 × N) → si vedono allineate.
   return (
-    <div className="space-y-2">
-      <div className="overflow-auto rounded-lg border border-stone-300 bg-white">
-        <Tabella tipo="clinica" />
-      </div>
-      <div className="overflow-auto rounded-lg border bg-white" style={{ borderColor: '#c98a96' }}>
-        <Tabella tipo="ricerca" />
-      </div>
+    <div className="overflow-auto rounded-lg border border-stone-300 bg-white">
+      <Tabella tipo="clinica" />
+      <div style={{ height: 4 }} />
+      <Tabella tipo="ricerca" />
     </div>
   )
 }
