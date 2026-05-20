@@ -23,6 +23,17 @@ export interface Configurazione {
    *  gestisce SUB/MED manualmente trascinando i pallini. Default true.
    *  Stato condiviso fra tutti gli admin tramite tabella `configurazione`. */
   autocalc_sub_med: boolean
+  /** Impostazioni numero medici attesi per slot/mezza-giornata/tipo-giorno.
+   *  Usate dal check "inconsistenze nei turni" in ModificaTurniPage.
+   *  Convenzione: 0 = nessun controllo (slot non verificato). Default 0. */
+  sub_mattina_feriale:    number
+  sub_mattina_festivo:    number
+  sub_pomeriggio_feriale: number
+  sub_pomeriggio_festivo: number
+  med_mattina_feriale:    number
+  med_mattina_festivo:    number
+  med_pomeriggio_feriale: number
+  med_pomeriggio_festivo: number
   updated_at: string
 }
 

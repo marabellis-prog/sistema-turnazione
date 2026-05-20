@@ -297,6 +297,16 @@ export function GeneraCalendarioPage() {
         schema_attivo: schemaNum,
         max_ferie_concomitanti: config?.max_ferie_concomitanti ?? 2,
         autocalc_sub_med: config?.autocalc_sub_med ?? true,
+        // Impostazioni check inconsistenze (non usate da calcolaCalendarioCompleto
+        // ma richieste dal tipo Configurazione). Default 0 = nessun controllo.
+        sub_mattina_feriale:    config?.sub_mattina_feriale    ?? 0,
+        sub_mattina_festivo:    config?.sub_mattina_festivo    ?? 0,
+        sub_pomeriggio_feriale: config?.sub_pomeriggio_feriale ?? 0,
+        sub_pomeriggio_festivo: config?.sub_pomeriggio_festivo ?? 0,
+        med_mattina_feriale:    config?.med_mattina_feriale    ?? 0,
+        med_mattina_festivo:    config?.med_mattina_festivo    ?? 0,
+        med_pomeriggio_feriale: config?.med_pomeriggio_feriale ?? 0,
+        med_pomeriggio_festivo: config?.med_pomeriggio_festivo ?? 0,
         updated_at: new Date().toISOString(),
       }
       const turniGenerati = calcolaCalendarioCompleto(cfgObj, schemi, medici)

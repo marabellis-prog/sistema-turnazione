@@ -1,5 +1,5 @@
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
-import { Users, Calendar, UserCheck, Zap, Table2, AlertCircle, ArrowRightLeft } from 'lucide-react'
+import { Users, Calendar, UserCheck, Zap, Table2, AlertCircle, ArrowRightLeft, Settings } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
@@ -14,6 +14,7 @@ const links = [
   { to: '/admin/cambi',   label: 'Cambi Turno',       Icon: ArrowRightLeft },
   { to: '/admin/medici',  label: 'Medici/Turnisti',   Icon: Users },
   { to: '/admin/utenti',  label: 'Utenti',            Icon: UserCheck },
+  { to: '/admin/config',  label: 'Impostazioni',      Icon: Settings },
 ]
 
 export function AdminLayout() {

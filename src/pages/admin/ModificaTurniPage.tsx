@@ -1364,38 +1364,77 @@ export function ModificaTurniPage() {
     return m
   }, [config, colonne, medici, ferieRanges.approved, getCella])
 
-  // ── Warning: turni senza assegnazione SUB/MED ─────────────────────
-  // Scansiona TUTTE le celle clinica del periodo e raccoglie quelle con
-  // TC ∈ {M, P, L} dove il placement SUB/MED e` mancante per la meta`
-  // giornata pertinente:
-  //   - M: serve slot_mattina ∈ {SUB, MED}
-  //   - P: serve slot_pomeriggio
-  //   - L: servono entrambi
-  // Le celle in ferie approvate sono saltate (il medico non lavora,
-  // niente placement da fare).
-  const issuesPlacement = useMemo(() => {
-    const out: Array<{
-      medicoId:    string
-      medicoNome:  string
-      data:        string
-      tipoCella:   'M' | 'P' | 'L'
-      dettaglio:   'manca mattina' | 'manca pomeriggio' | 'manca entrambi'
-    }> = []
+  // ── Inconsistenze nei turni ──────────────────────────────────────
+  // Due tipi di check:
+  //
+  // A) PER-CELLA: cella con TC ∈ {M,P,L} ma slot SUB/MED mancante per
+  //    la meta` giornata pertinente. Esempio: M senza slot_mattina, L
+  //    senza slot_pomeriggio. Le celle in ferie approvate sono saltate.
+  //
+  // B) PER-GIORNO/SLOT: confronta il count effettivo di medici per ogni
+  //    placement (SUB/MED × mattina/pomeriggio) con il valore atteso da
+  //    `configurazione` (4 settings × feriale/festivo). Esempio: feriale
+  //    SUB mattina atteso=2, count effettivo=1 → "manca 1".
+  //    Solo le impostazioni > 0 attivano il controllo (0 = nessun check).
+  //    Un giorno e` "festivo" se domenica O isFestivo (dalla colonna ColonnaCal).
+  type IssueCella = {
+    kind:       'cella'
+    medicoId:   string
+    medicoNome: string
+    data:       string
+    tipoCella:  'M' | 'P' | 'L'
+    dettaglio:  string
+  }
+  type IssueSlot = {
+    kind:      'slot'
+    data:      string
+    slotLabel: string    // es. "SUB mattina"
+    expected:  number
+    actual:    number
+  }
+  type Inconsistenza = IssueCella | IssueSlot
+
+  const inconsistenze = useMemo<Inconsistenza[]>(() => {
+    const out: Inconsistenza[] = []
     if (!config || colonne.length === 0 || medici.length === 0) return out
+
+    // Estraggo le 8 attese dal config (default 0 = no check)
+    const att = {
+      sub_m_fer: config.sub_mattina_feriale    ?? 0,
+      sub_m_fes: config.sub_mattina_festivo    ?? 0,
+      sub_p_fer: config.sub_pomeriggio_feriale ?? 0,
+      sub_p_fes: config.sub_pomeriggio_festivo ?? 0,
+      med_m_fer: config.med_mattina_feriale    ?? 0,
+      med_m_fes: config.med_mattina_festivo    ?? 0,
+      med_p_fer: config.med_pomeriggio_feriale ?? 0,
+      med_p_fes: config.med_pomeriggio_festivo ?? 0,
+    }
+
     for (const col of colonne) {
+      // Per-cella + count del giorno in un'unica passata
+      let countSubM = 0, countSubP = 0, countMedM = 0, countMedP = 0
       for (const m of medici) {
         if (ferieStatus(m.id, col.data) === 'approved') continue
         const cur = getCella(m.id, col.data)
-        let dett: 'manca mattina' | 'manca pomeriggio' | 'manca entrambi' | null = null
-        if (cur.tc === 'M' && !cur.slot_mattina)        dett = 'manca mattina'
-        else if (cur.tc === 'P' && !cur.slot_pomeriggio) dett = 'manca pomeriggio'
+
+        // Conteggi per slot del giorno
+        if (cur.slot_mattina    === 'SUB') countSubM++
+        if (cur.slot_pomeriggio === 'SUB') countSubP++
+        if (cur.slot_mattina    === 'MED') countMedM++
+        if (cur.slot_pomeriggio === 'MED') countMedP++
+
+        // Check per-cella: TC con placement mancante
+        let dett: string | null = null
+        if (cur.tc === 'M' && !cur.slot_mattina)         dett = 'manca SUB/MED mattina'
+        else if (cur.tc === 'P' && !cur.slot_pomeriggio) dett = 'manca SUB/MED pomeriggio'
         else if (cur.tc === 'L') {
-          if (!cur.slot_mattina && !cur.slot_pomeriggio)      dett = 'manca entrambi'
-          else if (!cur.slot_mattina)                          dett = 'manca mattina'
-          else if (!cur.slot_pomeriggio)                       dett = 'manca pomeriggio'
+          if (!cur.slot_mattina && !cur.slot_pomeriggio) dett = 'manca SUB/MED entrambi'
+          else if (!cur.slot_mattina)                    dett = 'manca SUB/MED mattina'
+          else if (!cur.slot_pomeriggio)                 dett = 'manca SUB/MED pomeriggio'
         }
         if (dett) {
           out.push({
+            kind: 'cella',
             medicoId:   m.id,
             medicoNome: m.nome,
             data:       col.data,
@@ -1404,7 +1443,28 @@ export function ModificaTurniPage() {
           })
         }
       }
+
+      // Check count per il giorno (solo se l'attesa e` > 0)
+      const isFestivo = col.isDomenica || col.isFestivo
+      const checks: Array<{ atteso: number; act: number; label: string }> = [
+        { atteso: isFestivo ? att.sub_m_fes : att.sub_m_fer, act: countSubM, label: 'SUB mattina'    },
+        { atteso: isFestivo ? att.sub_p_fes : att.sub_p_fer, act: countSubP, label: 'SUB pomeriggio' },
+        { atteso: isFestivo ? att.med_m_fes : att.med_m_fer, act: countMedM, label: 'MED mattina'    },
+        { atteso: isFestivo ? att.med_p_fes : att.med_p_fer, act: countMedP, label: 'MED pomeriggio' },
+      ]
+      for (const c of checks) {
+        if (c.atteso > 0 && c.act !== c.atteso) {
+          out.push({
+            kind: 'slot',
+            data:      col.data,
+            slotLabel: c.label,
+            expected:  c.atteso,
+            actual:    c.act,
+          })
+        }
+      }
     }
+
     return out
   }, [config, colonne, medici, getCella, ferieStatus])
 
@@ -1419,6 +1479,18 @@ export function ModificaTurniPage() {
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
       setSelectedCell({ medicoId, data })
+    }
+  }
+
+  // Scroll alla COLONNA del giorno (usato dai chip "slot inconsistente").
+  // Cerca la prima cella clinica della colonna data e fa scrollIntoView
+  // centrata orizzontalmente. Non setta selectedCell perche` il problema
+  // riguarda l'intero giorno, non una cella specifica.
+  function scrollToGiorno(data: string) {
+    if (medici.length === 0) return
+    const el = document.getElementById(`cell-${medici[0].id}-${data}`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'center' })
     }
   }
 
@@ -1844,37 +1916,61 @@ export function ModificaTurniPage() {
         </div>
       )}
 
-      {/* Warning SUB/MED mancante — banner con lista cliccabile.
-          Ogni chip "Nome - data - tc (manca …)" porta scrollIntoView
-          sulla cella nella tabella clinica + la seleziona. */}
-      {issuesPlacement.length > 0 && (
+      {/* Warning "Inconsistenze nei turni" — banner con lista cliccabile.
+          Due tipi di chip:
+            - per-cella (TC senza placement SUB/MED): click → cella
+            - per-giorno/slot (count != atteso da impostazioni): click → colonna
+          Le attese arrivano dalla pagina "Impostazioni" (configurazione). */}
+      {inconsistenze.length > 0 && (
         <div className="rounded-lg border-2 p-3"
           style={{ background: '#fef3c7', borderColor: '#fbbf24' }}>
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
             <AlertTriangle size={16} style={{ color: '#a16207' }} />
             <span className="text-sm font-bold" style={{ color: '#92400e' }}>
-              {issuesPlacement.length} turn{issuesPlacement.length === 1 ? 'o' : 'i'} senza assegnazione SUB/MED
+              {inconsistenze.length} inconsistenz{inconsistenze.length === 1 ? 'a' : 'e'} nei turni
             </span>
             <span className="text-[10px] text-stone-600 ml-1">
-              · clicca un chip per andare alla cella
+              · clicca un chip per andare al giorno/cella
             </span>
           </div>
-          <div className="overflow-auto" style={{ maxHeight: 120 }}>
+          <div className="overflow-auto" style={{ maxHeight: 140 }}>
             <div className="flex flex-wrap gap-1.5">
-              {issuesPlacement.map((iss, i) => (
-                <button key={`${iss.medicoId}-${iss.data}-${i}`}
-                  onClick={() => scrollToCella(iss.medicoId, iss.data)}
-                  className="text-[11px] px-2 py-1 rounded bg-white hover:bg-amber-50 transition-colors border shadow-sm"
-                  style={{ borderColor: '#fbbf24', color: '#92400e' }}
-                  title={`Vai alla cella di ${iss.medicoNome} del ${fmtDataItaliana(iss.data)}`}>
-                  <span className="font-semibold">{iss.medicoNome}</span>
-                  <span className="text-stone-500"> · </span>
-                  <span className="font-mono">{fmtDataItaliana(iss.data)}</span>
-                  <span className="text-stone-500"> · </span>
-                  <span className="font-bold">{iss.tipoCella}</span>
-                  <span className="text-stone-600"> ({iss.dettaglio})</span>
-                </button>
-              ))}
+              {inconsistenze.map((iss, i) => {
+                if (iss.kind === 'cella') {
+                  return (
+                    <button key={`c-${iss.medicoId}-${iss.data}-${i}`}
+                      onClick={() => scrollToCella(iss.medicoId, iss.data)}
+                      className="text-[11px] px-2 py-1 rounded bg-white hover:bg-amber-50 transition-colors border shadow-sm"
+                      style={{ borderColor: '#fbbf24', color: '#92400e' }}
+                      title={`Vai alla cella di ${iss.medicoNome} del ${fmtDataItaliana(iss.data)}`}>
+                      <span className="font-semibold">{iss.medicoNome}</span>
+                      <span className="text-stone-500"> · </span>
+                      <span className="font-mono">{fmtDataItaliana(iss.data)}</span>
+                      <span className="text-stone-500"> · </span>
+                      <span className="font-bold">{iss.tipoCella}</span>
+                      <span className="text-stone-600"> ({iss.dettaglio})</span>
+                    </button>
+                  )
+                } else {
+                  // Slot count mismatch
+                  const diff = iss.actual - iss.expected
+                  const labelDiff = diff > 0
+                    ? `+${diff} di troppo`
+                    : `manca ${Math.abs(diff)}`
+                  return (
+                    <button key={`s-${iss.data}-${iss.slotLabel}-${i}`}
+                      onClick={() => scrollToGiorno(iss.data)}
+                      className="text-[11px] px-2 py-1 rounded bg-white hover:bg-amber-50 transition-colors border-2 shadow-sm"
+                      style={{ borderColor: '#f97316', color: '#9a3412' }}
+                      title={`Vai al giorno ${fmtDataItaliana(iss.data)}`}>
+                      <span className="font-mono">{fmtDataItaliana(iss.data)}</span>
+                      <span className="text-stone-500"> · </span>
+                      <span className="font-bold">{iss.slotLabel}</span>
+                      <span className="text-stone-600"> {iss.actual}/{iss.expected} ({labelDiff})</span>
+                    </button>
+                  )
+                }
+              })}
             </div>
           </div>
         </div>
