@@ -230,7 +230,7 @@ export function NavBar({ user, onSignOut }: Props) {
         href={href}
         target={tabName}
         onClick={e => handleSmartNav(e, to, href, tabName, active)}
-        className={`flex items-center gap-1.5 px-2 py-1.5 lg:px-3 rounded-lg text-sm font-medium transition-colors
+        className={`flex items-center gap-1.5 px-3 py-2.5 lg:py-1.5 rounded-lg text-sm font-medium transition-colors
           ${active ? '' : 'hover:text-white'}`}
         style={active
           ? { background: 'rgba(255,255,255,0.15)', color: '#fff' }
@@ -265,10 +265,10 @@ export function NavBar({ user, onSignOut }: Props) {
       style={{ background: '#2b3c24' }}>
       <div className="max-w-screen-xl mx-auto px-4 flex items-center gap-3 h-12">
 
-        {/* Logo + nome app (testo nascosto sotto lg per stare in landscape mobile) */}
+        {/* Logo + nome app — sempre visibili */}
         <div className="flex items-center gap-2 shrink-0">
           <Calendar size={17} style={{ color: '#9ab488' }} />
-          <span className="hidden lg:inline font-bold text-sm tracking-tight" style={{ color: '#e0e8d8' }}>
+          <span className="font-bold text-sm tracking-tight" style={{ color: '#e0e8d8' }}>
             Sistema Turni
           </span>
         </div>
@@ -358,17 +358,17 @@ export function NavBar({ user, onSignOut }: Props) {
             {mioMedico && (
               <button
                 onClick={() => setShowMessaggi(true)}
-                className="relative flex items-center transition-colors"
+                className="relative flex items-center px-2 py-2 lg:py-1 rounded-lg transition-colors"
                 style={{ color: unreadCount > 0 ? '#fbbf24' : '#9ab488' }}
                 onMouseEnter={e => (e.currentTarget.style.color = '#fff')}
                 onMouseLeave={e => (e.currentTarget.style.color = unreadCount > 0 ? '#fbbf24' : '#9ab488')}
                 title={unreadCount > 0
                   ? `Hai ${unreadCount} messagg${unreadCount === 1 ? 'io' : 'i'} non lett${unreadCount === 1 ? 'o' : 'i'}`
                   : 'Casella messaggi'}>
-                <Mail size={16} />
+                <Mail size={18} />
                 {unreadCount > 0 && (
                   <span
-                    className="absolute -top-1.5 -right-2 min-w-[16px] h-[16px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center animate-pulse"
+                    className="absolute top-0 right-0 min-w-[16px] h-[16px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center animate-pulse"
                     style={{ background: '#d97706', color: '#fff' }}>
                     {unreadCount > 99 ? '99+' : unreadCount}
                   </span>
@@ -377,13 +377,13 @@ export function NavBar({ user, onSignOut }: Props) {
             )}
             <button
               onClick={onSignOut}
-              className="flex items-center gap-1 text-xs transition-colors"
+              className="flex items-center gap-1 px-2 py-2 lg:py-1 rounded-lg text-xs transition-colors"
               style={{ color: '#9ab488' }}
               onMouseEnter={e => (e.currentTarget.style.color = '#fff')}
               onMouseLeave={e => (e.currentTarget.style.color = '#9ab488')}
               title="Esci"
             >
-              <LogOut size={14} />
+              <LogOut size={18} />
               <span className="hidden lg:inline">Esci</span>
             </button>
           </div>

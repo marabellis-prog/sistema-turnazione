@@ -639,25 +639,26 @@ export function CalendarioPage() {
           {turni.length.toLocaleString('it-IT')} turni
         </span>
         {/* I bottoni su mobile mostrano SOLO icona, su lg+ anche testo.
-            Padding piu` generoso su mobile (py-2) per tap-target ~44px. */}
+            Padding piu` generoso su mobile (py-2.5 px-3.5) per tap-target
+            ~44×44px secondo le linee guida iOS/Material. */}
         <div className="ml-auto flex items-center gap-1.5 lg:gap-2">
           {/* Toggle legenda */}
           <button onClick={() => setMostraLegenda(v => !v)}
-            className="btn-secondary py-2 lg:py-1 px-2.5 lg:px-2 text-xs"
+            className="btn-secondary py-2.5 lg:py-1.5 px-3.5 lg:px-2.5 text-xs"
             style={mostraLegenda ? { background: '#e0e8d8', borderColor: '#9ab488' } : {}}
             title="Mostra/nascondi legenda">
-            <Info size={14} />
+            <Info size={16} />
             <span className="hidden lg:inline ml-1">Legenda</span>
           </button>
           {/* Riepilogo turni — visibile SOLO ai medici turnisti loggati. */}
           {mioMedico && (
             <button onClick={() => setShowRiepilogo(true)}
-              className="flex items-center gap-1 px-2.5 py-2 lg:py-1 rounded-lg text-xs font-medium text-white shadow-sm transition-colors"
+              className="flex items-center gap-1.5 px-3.5 lg:px-2.5 py-2.5 lg:py-1.5 rounded-lg text-xs font-medium text-white shadow-sm transition-colors"
               style={{ background: '#7eb6d4' }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#5d9bc1'}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#7eb6d4'}
               title={`Riepilogo turni di ${mioMedico.nome}`}>
-              <BarChart3 size={14} />
+              <BarChart3 size={16} />
               <span className="hidden lg:inline">Riepilogo turni</span>
             </button>
           )}
@@ -665,24 +666,24 @@ export function CalendarioPage() {
               ad un medico in elenco (match per nome). */}
           {mioMedico && (
             <button onClick={() => setShowRichiediFerie(true)}
-              className="flex items-center gap-1 px-2.5 py-2 lg:py-1 rounded-lg text-xs font-medium text-white shadow-sm transition-colors"
+              className="flex items-center gap-1.5 px-3.5 lg:px-2.5 py-2.5 lg:py-1.5 rounded-lg text-xs font-medium text-white shadow-sm transition-colors"
               style={{ background: '#476540' }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#456b3a'}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#476540'}
               title={`Richiedi ferie per ${mioMedico.nome}`}>
-              <Plane size={14} />
+              <Plane size={16} />
               <span className="hidden lg:inline">Richiedi ferie</span>
             </button>
           )}
           {/* Richiedi Cambio Turno — accanto a Richiedi Ferie. */}
           {mioMedico && (
             <button onClick={() => setShowRichiediCambio(true)}
-              className="flex items-center gap-1 px-2.5 py-2 lg:py-1 rounded-lg text-xs font-medium text-white shadow-sm transition-colors"
+              className="flex items-center gap-1.5 px-3.5 lg:px-2.5 py-2.5 lg:py-1.5 rounded-lg text-xs font-medium text-white shadow-sm transition-colors"
               style={{ background: '#7a5a2f' }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#6a4d28'}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#7a5a2f'}
               title="Richiedi cambio turno">
-              <ArrowRightLeft size={14} />
+              <ArrowRightLeft size={16} />
               <span className="hidden lg:inline">Richiedi cambio</span>
             </button>
           )}
@@ -692,9 +693,9 @@ export function CalendarioPage() {
               qc.invalidateQueries({ queryKey: ['medici'] })
               qc.invalidateQueries({ queryKey: ['configurazione'] })
             }}
-            className="btn-secondary py-2 lg:py-1 px-2.5 lg:px-2 text-xs"
+            className="btn-secondary py-2.5 lg:py-1.5 px-3.5 lg:px-2.5 text-xs"
             title="Aggiorna i dati">
-            <RefreshCw size={14} />
+            <RefreshCw size={16} />
             <span className="hidden lg:inline ml-1">Aggiorna</span>
           </button>
         </div>
