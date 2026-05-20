@@ -237,7 +237,7 @@ export function CambioTurnoModal({
       style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }}
       onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl flex flex-col w-full"
-        style={{ maxWidth: 'min(96vw, 680px)', maxHeight: '92vh' }}
+        style={{ maxWidth: 'min(94vw, 680px)', maxHeight: 'min(88dvh, 720px)' }}
         onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-stone-200 shrink-0">

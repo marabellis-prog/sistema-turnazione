@@ -700,26 +700,25 @@ export function CalendarioPage() {
         </div>
       </div>
 
-      {/* Legenda — su desktop sopra la tabella (inline), su mobile in un
-          modal centrato cliccabile per chiudere. Stesso toggle dal bottone
-          "Legenda" della toolbar; il default `mostraLegenda` è già aperto
-          su ≥640px e chiuso sotto. */}
+      {/* Legenda — su desktop (lg+) inline sopra la tabella, su mobile e
+          tablet (sotto lg, 1024px) come modal centrato. Cosi` anche su
+          iPad landscape la legenda non occupa spazio della tabella. */}
       {mostraLegenda && (
         <>
-          {/* Desktop: legenda inline sopra la tabella */}
-          <div className="hidden sm:block px-3 py-2 shrink-0 border-b"
+          {/* Desktop lg+: legenda inline sopra la tabella */}
+          <div className="hidden lg:block px-3 py-2 shrink-0 border-b"
             style={{ borderColor: '#d5ccb8' }}>
             <LegendaCalendario variant="pubblica" />
           </div>
 
-          {/* Mobile: modal centrato (click fuori = chiudi) */}
+          {/* Mobile/tablet: modal centrato (click fuori = chiudi) */}
           <div
-            className="sm:hidden fixed inset-0 z-50 flex items-center justify-center p-3"
+            className="lg:hidden fixed inset-0 z-50 flex items-center justify-center p-3"
             style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }}
             onClick={() => setMostraLegenda(false)}>
             <div
               className="relative bg-white rounded-2xl shadow-2xl flex flex-col w-full"
-              style={{ maxWidth: 'min(96vw, 520px)', maxHeight: '88vh' }}
+              style={{ maxWidth: 'min(94vw, 520px)', maxHeight: 'min(88dvh, 720px)' }}
               onClick={e => e.stopPropagation()}>
               {/* Header */}
               <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-stone-200 shrink-0">
@@ -803,7 +802,7 @@ export function CalendarioPage() {
           onClick={() => setShowRiepilogo(false)}>
           <div
             className="relative bg-white rounded-2xl shadow-2xl flex flex-col"
-            style={{ maxWidth: 'min(96vw, 820px)', maxHeight: '92vh' }}
+            style={{ maxWidth: 'min(94vw, 820px)', maxHeight: 'min(88dvh, 720px)' }}
             onClick={e => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-center justify-between px-6 pt-4 pb-3 border-b border-stone-200 shrink-0">

@@ -227,7 +227,10 @@ export function MessaggiModal({ medico, onClose }: Props) {
       style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }}
       onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl flex flex-col w-full"
-        style={{ maxWidth: 'min(96vw, 680px)', maxHeight: '92vh' }}
+        style={{
+          maxWidth:  'min(94vw, 680px)',
+          maxHeight: 'min(88dvh, 720px)',   // dvh per iOS Safari + cap
+        }}
         onClick={e => e.stopPropagation()}>
 
         {/* Header */}

@@ -68,6 +68,18 @@
 
   .cal-row-selected td { background: #eae8e0 !important; }
 
+  /* ── No pull-to-refresh su mobile/touch ──────────────────────
+     Su mobile Safari/Chrome, lo sliding al fondo della pagina
+     triggera spesso il refresh per errore. overscroll-behavior-y:
+     `none` blocca completamente sia il refresh che l'overscroll
+     elastico, restando dentro la pagina. Limitato a touch device
+     cosi` su desktop laptop il behavior nativo resta. */
+  @media (pointer: coarse) {
+    html, body {
+      overscroll-behavior-y: none;
+    }
+  }
+
   /* ── Mobile/landscape compatti — sotto lg (1024px) ─────
      Riduce drasticamente l'altezza delle celle del calendario per
      fare entrare tutti gli 11 medici della tabella clinica nello

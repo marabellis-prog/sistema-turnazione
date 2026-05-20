@@ -365,7 +365,7 @@ export function FerieModal({
       style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }}
       onClick={onClose}>
       <div className="relative bg-white rounded-2xl shadow-2xl flex flex-col"
-        style={{ maxWidth: 'min(92vw, 880px)', maxHeight: '92vh', width: 'fit-content' }}
+        style={{ maxWidth: 'min(94vw, 880px)', maxHeight: 'min(88dvh, 760px)', width: 'fit-content' }}
         onClick={e => e.stopPropagation()}>
 
         {/* Header */}
