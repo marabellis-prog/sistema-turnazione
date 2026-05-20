@@ -111,10 +111,35 @@ export interface CambioTurno {
    *  multi-medico). */
   modifiche:             ModificaCambio[]
   motivo:                string | null
-  stato:                 'pending' | 'approved' | 'rejected'
+  /** 'pending' = in attesa, 'approved' = applicato al calendario,
+   *  'rejected' = rifiutato, 'restored' = applicato e poi annullato
+   *  dall'admin (i turni sono stati riportati ai valori originali). */
+  stato:                 'pending' | 'approved' | 'rejected' | 'restored'
   resolved_at:           string | null
   resolved_by:           string | null
   rejection_reason:      string | null
+}
+
+// ─── Messaggi (casella di posta utente) ─────────────────────────────
+
+export type TipoMessaggio =
+  | 'cambio_approvato'
+  | 'cambio_rifiutato'
+  | 'cambio_ripristinato'
+  | 'ferie_approvate'
+  | 'ferie_rifiutate'
+
+export interface Messaggio {
+  id:              string
+  created_at:      string
+  medico_id:       string         // destinatario
+  tipo:            TipoMessaggio
+  titolo:          string
+  corpo:           string | null
+  letto:           boolean
+  /** Riferimenti opzionali al record che ha generato il messaggio. */
+  cambio_turno_id: string | null
+  ferie_id:        string | null
 }
 
 export interface UtenteAutorizzato {

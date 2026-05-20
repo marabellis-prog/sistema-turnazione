@@ -161,6 +161,25 @@ export function GestioneFeriePage() {
     }
   }
 
+  // ── Helper: genera messaggio per il medico interessato ───────
+  // L'INSERT su messaggi e` permesso dalla policy m_insert (solo admin)
+  // → funziona qui perche` chi clicca approva/elimina e` in /admin/ferie.
+  async function insertFerieMessaggio(
+    f: Ferie,
+    tipo: 'ferie_approvate' | 'ferie_rifiutate',
+    titolo: string,
+    corpo: string,
+  ): Promise<void> {
+    const { error } = await supabase.from('messaggi').insert({
+      medico_id: f.medico_id,
+      tipo,
+      titolo,
+      corpo,
+      ferie_id:  f.id,
+    })
+    if (error) console.error('[ferie] insert messaggio:', error.message)
+  }
+
   // ── Approva ferie ────────────────────────────────────────────
   async function approvaFerie(f: Ferie) {
     const { error } = await supabase.from('ferie').update({ approvate: true }).eq('id', f.id)
@@ -169,9 +188,16 @@ export function GestioneFeriePage() {
       .update({ is_ferie: true })
       .eq('medico_id', f.medico_id)
       .gte('data', f.data_inizio).lte('data', f.data_fine)
+
+    // Notifica il medico via casella messaggi
+    await insertFerieMessaggio(f, 'ferie_approvate',
+      'Richiesta ferie approvata',
+      `Le tue ferie dal ${fmtIt(f.data_inizio)} al ${fmtIt(f.data_fine)} sono state approvate.`)
+
     qc.invalidateQueries({ queryKey: ['ferie'] })
     qc.invalidateQueries({ queryKey: ['ferie-ranges'] })
     qc.invalidateQueries({ queryKey: ['turni'] })
+    qc.invalidateQueries({ queryKey: ['messaggi'] })
   }
 
   // ── Elimina ferie ────────────────────────────────────────────
@@ -182,6 +208,11 @@ export function GestioneFeriePage() {
       confirmLabel: 'Elimina', danger: true,
     })
     if (!ok) return
+
+    // Snapshot prima della DELETE: serve per generare il messaggio dopo,
+    // anche se il record non esiste piu` in DB.
+    const wasApproved = f.approvate
+
     await supabase.from('ferie').delete().eq('id', f.id)
     if (f.approvate) {
       await supabase.from('turni')
@@ -189,9 +220,24 @@ export function GestioneFeriePage() {
         .eq('medico_id', f.medico_id)
         .gte('data', f.data_inizio).lte('data', f.data_fine)
     }
+
+    // Notifica il medico: rifiuto (se la richiesta era ancora pending) o
+    // cancellazione (se le ferie erano gia` approvate e l'admin le rimuove).
+    // Il tipo e` lo stesso 'ferie_rifiutate' per semplicita`; il titolo/corpo
+    // chiariscono il contesto specifico.
+    await insertFerieMessaggio(
+      { ...f, id: f.id },  // f.id resta utile per il riferimento; la FK ferie_id passera` a NULL via ON DELETE SET NULL
+      'ferie_rifiutate',
+      wasApproved ? 'Ferie cancellate' : 'Richiesta ferie rifiutata',
+      wasApproved
+        ? `Le tue ferie dal ${fmtIt(f.data_inizio)} al ${fmtIt(f.data_fine)}, precedentemente approvate, sono state cancellate dall'admin.`
+        : `La tua richiesta di ferie dal ${fmtIt(f.data_inizio)} al ${fmtIt(f.data_fine)} e stata rifiutata.`,
+    )
+
     qc.invalidateQueries({ queryKey: ['ferie'] })
     qc.invalidateQueries({ queryKey: ['ferie-ranges'] })
     qc.invalidateQueries({ queryKey: ['turni'] })
+    qc.invalidateQueries({ queryKey: ['messaggi'] })
   }
 
   // ── Helpers display ──────────────────────────────────────────

@@ -22,6 +22,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowRightLeft, Check, X, Clock, AlertTriangle, MessageSquare, Trash2,
+  RotateCcw,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
@@ -124,6 +125,31 @@ export function GestioneCambiPage() {
   const pending  = cambi.filter(c => c.stato === 'pending')
   const archivio = cambi.filter(c => c.stato !== 'pending')
 
+  // ── Helper: genera messaggi per TUTTI i medici coinvolti in un cambio ─
+  // I medici coinvolti = richiedente + tutti i medico_id presenti nelle
+  // modifiche JSONB (dedup via Set). Ogni medico riceve un suo messaggio
+  // nella casella di posta. L'INSERT e` permesso dalla policy m_insert
+  // (solo admin) → questo handler funziona perche` chi clicca approva/rifiuta
+  // e` in /admin.
+  async function insertCambioMessaggi(
+    c: CambioTurno,
+    tipo: 'cambio_approvato' | 'cambio_rifiutato' | 'cambio_ripristinato',
+    titolo: string,
+    corpo: string,
+  ): Promise<void> {
+    const mediciCoinvolti = new Set<string>([c.medico_richiedente_id])
+    for (const m of c.modifiche) mediciCoinvolti.add(m.medico_id)
+    const rows = Array.from(mediciCoinvolti).map(medicoId => ({
+      medico_id:       medicoId,
+      tipo,
+      titolo,
+      corpo,
+      cambio_turno_id: c.id,
+    }))
+    const { error } = await supabase.from('messaggi').insert(rows)
+    if (error) throw error
+  }
+
   // ── Approva ────────────────────────────────────────────────────────
   // Applica TUTTE le modifiche della richiesta alla tabella `turni`
   // (upsert su (medico_id, data) con modificato_manualmente=true),
@@ -173,10 +199,16 @@ export function GestioneCambiPage() {
         .eq('id', c.id)
       if (rsErr) throw rsErr
 
-      setMsg(`✓ Cambio turno approvato — ${c.modifiche.length} celle aggiornate.`)
+      // 3) Genera un messaggio per ogni medico coinvolto
+      await insertCambioMessaggi(c, 'cambio_approvato',
+        'Cambio turno approvato',
+        `Una richiesta di cambio turno che ti coinvolge e stata approvata dall'admin. Il calendario e stato aggiornato.`)
+
+      setMsg(`✓ Cambio turno approvato — ${c.modifiche.length} celle aggiornate, ${c.modifiche.length + 1 - c.modifiche.filter(m => m.medico_id === c.medico_richiedente_id).length + 1} messaggi inviati.`)
       qc.invalidateQueries({ queryKey: ['cambi-turno'] })
       qc.invalidateQueries({ queryKey: ['cambi-turno-pending-count'] })
       qc.invalidateQueries({ queryKey: ['turni-modifica'] })
+      qc.invalidateQueries({ queryKey: ['messaggi'] })
     } catch (e) {
       setErr('Errore in approvazione: ' + (e as Error).message)
     } finally {
@@ -200,12 +232,83 @@ export function GestioneCambiPage() {
         .eq('id', rejectFor.id)
       if (error) throw error
 
+      // Genera messaggio per tutti i medici coinvolti
+      const motivoTxt = rejectMsg.trim()
+      await insertCambioMessaggi(rejectFor, 'cambio_rifiutato',
+        'Cambio turno rifiutato',
+        motivoTxt
+          ? `Una richiesta di cambio turno che ti coinvolge e stata rifiutata: ${motivoTxt}`
+          : `Una richiesta di cambio turno che ti coinvolge e stata rifiutata dall'admin.`)
+
       setMsg('Cambio turno rifiutato.')
       qc.invalidateQueries({ queryKey: ['cambi-turno'] })
       qc.invalidateQueries({ queryKey: ['cambi-turno-pending-count'] })
+      qc.invalidateQueries({ queryKey: ['messaggi'] })
       setRejectFor(null); setRejectMsg('')
     } catch (e) {
       setErr('Errore nel rifiuto: ' + (e as Error).message)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  // ── Ripristina (rollback) cambio turno approvato ────────────────────
+  // Per ogni modifica del cambio: upsert sui turni col valore "da" (cioe`
+  // il valore originale precedente al cambio). Lo stato passa a 'restored'
+  // e resta in archivio. Tutti i medici coinvolti ricevono un messaggio.
+  // Disponibile SOLO per cambi in stato 'approved' (non ha senso ripristinare
+  // un cambio mai applicato).
+  async function handleRipristina(c: CambioTurno) {
+    if (c.stato !== 'approved') return    // safety net
+    const ok = await confirm({
+      title:   'Ripristinare il cambio turno?',
+      message: `Annullerai il cambio approvato il ${fmtData(c.resolved_at?.slice(0, 10) ?? c.created_at.slice(0, 10))}. ${c.modifiche.length} cell${c.modifiche.length === 1 ? 'a' : 'e'} del calendario verranno riportate ai valori originali. La richiesta passa in archivio come "RIPRISTINATO".`,
+      confirmLabel: 'Ripristina',
+      danger: true,
+    })
+    if (!ok) return
+
+    setBusyId(c.id); setErr(null); setMsg(null)
+    try {
+      // 1) Upsert ROLLBACK: applica m.da (i valori originali) ai turni
+      const turniRows = c.modifiche.map(m => ({
+        medico_id:               m.medico_id,
+        data:                    m.data,
+        turno_clinico:           m.da.tc,
+        turno_ricerca:           m.da.tr,
+        modificato_manualmente:  true,
+        slot_mattina:            m.da.slot_mattina,
+        slot_pomeriggio:         m.da.slot_pomeriggio,
+        is_sub: m.da.slot_mattina === 'SUB' || m.da.slot_pomeriggio === 'SUB',
+        is_med: m.da.slot_mattina === 'MED' || m.da.slot_pomeriggio === 'MED',
+        is_ferie: false,
+      }))
+      const { error: upErr } = await supabase.from('turni')
+        .upsert(turniRows, { onConflict: 'medico_id,data' })
+      if (upErr) throw upErr
+
+      // 2) Setta stato 'restored'
+      const { data: authData } = await supabase.auth.getUser()
+      const { error: rsErr } = await supabase.from('cambi_turno')
+        .update({
+          stato:       'restored',
+          resolved_at: new Date().toISOString(),
+          resolved_by: authData.user?.id ?? null,
+        })
+        .eq('id', c.id)
+      if (rsErr) throw rsErr
+
+      // 3) Genera messaggio per tutti i medici coinvolti
+      await insertCambioMessaggi(c, 'cambio_ripristinato',
+        'Cambio turno ripristinato',
+        `Un cambio turno precedentemente approvato che ti coinvolge e stato annullato dall'admin. I tuoi turni sono stati riportati ai valori originali.`)
+
+      setMsg(`Cambio turno ripristinato — ${c.modifiche.length} cell${c.modifiche.length === 1 ? 'a' : 'e'} riportate ai valori originali.`)
+      qc.invalidateQueries({ queryKey: ['cambi-turno'] })
+      qc.invalidateQueries({ queryKey: ['turni-modifica'] })
+      qc.invalidateQueries({ queryKey: ['messaggi'] })
+    } catch (e) {
+      setErr('Errore nel ripristino: ' + (e as Error).message)
     } finally {
       setBusyId(null)
     }
@@ -242,12 +345,22 @@ export function GestioneCambiPage() {
   // ── Render di una richiesta ────────────────────────────────────────
   function RichiestaCard({ c }: { c: CambioTurno }) {
     const richiedente = mediciById.get(c.medico_richiedente_id)
-    const isPending = c.stato === 'pending'
+    const isPending  = c.stato === 'pending'
     const isApproved = c.stato === 'approved'
+    const isRejected = c.stato === 'rejected'
+    const isRestored = c.stato === 'restored'
+
+    // Colore del bordo card per stato:
+    //   pending → arancione, approved → verde, restored → ambra, rejected → grigio
+    const borderColor =
+      isPending  ? '#d97706' :
+      isApproved ? '#9ab488' :
+      isRestored ? '#a16207' :   // ambra/oro = "annullato dopo approvazione"
+                   '#c0b8a8'     // rejected
 
     return (
       <div className="rounded-lg border p-3 shadow-sm bg-white"
-        style={{ borderColor: isPending ? '#d97706' : isApproved ? '#9ab488' : '#c0b8a8' }}>
+        style={{ borderColor }}>
         {/* Header: richiedente + data + stato */}
         <div className="flex items-start justify-between gap-3 mb-2">
           <div>
@@ -273,9 +386,10 @@ export function GestioneCambiPage() {
             style={
               isPending  ? { background: '#fef3c7', color: '#92400e' } :
               isApproved ? { background: '#dcfce7', color: '#166534' } :
+              isRestored ? { background: '#fef3c7', color: '#a16207' } :
                            { background: '#fee2e2', color: '#991b1b' }
             }>
-            {c.stato}
+            {isRestored ? 'ripristinato' : c.stato}
           </span>
         </div>
 
@@ -332,32 +446,49 @@ export function GestioneCambiPage() {
           </div>
         )}
 
-        {/* Audit + Elimina per archivio */}
+        {/* Audit + Azioni per archivio (Ripristina + Elimina) */}
         {!isPending && (
           <div className="mt-2 flex items-center justify-between gap-2">
             <div className="text-[10px] text-stone-500 flex items-center gap-1 flex-1 min-w-0">
               {c.resolved_at && (
                 <>
                   <Clock size={10} className="shrink-0" />
-                  Risolto il {fmtData(c.resolved_at.slice(0, 10))}
+                  {isRestored ? 'Ripristinato' : 'Risolto'} il {fmtData(c.resolved_at.slice(0, 10))}
                   {c.rejection_reason && (
                     <span className="ml-2 italic truncate">— {c.rejection_reason}</span>
                   )}
                 </>
               )}
             </div>
-            <button
-              onClick={() => handleElimina(c)}
-              disabled={busyId === c.id}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-colors shrink-0"
-              style={{
-                background: '#fee2e2', color: '#991b1b',
-                border: '1px solid #fecaca',
-                opacity: busyId === c.id ? 0.6 : 1,
-              }}
-              title="Elimina questa richiesta dall'archivio">
-              <Trash2 size={11} /> Elimina
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Ripristina: solo per cambi approvati (annulla l'effetto) */}
+              {isApproved && (
+                <button
+                  onClick={() => handleRipristina(c)}
+                  disabled={busyId === c.id}
+                  className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+                  style={{
+                    background: '#fef3c7', color: '#a16207',
+                    border: '1px solid #fde68a',
+                    opacity: busyId === c.id ? 0.6 : 1,
+                  }}
+                  title="Annulla il cambio approvato e ripristina i turni originali">
+                  <RotateCcw size={11} /> Ripristina
+                </button>
+              )}
+              <button
+                onClick={() => handleElimina(c)}
+                disabled={busyId === c.id}
+                className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+                style={{
+                  background: '#fee2e2', color: '#991b1b',
+                  border: '1px solid #fecaca',
+                  opacity: busyId === c.id ? 0.6 : 1,
+                }}
+                title="Elimina questa richiesta dall'archivio">
+                <Trash2 size={11} /> Elimina
+              </button>
+            </div>
           </div>
         )}
       </div>
