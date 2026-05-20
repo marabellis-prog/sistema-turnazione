@@ -12,14 +12,31 @@
  *
  * Detection via `matchMedia('(orientation: portrait) and (max-width: 1024px)')`.
  * Cosi` desktop (sempre landscape) e tablet grandi non lo vedono mai.
+ *
+ * DISMISS: l'utente puo` cliccare "Continua comunque" per chiudere
+ * l'overlay e visualizzare in verticale (a rischio suo, la tabella
+ * deborda). La scelta persiste in sessionStorage per la tab corrente:
+ * chiudendo e riaprendo la tab/browser l'overlay si ripresenta.
  */
 
 import { useEffect, useState } from 'react'
 
 const MEDIA_QUERY = '(orientation: portrait) and (max-width: 1024px)'
+const DISMISS_KEY = 'force-landscape-dismissed'
 
 export function ForceLandscapeOverlay() {
   const [show, setShow] = useState(false)
+  // dismissed lo leggiamo da sessionStorage al mount cosi` la scelta
+  // sopravvive ai re-render e a eventuali change di orientamento durante
+  // la stessa sessione (utente torna in portrait dopo aver dismissato →
+  // non rimostro l'overlay).
+  const [dismissed, setDismissed] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem(DISMISS_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
 
   useEffect(() => {
     const mql = window.matchMedia(MEDIA_QUERY)
@@ -29,7 +46,17 @@ export function ForceLandscapeOverlay() {
     return () => mql.removeEventListener('change', update)
   }, [])
 
-  if (!show) return null
+  function handleDismiss() {
+    setDismissed(true)
+    try {
+      sessionStorage.setItem(DISMISS_KEY, '1')
+    } catch {
+      // sessionStorage puo` lanciare in modalita` privata di Safari
+      // su iOS — niente di grave, ci limitiamo allo state locale.
+    }
+  }
+
+  if (!show || dismissed) return null
 
   return (
     <>
@@ -87,10 +114,40 @@ export function ForceLandscapeOverlay() {
           </h2>
         </div>
 
-        <p className="text-sm text-center max-w-xs opacity-85 leading-relaxed"
+        <p className="text-sm text-center max-w-xs opacity-85 leading-relaxed mb-6"
           style={{ color: '#c0d0b0' }}>
           Per visualizzare correttamente il calendario serve l'orientamento
           <strong> orizzontale</strong>. Ruota il dispositivo per continuare.
+        </p>
+
+        {/* Bottone "Continua comunque" — secondario, sotto il messaggio
+            principale. Stile sobrio per non incentivare ad usarlo: testo
+            sottile su sfondo trasparente con bordo. */}
+        <button
+          onClick={handleDismiss}
+          className="mt-2 px-5 py-2.5 rounded-lg text-sm font-medium border-2 transition-colors"
+          style={{
+            background:  'transparent',
+            borderColor: '#9ab488',
+            color:       '#e0e8d8',
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLElement).style.background  = 'rgba(154,180,136,0.15)'
+            ;(e.currentTarget as HTMLElement).style.borderColor = '#c0d0b0'
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLElement).style.background  = 'transparent'
+            ;(e.currentTarget as HTMLElement).style.borderColor = '#9ab488'
+          }}
+        >
+          Continua comunque in verticale
+        </button>
+
+        {/* Disclaimer "a rischio dell'utente" */}
+        <p className="text-[11px] text-center max-w-xs mt-3 italic opacity-70"
+          style={{ color: '#9ab488' }}>
+          La visualizzazione in verticale puo` risultare difficoltosa:
+          la tabella e` molto larga e dovrai scorrere lateralmente.
         </p>
       </div>
     </>
