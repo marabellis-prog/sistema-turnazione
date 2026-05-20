@@ -19,7 +19,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Settings, Save, AlertTriangle, CheckCircle2, CalendarPlus, Trash2, Loader2,
-  CalendarDays, Database, Archive,
+  CalendarDays, Database, Archive, Sparkles,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfigurazioneRealtime } from '../../hooks/useConfigurazioneRealtime'
@@ -96,6 +96,7 @@ export function ConfigPage() {
   const [backupKeep,  setBackupKeep]  = useState('10')
   const [bkSaving,    setBkSaving]    = useState(false)
   const [bkDirty,     setBkDirty]     = useState(false)
+  const [vacuumLoading, setVacuumLoading] = useState(false)
 
   // ── Stats DB Supabase (free tier monitoring) ─────────────────────
   const { data: dbStats } = useQuery<DbStats | null>({
@@ -215,6 +216,64 @@ export function ConfigPage() {
     }
   }
 
+  // ── Pulisci database (VACUUM FULL via Edge Function) ───────────────
+  // VACUUM FULL non gira dentro transazioni → non e` chiamabile dal
+  // PostgREST. Serve passare per l'Edge Function `vacuum-tables` che
+  // usa la Management API col PAT come secret (MGMT_API_PAT).
+  async function handlePulisciDb() {
+    const ok = await confirm({
+      title:   'Pulisci database?',
+      message:
+        'Eseguira VACUUM FULL sulle tabelle principali per ricompattare ' +
+        'lo spazio occupato da DELETE precedenti. Operazione sicura: ' +
+        'recupera spazio fisico nel database.',
+      confirmLabel: 'Esegui pulizia',
+    })
+    if (!ok) return
+    setVacuumLoading(true); setErr(null); setMsg(null)
+    try {
+      const { data, error } = await supabase.functions.invoke('vacuum-tables', {
+        method: 'POST',
+      })
+      if (error) {
+        const m = (error as Error).message || String(error)
+        if (m.includes('Failed to fetch') || m.includes('404')) {
+          setErr(
+            'Edge Function `vacuum-tables` non deployata. Vedi guida in ' +
+            'supabase/functions/vacuum-tables/README.md per il deploy, ' +
+            'oppure usa il fallback CLI: `node scripts/vacuum-full.mjs`'
+          )
+        } else {
+          setErr('Errore pulizia: ' + m)
+        }
+        return
+      }
+      const fmtBytes = (b: number) =>
+        b >= 1024 * 1024 ? `${(b / (1024*1024)).toFixed(2)} MB`
+        : b >= 1024      ? `${(b / 1024).toFixed(1)} KB`
+        : `${b} bytes`
+      const r = data as {
+        size_before_bytes: number
+        size_after_bytes:  number
+        freed_bytes:       number
+        tables: Record<string, string>
+      }
+      const errs = Object.entries(r.tables).filter(([, v]) => v !== 'ok')
+      setMsg(
+        `Pulizia completata. DB: ${fmtBytes(r.size_before_bytes)} → ` +
+        `${fmtBytes(r.size_after_bytes)} (liberati ${fmtBytes(r.freed_bytes)})` +
+        (errs.length > 0 ? ` — ${errs.length} tabelle con errore` : '.')
+      )
+      // Invalida stats DB cosi` il box stesso si aggiorna
+      qc.invalidateQueries({ queryKey: ['db-stats'] })
+      setTimeout(() => setMsg(null), 8000)
+    } catch (e) {
+      setErr('Errore pulizia: ' + (e as Error).message)
+    } finally {
+      setVacuumLoading(false)
+    }
+  }
+
   // ── Aggiungi festività custom ─────────────────────────────────
   async function handleAggiungiFestivita() {
     setFestErr(null)
@@ -312,11 +371,23 @@ export function ConfigPage() {
       {dbStats && (
         <div className="rounded-lg border p-3"
           style={{ background: boxColors.bg, borderColor: boxColors.bar }}>
-          <div className="flex items-center gap-2 mb-3 flex-wrap">
-            <Database size={16} style={{ color: boxColors.fg }} />
-            <span className="font-bold text-sm" style={{ color: boxColors.fg }}>
-              Utilizzo Supabase (free tier)
-            </span>
+          <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Database size={16} style={{ color: boxColors.fg }} />
+              <span className="font-bold text-sm" style={{ color: boxColors.fg }}>
+                Utilizzo Supabase (free tier)
+              </span>
+            </div>
+            {/* Pulisci database (VACUUM FULL via Edge Function vacuum-tables) */}
+            <button
+              onClick={handlePulisciDb}
+              disabled={vacuumLoading}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-semibold text-white shadow disabled:opacity-50 transition-colors shrink-0"
+              style={{ background: '#7a5a2f' }}
+              title="VACUUM FULL: ricompatta le tabelle e libera spazio fisico nel DB">
+              {vacuumLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+              Pulisci database
+            </button>
           </div>
 
           <div className="space-y-2">
