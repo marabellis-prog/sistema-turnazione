@@ -29,7 +29,10 @@ import type {
   Medico, Messaggio, TipoMessaggio, Ferie, CambioTurno,
 } from '../types'
 
-const PAGE_SIZE = 20
+// Numero di messaggi per pagina nella sezione "Storico". Le richieste in
+// attesa (pending) sono SEMPRE visibili sopra senza paginazione: questa
+// constante riguarda solo la lista dei messaggi della tabella `messaggi`.
+const PAGE_SIZE = 5
 
 interface Props {
   medico:  Medico
