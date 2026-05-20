@@ -20,6 +20,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Mail, Check, X, RotateCcw, Plane, ChevronLeft, ChevronRight,
+  ChevronsLeft, ChevronsRight,
   CheckCheck, Loader2, Clock, ArrowRightLeft, ArrowRight,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -33,6 +34,21 @@ import type {
 // attesa (pending) sono SEMPRE visibili sopra senza paginazione: questa
 // constante riguarda solo la lista dei messaggi della tabella `messaggi`.
 const PAGE_SIZE = 5
+
+/** Window di numeri pagina centrati sulla corrente, max `windowSize`.
+ *  Es. (current=10, total=20, windowSize=5) → [8,9,10,11,12]
+ *  Adjusts at boundaries: vicino a 0 → [0..4], vicino a total-1 → [total-5..total-1]. */
+function getPageWindow(current: number, total: number, windowSize: number): number[] {
+  if (total <= 0) return []
+  if (total <= windowSize) return Array.from({ length: total }, (_, i) => i)
+  const half = Math.floor(windowSize / 2)
+  let start = Math.max(0, current - half)
+  const end = Math.min(total - 1, start + windowSize - 1)
+  start = Math.max(0, end - windowSize + 1)
+  const out: number[] = []
+  for (let i = start; i <= end; i++) out.push(i)
+  return out
+}
 
 interface Props {
   medico:  Medico
@@ -424,21 +440,56 @@ export function MessaggiModal({ medico, onClose }: Props) {
           )}
         </div>
 
-        {/* Footer: paginazione */}
+        {/* Footer: paginazione compatta — << < [1] [2] (3) [4] [5] > >>
+            Mostra max 5 numeri pagina centrati sulla corrente. Prima/ultima
+            pagina come scorciatoie per liste lunghe.
+            La sezione Pending (sopra) non e` interessata da questa paginazione. */}
         {messaggi.length > PAGE_SIZE && (
-          <div className="px-4 py-2 border-t border-stone-200 flex items-center justify-between shrink-0">
+          <div className="px-3 py-2 border-t border-stone-200 flex items-center justify-center gap-1 shrink-0">
+            {/* Prima pagina */}
+            <button onClick={() => setPage(0)}
+              disabled={page === 0}
+              className="flex items-center justify-center w-7 h-7 rounded text-xs font-semibold disabled:opacity-30 hover:bg-stone-100 transition-colors"
+              title="Prima pagina">
+              <ChevronsLeft size={14} />
+            </button>
+            {/* Precedente */}
             <button onClick={() => setPage(p => Math.max(0, p - 1))}
               disabled={page === 0}
-              className="flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold disabled:opacity-30 transition-opacity">
-              <ChevronLeft size={13} /> Prec
+              className="flex items-center justify-center w-7 h-7 rounded text-xs font-semibold disabled:opacity-30 hover:bg-stone-100 transition-colors"
+              title="Precedente">
+              <ChevronLeft size={14} />
             </button>
-            <span className="text-xs text-stone-600">
-              Pagina <strong>{page + 1}</strong> di <strong>{totPagine}</strong>
-            </span>
+            {/* Window di max 5 numeri pagina centrati sulla corrente */}
+            {getPageWindow(page, totPagine, 5).map(p => {
+              const isCurrent = p === page
+              return (
+                <button key={p}
+                  onClick={() => setPage(p)}
+                  className="flex items-center justify-center min-w-[28px] h-7 rounded text-xs font-semibold transition-colors px-1.5"
+                  style={isCurrent
+                    ? { background: '#476540', color: '#fff' }
+                    : { background: 'transparent', color: '#5a5a4a' }}
+                  onMouseEnter={e => { if (!isCurrent) (e.currentTarget as HTMLElement).style.background = '#f4f1ea' }}
+                  onMouseLeave={e => { if (!isCurrent) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                  title={`Pagina ${p + 1}`}>
+                  {p + 1}
+                </button>
+              )
+            })}
+            {/* Successiva */}
             <button onClick={() => setPage(p => Math.min(totPagine - 1, p + 1))}
               disabled={page >= totPagine - 1}
-              className="flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold disabled:opacity-30 transition-opacity">
-              Succ <ChevronRight size={13} />
+              className="flex items-center justify-center w-7 h-7 rounded text-xs font-semibold disabled:opacity-30 hover:bg-stone-100 transition-colors"
+              title="Successiva">
+              <ChevronRight size={14} />
+            </button>
+            {/* Ultima pagina */}
+            <button onClick={() => setPage(totPagine - 1)}
+              disabled={page >= totPagine - 1}
+              className="flex items-center justify-center w-7 h-7 rounded text-xs font-semibold disabled:opacity-30 hover:bg-stone-100 transition-colors"
+              title="Ultima pagina">
+              <ChevronsRight size={14} />
             </button>
           </div>
         )}
