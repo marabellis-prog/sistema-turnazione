@@ -138,8 +138,11 @@ export function useAutoBackup() {
     },
   })
 
-  // Leggo l'ultimo backup
-  const { data: lastBackup } = useQuery<TurnoBackup | null>({
+  // Leggo l'ultimo backup. NB: `isFetched` ci dice quando la query ha
+  // effettivamente RISPOSTO (success o error). Senza questa check si
+  // creava un backup spurio ad ogni refresh perche` il data iniziale
+  // (undefined, loading) era trattato come "nessun backup esiste".
+  const { data: lastBackup, isFetched: backupFetched } = useQuery<TurnoBackup | null>({
     queryKey: ['turni-backup', 'latest'],
     queryFn: async () => {
       const { data, error } = await supabase.from('turni_backup')
@@ -155,13 +158,19 @@ export function useAutoBackup() {
   useEffect(() => {
     if (triggered.current) return
     if (!config) return
+    // Gating: aspetta che entrambe le query abbiano risposto. Altrimenti
+    // `lastBackup === undefined` (loading) verrebbe scambiato per
+    // "nessun backup esiste mai" → backup spurio ad ogni mount.
+    if (!backupFetched) return
+    if (lastBackup === undefined) return  // safety net per il typeguard
+
     const interval = config.backup_intervallo_giorni ?? 7
     if (interval <= 0) return    // 0 = disattiva auto-backup
     const retention = config.backup_da_tenere ?? 10
 
-    // Calcola se serve un nuovo backup
+    // Da qui `lastBackup` e` TurnoBackup oppure null (mai undefined)
     let serve = false
-    if (!lastBackup) {
+    if (lastBackup === null) {
       // Nessun backup mai fatto → serve
       serve = true
     } else {
@@ -185,5 +194,5 @@ export function useAutoBackup() {
         console.error('[autoBackup]', (e as Error).message)
       }
     })()
-  }, [config, lastBackup, qc])
+  }, [config, lastBackup, backupFetched, qc])
 }
