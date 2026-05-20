@@ -34,7 +34,29 @@ export interface Configurazione {
   med_mattina_festivo:    number
   med_pomeriggio_feriale: number
   med_pomeriggio_festivo: number
+  /** Intervallo in giorni per l'auto-backup dei turni (default 7) */
+  backup_intervallo_giorni: number
+  /** Quanti backup conservare prima di iniziare a rotare (default 10) */
+  backup_da_tenere:         number
   updated_at: string
+}
+
+// ─── Backup turni ───────────────────────────────────────────────────
+
+export interface TurnoBackup {
+  id:          string
+  created_at:  string
+  descrizione: string | null
+  num_turni:   number | null
+  /** Snapshot JSONB: { "turni": [<riga turni>, ...] } */
+  snapshot:    { turni: unknown[] }
+}
+
+// ─── Statistiche DB (free tier monitoring) ──────────────────────────
+
+export interface DbStats {
+  db_size_bytes: number
+  tables: Array<{ name: string; rows: number }>
 }
 
 export interface SchemaModello {

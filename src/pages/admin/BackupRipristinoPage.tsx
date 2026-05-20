@@ -1,0 +1,291 @@
+/**
+ * BackupRipristinoPage
+ *
+ * Pagina admin per gestire backup e ripristino dei turni.
+ * - Lista backup esistenti ordinati per data desc
+ * - Pulsante "Backup ora" per creare uno snapshot manuale
+ * - Per ogni backup: bottoni Elimina e Ripristina (con conferma)
+ *
+ * Gli auto-backup avvengono in background tramite `useAutoBackup` montato
+ * in AdminLayout, secondo l'intervallo definito in Impostazioni.
+ */
+
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  Archive, Plus, Trash2, RotateCcw, AlertTriangle, CheckCircle2,
+  Loader2, Clock,
+} from 'lucide-react'
+import { supabase } from '../../lib/supabase'
+import { useConfirm } from '../../hooks/useConfirm'
+import { ConfirmModal } from '../../components/ConfirmModal'
+import {
+  createBackup, restoreBackup, deleteBackup, ruotaBackup,
+} from '../../hooks/useBackupManager'
+import type { Configurazione } from '../../types'
+
+// Lista record che ritorno dal SELECT (senza il pesante snapshot JSONB).
+interface BackupRow {
+  id:          string
+  created_at:  string
+  descrizione: string | null
+  num_turni:   number | null
+}
+
+function fmtDataOra(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ` +
+         `${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+export function BackupRipristinoPage() {
+  const qc = useQueryClient()
+  const { confirm, confirmState } = useConfirm()
+  const [busyId,        setBusyId]        = useState<string | null>(null)
+  const [creating,      setCreating]      = useState(false)
+  const [descrManuale,  setDescrManuale]  = useState('')
+  const [msg,           setMsg]           = useState<string | null>(null)
+  const [err,           setErr]           = useState<string | null>(null)
+
+  // ── Lista backup (senza snapshot, troppo pesante) ──────────────────
+  const { data: backups = [], isLoading } = useQuery<BackupRow[]>({
+    queryKey: ['turni-backup'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('turni_backup')
+        .select('id, created_at, descrizione, num_turni')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as BackupRow[]
+    },
+    staleTime: 0,
+    refetchOnMount: 'always',
+  })
+
+  // ── Settings backup dalla configurazione (intervallo + retention) ──
+  const { data: config } = useQuery<Configurazione | null>({
+    queryKey: ['configurazione'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('configurazione').select('*')
+        .order('updated_at', { ascending: false }).limit(1).maybeSingle()
+      if (error) throw error
+      return data
+    },
+  })
+
+  // ── Crea backup manuale ────────────────────────────────────────────
+  async function handleCreaBackup() {
+    setCreating(true); setErr(null); setMsg(null)
+    try {
+      const descr = descrManuale.trim() ||
+        `Backup manuale ${new Date().toLocaleString('it-IT')}`
+      const bk = await createBackup(descr)
+      // Rotazione automatica anche per i backup manuali
+      const retention = config?.backup_da_tenere ?? 10
+      const rotati = await ruotaBackup(retention)
+      setMsg(
+        `Backup creato (${bk.num_turni ?? 0} turni)` +
+        (rotati > 0 ? ` — ${rotati} backup vecchi rimossi per rotazione.` : '.')
+      )
+      setDescrManuale('')
+      qc.invalidateQueries({ queryKey: ['turni-backup'] })
+      setTimeout(() => setMsg(null), 5000)
+    } catch (e) {
+      setErr('Errore creazione backup: ' + (e as Error).message)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  // ── Elimina backup ─────────────────────────────────────────────────
+  async function handleElimina(b: BackupRow) {
+    const ok = await confirm({
+      title:   'Eliminare il backup?',
+      message: 'Eliminazione definitiva. Lo snapshot non sara` piu` ripristinabile.',
+      confirmLabel: 'Elimina',
+      danger: true,
+    })
+    if (!ok) return
+    setBusyId(b.id); setErr(null); setMsg(null)
+    try {
+      await deleteBackup(b.id)
+      setMsg('Backup eliminato.')
+      qc.invalidateQueries({ queryKey: ['turni-backup'] })
+      setTimeout(() => setMsg(null), 3000)
+    } catch (e) {
+      setErr('Errore eliminazione: ' + (e as Error).message)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  // ── Ripristina backup ─────────────────────────────────────────────
+  async function handleRipristina(b: BackupRow) {
+    const ok = await confirm({
+      title:   'Ripristinare questo backup?',
+      message:
+        'Verranno SOSTITUITI tutti i turni attualmente nel calendario con ' +
+        'quelli contenuti nel backup "' + (b.descrizione ?? '?') + '" del ' +
+        fmtDataOra(b.created_at) + '. Operazione irreversibile, ma viene ' +
+        'creato automaticamente un backup "pre-ripristino" come safety net.',
+      confirmLabel: 'Ripristina',
+      danger: true,
+    })
+    if (!ok) return
+    setBusyId(b.id); setErr(null); setMsg(null)
+    try {
+      const res = await restoreBackup(b.id)
+      setMsg(
+        `Ripristino completato: ${res.inserted} turni reinseriti. ` +
+        `Backup pre-ripristino creato come safety net.`
+      )
+      qc.invalidateQueries({ queryKey: ['turni-backup'] })
+      qc.invalidateQueries({ queryKey: ['turni-modifica'] })
+      qc.invalidateQueries({ queryKey: ['turni'] })
+      setTimeout(() => setMsg(null), 6000)
+    } catch (e) {
+      setErr('Errore ripristino: ' + (e as Error).message)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4 max-w-4xl">
+      {/* Header */}
+      <div>
+        <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
+          <Archive size={20} style={{ color: '#476540' }} />
+          Backup / Ripristino turni
+        </h2>
+        <p className="text-sm text-stone-600 mt-0.5">
+          Snapshot completi dei turni. Auto-backup ogni{' '}
+          <strong>{config?.backup_intervallo_giorni ?? '?'} giorni</strong>,
+          mantenuti gli ultimi <strong>{config?.backup_da_tenere ?? '?'}</strong>.
+          Modifica i parametri in <em>Impostazioni</em>.
+        </p>
+      </div>
+
+      {/* Messaggi */}
+      {msg && (
+        <div className="px-3 py-2 rounded-lg text-sm flex items-center gap-2"
+          style={{ background: '#d5e5d0', color: '#2e5a28', border: '1px solid #a8c4a0' }}>
+          <CheckCircle2 size={15} /> {msg}
+        </div>
+      )}
+      {err && (
+        <div className="px-3 py-2 rounded-lg text-sm flex items-center gap-2"
+          style={{ background: '#fde0e0', color: '#7a2020', border: '1px solid #f0c0c0' }}>
+          <AlertTriangle size={15} /> {err}
+        </div>
+      )}
+
+      {/* Form crea backup manuale */}
+      <div className="rounded-lg border border-stone-300 bg-white p-3">
+        <h3 className="font-semibold text-stone-700 text-sm mb-2">
+          Crea backup manuale
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end">
+          <label className="text-xs">
+            <span className="block text-stone-600 mb-0.5">Descrizione (opzionale)</span>
+            <input type="text"
+              value={descrManuale}
+              onChange={e => setDescrManuale(e.target.value)}
+              placeholder="Es. Prima di rigenerare il calendario"
+              className="w-full px-2 py-1.5 rounded border border-stone-300 text-sm" />
+          </label>
+          <button
+            onClick={handleCreaBackup}
+            disabled={creating}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold text-white shadow disabled:opacity-50 transition-colors"
+            style={{ background: '#476540' }}>
+            {creating ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+            Backup ora
+          </button>
+        </div>
+      </div>
+
+      {/* Lista backup */}
+      <div>
+        <h3 className="font-semibold text-stone-700 text-sm mb-2 flex items-center gap-2">
+          <Clock size={14} />
+          Backup esistenti
+          {backups.length > 0 && (
+            <span className="text-xs font-normal text-stone-500">
+              ({backups.length})
+            </span>
+          )}
+        </h3>
+        {isLoading ? (
+          <div className="text-stone-500 text-sm flex items-center gap-2">
+            <Loader2 size={14} className="animate-spin" /> Caricamento…
+          </div>
+        ) : backups.length === 0 ? (
+          <p className="text-xs text-stone-500 italic">
+            Nessun backup. L'auto-backup partira` al primo accesso admin dopo l'intervallo configurato.
+          </p>
+        ) : (
+          <div className="rounded-lg border border-stone-300 bg-white overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ background: '#f4f1ea' }}>
+                  <th className="px-3 py-2 text-left font-semibold text-stone-700">Data</th>
+                  <th className="px-3 py-2 text-left font-semibold text-stone-700">Descrizione</th>
+                  <th className="px-3 py-2 text-right font-semibold text-stone-700" style={{ width: 100 }}>Turni</th>
+                  <th className="px-3 py-2 text-right font-semibold text-stone-700" style={{ width: 180 }}>Azioni</th>
+                </tr>
+              </thead>
+              <tbody>
+                {backups.map(b => (
+                  <tr key={b.id} className="border-t border-stone-200">
+                    <td className="px-3 py-2 text-xs font-mono text-stone-600 whitespace-nowrap">
+                      {fmtDataOra(b.created_at)}
+                    </td>
+                    <td className="px-3 py-2 text-stone-700">
+                      {b.descrizione ?? '—'}
+                    </td>
+                    <td className="px-3 py-2 text-right text-xs font-mono text-stone-600">
+                      {b.num_turni ?? '?'}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => handleRipristina(b)}
+                          disabled={busyId === b.id}
+                          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+                          style={{
+                            background: '#fef3c7', color: '#a16207',
+                            border: '1px solid #fde68a',
+                            opacity: busyId === b.id ? 0.6 : 1,
+                          }}
+                          title="Sovrascrivi i turni attuali con questo backup">
+                          <RotateCcw size={11} /> Ripristina
+                        </button>
+                        <button
+                          onClick={() => handleElimina(b)}
+                          disabled={busyId === b.id}
+                          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+                          style={{
+                            background: '#fee2e2', color: '#991b1b',
+                            border: '1px solid #fecaca',
+                            opacity: busyId === b.id ? 0.6 : 1,
+                          }}
+                          title="Elimina questo backup">
+                          <Trash2 size={11} /> Elimina
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <ConfirmModal {...confirmState.opts} open={confirmState.open}
+        onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
+    </div>
+  )
+}

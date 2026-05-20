@@ -1,9 +1,10 @@
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
-import { Users, Calendar, UserCheck, Zap, Table2, AlertCircle, ArrowRightLeft, Settings } from 'lucide-react'
+import { Users, Calendar, UserCheck, Zap, Table2, AlertCircle, ArrowRightLeft, Settings, Archive } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
 import { useCambiTurnoRealtime } from '../../hooks/useCambiTurnoRealtime'
+import { useAutoBackup } from '../../hooks/useBackupManager'
 import { supabase } from '../../lib/supabase'
 
 const links = [
@@ -15,6 +16,7 @@ const links = [
   { to: '/admin/medici',  label: 'Medici/Turnisti',   Icon: Users },
   { to: '/admin/utenti',  label: 'Utenti',            Icon: UserCheck },
   { to: '/admin/config',  label: 'Impostazioni',      Icon: Settings },
+  { to: '/admin/backup',  label: 'Backup/Ripristino', Icon: Archive },
 ]
 
 export function AdminLayout() {
@@ -28,6 +30,11 @@ export function AdminLayout() {
   // distinti grazie al random suffix.
   useFerieRealtime()
   useCambiTurnoRealtime()
+
+  // Auto-backup dei turni: al primo accesso admin se l'ultimo backup e`
+  // piu` vecchio dell'intervallo configurato, crea uno snapshot + rotazione.
+  // Mai blocca la UI: failures sono solo loggate in console.
+  useAutoBackup()
 
   // Count ferie ancora da approvare → driver del badge arancione.
   const { data: ferieDaApprovare = 0 } = useQuery({

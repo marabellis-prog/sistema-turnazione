@@ -307,6 +307,8 @@ export function GeneraCalendarioPage() {
         med_mattina_festivo:    config?.med_mattina_festivo    ?? 0,
         med_pomeriggio_feriale: config?.med_pomeriggio_feriale ?? 0,
         med_pomeriggio_festivo: config?.med_pomeriggio_festivo ?? 0,
+        backup_intervallo_giorni: config?.backup_intervallo_giorni ?? 7,
+        backup_da_tenere:         config?.backup_da_tenere         ?? 10,
         updated_at: new Date().toISOString(),
       }
       const turniGenerati = calcolaCalendarioCompleto(cfgObj, schemi, medici)
