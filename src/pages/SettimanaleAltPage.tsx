@@ -24,6 +24,7 @@ import { supabase } from '../lib/supabase'
 import { getDayOfWeek, formatDate, MESI_IT } from '../lib/algorithm'
 import { useTurniRealtime } from '../hooks/useTurniRealtime'
 import { useFerieRealtime } from '../hooks/useFerieRealtime'
+import { ForceLandscapeOverlay } from '../components/ForceLandscapeOverlay'
 import type { Configurazione, Medico, Turno, Ferie, SlotPlacement } from '../types'
 
 const GIORNI_FULL = ['', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica']
@@ -513,6 +514,8 @@ export function SettimanaleAltPage() {
 
   return (
     <div className="flex flex-col gap-3 p-4 mx-auto" style={{ maxWidth: 1200, width: '100%' }}>
+      {/* Overlay rotate-to-landscape su dispositivi mobile in portrait. */}
+      <ForceLandscapeOverlay />
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">

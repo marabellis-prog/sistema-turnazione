@@ -1,11 +1,12 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { RefreshCw, Info, RotateCw, Plane, BarChart3, X, ArrowRightLeft } from 'lucide-react'
+import { RefreshCw, Info, Plane, BarChart3, X, ArrowRightLeft } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { generaColonne, MESI_IT } from '../lib/algorithm'
 import { CalendarLoadingScreen } from '../components/CalendarLoadingScreen'
 import { FerieModal, expandRange, toRanges, type DayChange } from '../components/FerieModal'
 import { CambioTurnoModal } from '../components/CambioTurnoModal'
+import { ForceLandscapeOverlay } from '../components/ForceLandscapeOverlay'
 import { RiepilogoTurni } from '../components/RiepilogoTurni'
 import { LegendaCalendario } from '../components/LegendaCalendario'
 import { calcolaColoreFerie, COLORI_FERIE, ETICHETTA_COLORE } from '../lib/ferieColori'
@@ -151,19 +152,6 @@ export function CalendarioPage() {
   const [mostraLegenda, setMostraLegenda] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 640px)').matches
   )
-
-  // Rilevamento orientamento per il suggerimento landscape su mobile
-  const [isPortrait, setIsPortrait] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(orientation: portrait)').matches
-  )
-  const isTouch = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
-
-  useEffect(() => {
-    const mq = window.matchMedia('(orientation: portrait)')
-    const handler = (e: MediaQueryListEvent) => setIsPortrait(e.matches)
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [])
 
   // Stato fetch per mese
   const [turni,        setTurni]        = useState<Turno[]>([])
@@ -632,6 +620,9 @@ export function CalendarioPage() {
   // ── Tabella calendario ────────────────────────────────────────────
   return (
     <div className="flex flex-col h-[calc(100vh-48px)]">
+      {/* Overlay full-screen che invita a ruotare il telefono in landscape.
+          Visibile SOLO su dispositivi mobile (max-width 1024px) in portrait. */}
+      <ForceLandscapeOverlay />
       <div className="flex items-center gap-3 px-4 py-2 shrink-0 border-b"
         style={{ background: '#faf8f3', borderColor: '#d5ccb8' }}>
         <h1 className="text-sm font-bold shrink-0" style={{ color: '#2b3c24' }}>
@@ -644,14 +635,6 @@ export function CalendarioPage() {
           {turni.length.toLocaleString('it-IT')} turni
         </span>
         <div className="ml-auto flex items-center gap-2">
-          {/* Suggerimento landscape — visibile solo su touch portrait */}
-          {isTouch && isPortrait && (
-            <span className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full animate-pulse"
-              style={{ background: '#e0e8d8', color: '#456b3a' }}
-              title="Ruota il dispositivo in orizzontale per una visione migliore">
-              <RotateCw size={12} /> Orizzontale
-            </span>
-          )}
           {/* Toggle legenda — di default aperta su desktop, chiusa su mobile */}
           <button onClick={() => setMostraLegenda(v => !v)}
             className="btn-secondary py-1 px-2 text-xs"
