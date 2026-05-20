@@ -366,6 +366,66 @@ export function ConfigPage() {
         </div>
       )}
 
+      {/* ── SEZIONE BACKUP AUTOMATICO ──────────────────────────────── */}
+      <div>
+        <h3 className="text-lg font-bold text-stone-800 flex items-center gap-2">
+          <Archive size={18} style={{ color: '#476540' }} />
+          Backup automatico turni
+        </h3>
+        <p className="text-sm text-stone-600 mt-0.5">
+          Gli snapshot dei turni vengono creati automaticamente al primo accesso
+          admin trascorso l'intervallo. La gestione (creazione manuale, eliminazione,
+          ripristino) e` in <strong>Admin → Backup/Ripristino</strong>.
+        </p>
+
+        <div className="mt-3 rounded-lg border border-stone-300 bg-white p-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="text-xs">
+              <span className="block text-stone-600 mb-0.5 font-medium">
+                Intervallo auto-backup (giorni)
+              </span>
+              <input type="text"
+                inputMode="numeric"
+                value={backupInt}
+                onChange={e => {
+                  const v = e.target.value.replace(/[^0-9]/g, '').slice(0, 3)
+                  setBackupInt(v); setBkDirty(true)
+                }}
+                className="w-24 px-2 py-1.5 rounded border border-stone-300 text-sm font-semibold text-center" />
+              <span className="block text-[10px] text-stone-500 mt-0.5">
+                0 = auto-backup disattivato
+              </span>
+            </label>
+            <label className="text-xs">
+              <span className="block text-stone-600 mb-0.5 font-medium">
+                Quanti backup tenere
+              </span>
+              <input type="text"
+                inputMode="numeric"
+                value={backupKeep}
+                onChange={e => {
+                  const v = e.target.value.replace(/[^0-9]/g, '').slice(0, 3)
+                  setBackupKeep(v); setBkDirty(true)
+                }}
+                className="w-24 px-2 py-1.5 rounded border border-stone-300 text-sm font-semibold text-center" />
+              <span className="block text-[10px] text-stone-500 mt-0.5">
+                Oltre questo numero, i piu` vecchi vengono cancellati
+              </span>
+            </label>
+          </div>
+          <div className="mt-3 flex justify-end">
+            <button
+              onClick={handleSaveBackup}
+              disabled={!bkDirty || bkSaving || !config}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold text-white shadow disabled:opacity-50 transition-colors"
+              style={{ background: bkDirty && !bkSaving ? '#476540' : '#9ca3af' }}>
+              <Save size={13} />
+              {bkSaving ? 'Salvataggio…' : 'Salva backup'}
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Header */}
       <div>
         <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
@@ -608,66 +668,6 @@ export function ConfigPage() {
           </div>
         </div>
       )}
-
-      {/* ── SEZIONE BACKUP AUTOMATICO ──────────────────────────────── */}
-      <div className="mt-2">
-        <h3 className="text-lg font-bold text-stone-800 flex items-center gap-2">
-          <Archive size={18} style={{ color: '#476540' }} />
-          Backup automatico turni
-        </h3>
-        <p className="text-sm text-stone-600 mt-0.5">
-          Gli snapshot dei turni vengono creati automaticamente al primo accesso
-          admin trascorso l'intervallo. La gestione (creazione manuale, eliminazione,
-          ripristino) e` in <strong>Admin → Backup/Ripristino</strong>.
-        </p>
-
-        <div className="mt-3 rounded-lg border border-stone-300 bg-white p-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="text-xs">
-              <span className="block text-stone-600 mb-0.5 font-medium">
-                Intervallo auto-backup (giorni)
-              </span>
-              <input type="text"
-                inputMode="numeric"
-                value={backupInt}
-                onChange={e => {
-                  const v = e.target.value.replace(/[^0-9]/g, '').slice(0, 3)
-                  setBackupInt(v); setBkDirty(true)
-                }}
-                className="w-24 px-2 py-1.5 rounded border border-stone-300 text-sm font-semibold text-center" />
-              <span className="block text-[10px] text-stone-500 mt-0.5">
-                0 = auto-backup disattivato
-              </span>
-            </label>
-            <label className="text-xs">
-              <span className="block text-stone-600 mb-0.5 font-medium">
-                Quanti backup tenere
-              </span>
-              <input type="text"
-                inputMode="numeric"
-                value={backupKeep}
-                onChange={e => {
-                  const v = e.target.value.replace(/[^0-9]/g, '').slice(0, 3)
-                  setBackupKeep(v); setBkDirty(true)
-                }}
-                className="w-24 px-2 py-1.5 rounded border border-stone-300 text-sm font-semibold text-center" />
-              <span className="block text-[10px] text-stone-500 mt-0.5">
-                Oltre questo numero, i piu` vecchi vengono cancellati
-              </span>
-            </label>
-          </div>
-          <div className="mt-3 flex justify-end">
-            <button
-              onClick={handleSaveBackup}
-              disabled={!bkDirty || bkSaving || !config}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold text-white shadow disabled:opacity-50 transition-colors"
-              style={{ background: bkDirty && !bkSaving ? '#476540' : '#9ca3af' }}>
-              <Save size={13} />
-              {bkSaving ? 'Salvataggio…' : 'Salva backup'}
-            </button>
-          </div>
-        </div>
-      </div>
 
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
         onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
