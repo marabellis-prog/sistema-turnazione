@@ -11,7 +11,8 @@
 
 const CELL_FG: Record<string, string> = {
   M: '#2e4a28', P: '#253a4a', L: '#4a3a1a',
-  REP: '#5a2a2a', RM: '#3a2858', RP: '#582840',
+  REP: '#5a2a2a', E: '#36495a',
+  RM: '#3a2858', RP: '#582840',
 }
 
 /**
@@ -58,6 +59,7 @@ export function LegendaCalendario({ variant = 'pubblica', className, style }: Pr
         ['P',   'Pomeriggio',  'TC:P'  ],
         ['L',   'Lungo (M+P)', 'TC:L'  ],
         ['REP', 'Reperibilità','TC:REP'],
+        ['E',   'Esterno',     'TC:E'  ],
         ['RM',  'Ric. mat.',   'TR:RM' ],
         ['RP',  'Ric. pom.',   'TR:RP' ],
       ] as [string,string,string][]).map(([t, label, payload]) => {

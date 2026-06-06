@@ -24,6 +24,7 @@ const CELL_COLORS: Record<string, { bg: string; fg: string }> = {
   P:   { bg: '#d5e0e8', fg: '#253a4a' },
   L:   { bg: '#ece5d5', fg: '#4a3a1a' },
   REP: { bg: '#e8d5d5', fg: '#5a2a2a' },
+  E:   { bg: '#dbe4e8', fg: '#36495a' },  // ceduto a Esterno
   RM:  { bg: '#ddd8ea', fg: '#3a2858' },
   RP:  { bg: '#ead8e2', fg: '#582840' },
 }
@@ -58,7 +59,7 @@ function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
     bg = PLACEMENT_BG[slot_mattina]
   } else if (tc === 'P' && slot_pomeriggio) {
     bg = PLACEMENT_BG[slot_pomeriggio]
-  } else if (tc === 'L' && (slot_mattina || slot_pomeriggio)) {
+  } else if ((tc === 'L' || tc === 'E') && (slot_mattina || slot_pomeriggio)) {
     const colSX = PLACEMENT_BG[slot_mattina    ?? 'NONE']
     const colDX = PLACEMENT_BG[slot_pomeriggio ?? 'NONE']
     if (colSX === colDX && colSX !== 'transparent') bg = colSX

@@ -219,7 +219,17 @@ export interface UtenteAutorizzato {
 
 // ─── Tipi turno ────────────────────────────────────────────────────
 
-export type TurnoClinico = 'M' | 'P' | 'L' | 'REP' | ''
+/** Turno clinico:
+ *  - 'M'   = Mattina
+ *  - 'P'   = Pomeriggio
+ *  - 'L'   = Lungo (mattina+pomeriggio)
+ *  - 'REP' = Reperibilita`
+ *  - 'E'   = ceduto a Esterno (turno coperto da medico non in elenco;
+ *            conta come coperto per ferie/riepilogo, richiede comunque
+ *            placement SUB/MED)
+ *  - ''    = nessun turno (cella vuota)
+ */
+export type TurnoClinico = 'M' | 'P' | 'L' | 'REP' | 'E' | ''
 export type TurnoRicerca = 'RM' | 'RP' | 'RM+RP' | ''
 
 // ─── Tipi per l'algoritmo ──────────────────────────────────────────

@@ -625,5 +625,6 @@ export const LABEL_TURNO: Record<string, string> = {
   P:   'P',
   L:   'L',
   REP: 'REP',
+  E:   'E',     // ceduto a Esterno
   '':  '',
 }

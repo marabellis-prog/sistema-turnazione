@@ -42,12 +42,13 @@ interface RowStats {
   M:      number
   P:      number
   L:      number
-  S:      number   // sabati lavorati (qualunque TC ≠ '')
-  D:      number   // domeniche lavorate (qualunque TC ≠ '')
+  E:      number   // turni ceduti a Esterno (NON lavorati dal medico)
+  S:      number   // sabati lavorati (qualunque TC ≠ '' e ≠ 'E')
+  D:      number   // domeniche lavorate (qualunque TC ≠ '' e ≠ 'E')
   F:      number   // festivi nazionali italiani lavorati (NON domeniche)
   SUB:    number   // turni svolti in sub-intensiva (qualsiasi TC con flag is_sub)
   MED:    number   // turni svolti in medicina       (qualsiasi TC con flag is_med)
-  totale: number   // (M + P) + 2L
+  totale: number   // (M + P) + 2L — E NON conta perche` il medico non l'ha lavorato
 }
 
 export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, festivitaCustomSet }: Props) {
@@ -63,27 +64,31 @@ export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, f
       ? medici.filter(m => m.id === filtroMedicoId)
       : medici
     return list.map(m => {
-      let M = 0, P = 0, L = 0, S = 0, D = 0, F = 0, SUB = 0, MED = 0
+      let M = 0, P = 0, L = 0, E = 0, S = 0, D = 0, F = 0, SUB = 0, MED = 0
       for (const col of colonne) {
         const { tc, slot_mattina, slot_pomeriggio } = getCellInfo(m.id, col.data)
         if (tc === 'M') M++
         else if (tc === 'P') P++
         else if (tc === 'L') L++
-        // S/D/F: il medico aveva un TC qualsiasi (escluso ''=riposo).
+        else if (tc === 'E') E++  // ceduto a esterno: lo segniamo separato
+        // S/D/F: il medico aveva un TC qualsiasi (escluso ''=riposo e
+        // 'E'=ceduto, perche` non l'ha lavorato lui).
         // Priorità: domenica > festivo > sabato. Mai doppio conteggio.
-        if (tc) {
+        if (tc && tc !== 'E') {
           if (col.isDomenica) D++
           else if (festivi.has(col.data)) F++
           else if (new Date(col.data + 'T00:00:00').getDay() === 6) S++
         }
-        // SUB/MED: contano la SOMMA delle metà giornate.
-        // Un L con SUB+SUB conta 2 SUB; un L con SUB+MED conta 1 SUB + 1 MED.
-        if (slot_mattina    === 'SUB') SUB++
-        if (slot_pomeriggio === 'SUB') SUB++
-        if (slot_mattina    === 'MED') MED++
-        if (slot_pomeriggio === 'MED') MED++
+        // SUB/MED: contano la SOMMA delle metà giornate del MEDICO.
+        // I turni ceduti a esterno non contano (li svolge l'esterno).
+        if (tc !== 'E') {
+          if (slot_mattina    === 'SUB') SUB++
+          if (slot_pomeriggio === 'SUB') SUB++
+          if (slot_mattina    === 'MED') MED++
+          if (slot_pomeriggio === 'MED') MED++
+        }
       }
-      return { medico: m, M, P, L, S, D, F, SUB, MED, totale: (M + P) + 2 * L }
+      return { medico: m, M, P, L, E, S, D, F, SUB, MED, totale: (M + P) + 2 * L }
     })
   }, [medici, colonne, getCellInfo, filtroMedicoId, festivitaCustomSet])
 
@@ -112,6 +117,7 @@ export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, f
           <th style={thStyle}>M</th>
           <th style={thStyle}>P</th>
           <th style={thStyle}>L</th>
+          <th style={thStyle} title="Turni ceduti a Esterno (non lavorati dal medico)">E</th>
           <th style={thStyle}>S</th>
           <th style={thStyle}>D</th>
           <th style={thStyle}>F</th>
@@ -143,6 +149,14 @@ export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, f
             <td style={tdStyle}>{s.M || ''}</td>
             <td style={tdStyle}>{s.P || ''}</td>
             <td style={tdStyle}>{s.L || ''}</td>
+            <td style={{
+              ...tdStyle,
+              background: s.E > 0 ? '#f1f5f9' : undefined,
+              color:      s.E > 0 ? '#36495a' : undefined,
+              fontStyle:  s.E > 0 ? 'italic'  : undefined,
+            }} title="Turni ceduti a Esterno">
+              {s.E || ''}
+            </td>
             <td style={tdStyle}>{s.S || ''}</td>
             <td style={tdStyle}>{s.D || ''}</td>
             <td style={tdStyle}>{s.F || ''}</td>
@@ -174,7 +188,7 @@ export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, f
         ))}
         {stats.length === 0 && (
           <tr>
-            <td colSpan={10} style={{ ...tdStyle, color: '#9ca3af', fontStyle: 'italic' }}>
+            <td colSpan={11} style={{ ...tdStyle, color: '#9ca3af', fontStyle: 'italic' }}>
               Nessun medico da riepilogare.
             </td>
           </tr>

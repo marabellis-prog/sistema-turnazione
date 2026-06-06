@@ -56,6 +56,8 @@ const CELL_COLORS: Record<string, { bg: string; fg: string }> = {
   P:   { bg: '#d5e0e8', fg: '#253a4a' },
   L:   { bg: '#ece5d5', fg: '#4a3a1a' },
   REP: { bg: '#e8d5d5', fg: '#5a2a2a' },
+  // E = turno ceduto a Esterno. Slate sobrio per indicare "fuori gruppo".
+  E:   { bg: '#dbe4e8', fg: '#36495a' },
   RM:  { bg: '#ddd8ea', fg: '#3a2858' },
   RP:  { bg: '#ead8e2', fg: '#582840' },
 }
@@ -104,7 +106,9 @@ function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
     bg = PLACEMENT_BG[slot_mattina]
   } else if (tc === 'P' && slot_pomeriggio) {
     bg = PLACEMENT_BG[slot_pomeriggio]
-  } else if (tc === 'L' && (slot_mattina || slot_pomeriggio)) {
+  } else if ((tc === 'L' || tc === 'E') && (slot_mattina || slot_pomeriggio)) {
+    // 'E' si comporta come 'L' visivamente: copre mattina+pomeriggio,
+    // serve mostrare entrambi gli slot SUB/MED se assegnati.
     const colSX = PLACEMENT_BG[slot_mattina    ?? 'NONE']
     const colDX = PLACEMENT_BG[slot_pomeriggio ?? 'NONE']
     if (colSX === colDX && colSX !== 'transparent') {
@@ -165,7 +169,7 @@ type TipoTabella = 'clinica' | 'ricerca'
 function parseClinico(input: string): TurnoClinico {
   const tokens = input.toUpperCase().split(/[\s,+;]+/).filter(Boolean)
   for (const t of tokens) {
-    if (t === 'M' || t === 'P' || t === 'L' || t === 'REP') return t
+    if (t === 'M' || t === 'P' || t === 'L' || t === 'REP' || t === 'E') return t
   }
   return ''
 }
@@ -828,8 +832,11 @@ export function ModificaTurniPage() {
       const newCell: RicalcCell = {
         tc,
         tr: curTr,
-        slot_mattina:    (tc === 'M' || tc === 'L') ? oldSm : null,
-        slot_pomeriggio: (tc === 'P' || tc === 'L') ? oldSp : null,
+        // 'E' (ceduto a Esterno) si comporta come 'L' per i placement:
+        // copre mattina + pomeriggio, quindi entrambi gli slot sono
+        // eligible (e il chip di inconsistenza compare finche` mancano).
+        slot_mattina:    (tc === 'M' || tc === 'L' || tc === 'E') ? oldSm : null,
+        slot_pomeriggio: (tc === 'P' || tc === 'L' || tc === 'E') ? oldSp : null,
       }
       const dbCur: RicalcCell = {
         tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
@@ -859,7 +866,7 @@ export function ModificaTurniPage() {
   const handleDropFromLegend = useCallback((medicoId: string, data: string, payload: string) => {
     if (payload.startsWith('TC:')) {
       const newTc = payload.slice(3) as TurnoClinico
-      if (newTc === 'M' || newTc === 'P' || newTc === 'L' || newTc === 'REP') {
+      if (newTc === 'M' || newTc === 'P' || newTc === 'L' || newTc === 'REP' || newTc === 'E') {
         const k = `${medicoId}|${data}`
         const local = modifiche.get(k)
         const dbT = turniByKey.get(k)
@@ -894,8 +901,8 @@ export function ModificaTurniPage() {
         // {M, L}, il pomeriggio solo se TC ∈ {P, L}. REP / '' non possono
         // ricevere flag.
         const tc = cur.tc
-        const canM = tc === 'M' || tc === 'L'
-        const canP = tc === 'P' || tc === 'L'
+        const canM = tc === 'M' || tc === 'L' || tc === 'E'
+        const canP = tc === 'P' || tc === 'L' || tc === 'E'
         let sm = cur.slot_mattina
         let sp = cur.slot_pomeriggio
 
@@ -1005,8 +1012,8 @@ export function ModificaTurniPage() {
           const newCell: RicalcCell = {
             tc,
             tr: curTr,
-            slot_mattina:    (tc === 'M' || tc === 'L') ? oldSm : null,
-            slot_pomeriggio: (tc === 'P' || tc === 'L') ? oldSp : null,
+            slot_mattina:    (tc === 'M' || tc === 'L' || tc === 'E') ? oldSm : null,
+            slot_pomeriggio: (tc === 'P' || tc === 'L' || tc === 'E') ? oldSp : null,
           }
           const dbCur: RicalcCell = {
             tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
@@ -1032,15 +1039,16 @@ export function ModificaTurniPage() {
 
   // ── Totale turni clinici coperti in un giorno ─────────────────────
   // Conteggio per la riga "TURNI TOTALI" sotto la tabella clinica:
-  //   M = 1, P = 1, L = 2 (= M+P), REP = 0, vuoto = 0
+  //   M = 1, P = 1, L = 2 (= M+P), E = 2 (coperto da esterno, mattina+pom.),
+  //   REP = 0, vuoto = 0
   // Si aggiorna in tempo reale mentre si modificano le celle (perché
   // getCella legge prima dal Map modifiche locali, poi dal DB).
   const calcolaTotaleClinici = useCallback((data: string): number => {
     let total = 0
     for (const m of medici) {
       const { tc } = getCella(m.id, data)
-      if (tc === 'M' || tc === 'P') total += 1
-      else if (tc === 'L')          total += 2
+      if (tc === 'M' || tc === 'P')      total += 1
+      else if (tc === 'L' || tc === 'E') total += 2
       // REP e stringa vuota non contano
     }
     return total
@@ -1227,8 +1235,8 @@ export function ModificaTurniPage() {
             finalCells.set(key, {
               tc: newTc,
               tr: newCell.tr,
-              slot_mattina:    (newTc === 'M' || newTc === 'L') ? oldSm : null,
-              slot_pomeriggio: (newTc === 'P' || newTc === 'L') ? oldSp : null,
+              slot_mattina:    (newTc === 'M' || newTc === 'L' || newTc === 'E') ? oldSm : null,
+              slot_pomeriggio: (newTc === 'P' || newTc === 'L' || newTc === 'E') ? oldSp : null,
             })
           }
         }
@@ -1388,7 +1396,7 @@ export function ModificaTurniPage() {
     medicoId:   string
     medicoNome: string
     data:       string
-    tipoCella:  'M' | 'P' | 'L'
+    tipoCella:  'M' | 'P' | 'L' | 'E'
     dettaglio:  string
   }
   type IssueSlot = {
@@ -1429,11 +1437,13 @@ export function ModificaTurniPage() {
         if (cur.slot_mattina    === 'MED') countMedM++
         if (cur.slot_pomeriggio === 'MED') countMedP++
 
-        // Check per-cella: TC con placement mancante
+        // Check per-cella: TC con placement mancante.
+        // 'E' (Esterno) si comporta come 'L': copre mattina + pomeriggio,
+        // serve placement SUB/MED per entrambi.
         let dett: string | null = null
         if (cur.tc === 'M' && !cur.slot_mattina)         dett = 'manca SUB/MED mattina'
         else if (cur.tc === 'P' && !cur.slot_pomeriggio) dett = 'manca SUB/MED pomeriggio'
-        else if (cur.tc === 'L') {
+        else if (cur.tc === 'L' || cur.tc === 'E') {
           if (!cur.slot_mattina && !cur.slot_pomeriggio) dett = 'manca SUB/MED entrambi'
           else if (!cur.slot_mattina)                    dett = 'manca SUB/MED mattina'
           else if (!cur.slot_pomeriggio)                 dett = 'manca SUB/MED pomeriggio'
@@ -1444,7 +1454,7 @@ export function ModificaTurniPage() {
             medicoId:   m.id,
             medicoNome: m.nome,
             data:       col.data,
-            tipoCella:  cur.tc as 'M' | 'P' | 'L',
+            tipoCella:  cur.tc as 'M' | 'P' | 'L' | 'E',
             dettaglio:  dett,
           })
         }

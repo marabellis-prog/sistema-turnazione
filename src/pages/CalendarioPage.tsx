@@ -35,6 +35,7 @@ const CELL_COLORS: Record<string, { bg: string; fg: string }> = {
   P:   { bg: '#d5e0e8', fg: '#253a4a' },
   L:   { bg: '#ece5d5', fg: '#4a3a1a' },
   REP: { bg: '#e8d5d5', fg: '#5a2a2a' },
+  E:   { bg: '#dbe4e8', fg: '#36495a' },  // ceduto a Esterno: slate sobrio
   RM:  { bg: '#ddd8ea', fg: '#3a2858' },
   RP:  { bg: '#ead8e2', fg: '#582840' },
 }
@@ -62,6 +63,7 @@ function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
                  : tc === 'M'   ? '#2e4a28'
                  : tc === 'P'   ? '#253a4a'
                  : tc === 'L'   ? '#4a3a1a'
+                 : tc === 'E'   ? '#36495a'   // Esterno: slate
                  : '#3a3d30'
 
   let bg: string | undefined
@@ -69,7 +71,8 @@ function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
     bg = PLACEMENT_BG_PUB[slot_mattina]
   } else if (tc === 'P' && slot_pomeriggio) {
     bg = PLACEMENT_BG_PUB[slot_pomeriggio]
-  } else if (tc === 'L' && (slot_mattina || slot_pomeriggio)) {
+  } else if ((tc === 'L' || tc === 'E') && (slot_mattina || slot_pomeriggio)) {
+    // 'E' = come 'L' visivamente: copre mattina+pomeriggio.
     const colSX = PLACEMENT_BG_PUB[slot_mattina    ?? 'NONE']
     const colDX = PLACEMENT_BG_PUB[slot_pomeriggio ?? 'NONE']
     if (colSX === colDX && colSX !== 'transparent') {
@@ -147,6 +150,11 @@ function stimaRighe(cfg: Configurazione, nMedici: number): number {
 
 export function CalendarioPage() {
   const [rigaSel, setRigaSel] = useState<string | null>(null)
+  // Colonna selezionata = data ISO "YYYY-MM-DD". Click sul numero del
+  // giorno nell'header → toggle. Coesiste con rigaSel: l'intersezione
+  // dei due (cella del medico SELEZIONATO al giorno SELEZIONATO) mostra
+  // doppio overlay marrone, gli altri singolo.
+  const [colSel, setColSel] = useState<string | null>(null)
   // Legenda: aperta di default su desktop (≥ 640px), chiusa su mobile.
   // Toggle dal bottone "Legenda" nella toolbar.
   const [mostraLegenda, setMostraLegenda] = useState(
@@ -502,15 +510,19 @@ export function CalendarioPage() {
                 ? `${col.data} — ${ETICHETTA_COLORE[calc.color]} (${calc.totInFerieOggi} ferie, ${calc.turniScoperti} scoperti, max ${limite})`
                 : col.data
 
+              const isColSelHeader = colSel === col.data
               return (
                 <th key={col.data}
-                  className="cal-th !px-0 !py-0.5 w-8"
+                  onClick={() => setColSel(colSel === col.data ? null : col.data)}
+                  className="cal-th !px-0 !py-0.5 w-8 cursor-pointer transition-colors"
                   style={{
                     position: 'sticky', top: 22, zIndex: 20,
                     ...(isRedDay ? { background: '#fef3c7' } : {}),
                     ...(isLastOfMonth ? { borderRight: '2px solid #1a1a1a' } : {}),
+                    // Colonna selezionata: highlight marrone come la riga.
+                    ...(isColSelHeader ? { background: 'rgba(190,140,90,0.5)' } : {}),
                   }}
-                  title={titleText}>
+                  title={`${titleText} — clicca per evidenziare la colonna`}>
                   <div style={{ lineHeight: 1, padding: '1px 0' }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: isRedDay ? '#854d0e' : undefined }}>
                       {col.giorno}
@@ -579,9 +591,18 @@ export function CalendarioPage() {
                     bgBase = '#faf8f3'  // neutro (anche per clinica con M/P/L/REP)
                   }
 
-                  // Overlay marrone chiaro semi-trasparente per la riga selezionata
+                  // Overlay marrone chiaro semi-trasparente per riga/colonna
+                  // selezionate. L'intersezione (riga E colonna) accumula due
+                  // overlay → diventa piu` scura, indicando con un colpo
+                  // d'occhio la "cella di interesse".
                   const SEL_OVL = 'linear-gradient(rgba(190,140,90,0.35),rgba(190,140,90,0.35))'
-                  const bg = isSel ? `${SEL_OVL}, ${bgBase}` : bgBase
+                  const isColSel = colSel === col.data
+                  const overlays: string[] = []
+                  if (isSel)    overlays.push(SEL_OVL)
+                  if (isColSel) overlays.push(SEL_OVL)
+                  const bg = overlays.length > 0
+                    ? `${overlays.join(', ')}, ${bgBase}`
+                    : bgBase
 
                   // Bordo azzurro "modificato manualmente" SOLO sulla tabella
                   // clinica — sulla ricerca crea rumore visivo inutile.

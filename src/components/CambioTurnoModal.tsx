@@ -70,7 +70,7 @@ function findTurnoCorrente(turni: Turno[], medicoId: string, data: string) {
 
 /** Helper: normalizza slot_mattina/pomeriggio in base al TC scelto.
  *  Logica: TC=M → solo mattina rilevante; TC=P → solo pomeriggio;
- *  TC=L → entrambi rilevanti; TC=REP o vuoto → entrambi null.
+ *  TC=L o TC=E → entrambi rilevanti; TC=REP o vuoto → entrambi null.
  *  Usato al submit per propagare gli slot della "DA" alla "A" filtrando
  *  per eligibilita` del nuovo TC. */
 function normalizzaSlot(tc: TurnoClinico, sm: SlotPlacement, sp: SlotPlacement): {
@@ -78,7 +78,7 @@ function normalizzaSlot(tc: TurnoClinico, sm: SlotPlacement, sp: SlotPlacement):
 } {
   if (tc === 'M') return { slot_mattina: sm, slot_pomeriggio: null }
   if (tc === 'P') return { slot_mattina: null, slot_pomeriggio: sp }
-  if (tc === 'L') return { slot_mattina: sm, slot_pomeriggio: sp }
+  if (tc === 'L' || tc === 'E') return { slot_mattina: sm, slot_pomeriggio: sp }
   // REP o '' (vuoto): nessuno slot
   return { slot_mattina: null, slot_pomeriggio: null }
 }
