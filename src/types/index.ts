@@ -224,12 +224,18 @@ export interface UtenteAutorizzato {
  *  - 'P'   = Pomeriggio
  *  - 'L'   = Lungo (mattina+pomeriggio)
  *  - 'REP' = Reperibilita`
- *  - 'E'   = ceduto a Esterno (turno coperto da medico non in elenco;
- *            conta come coperto per ferie/riepilogo, richiede comunque
- *            placement SUB/MED)
+ *  - 'EM'  = Esterno Mattina    (come M, ma ceduto a medico esterno)
+ *  - 'EP'  = Esterno Pomeriggio (come P, ma ceduto a medico esterno)
+ *  - 'EL'  = Esterno Lungo M+P  (come L, ma ceduto a medico esterno)
  *  - ''    = nessun turno (cella vuota)
+ *
+ *  Le varianti 'E*' rappresentano turni coperti da un medico fuori dal
+ *  gruppo: contano come coperti per ferie e per la copertura
+ *  giornaliera, ma NON entrano nel totale del medico (M+P+2L) perche`
+ *  il medico in elenco NON li lavora. Richiedono comunque il placement
+ *  SUB/MED (l'esterno fa sub-intensiva o medicina).
  */
-export type TurnoClinico = 'M' | 'P' | 'L' | 'REP' | 'E' | ''
+export type TurnoClinico = 'M' | 'P' | 'L' | 'REP' | 'EM' | 'EP' | 'EL' | ''
 export type TurnoRicerca = 'RM' | 'RP' | 'RM+RP' | ''
 
 // ─── Tipi per l'algoritmo ──────────────────────────────────────────

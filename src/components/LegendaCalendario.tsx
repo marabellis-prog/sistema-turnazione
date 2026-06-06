@@ -11,7 +11,8 @@
 
 const CELL_FG: Record<string, string> = {
   M: '#2e4a28', P: '#253a4a', L: '#4a3a1a',
-  REP: '#5a2a2a', E: '#36495a',
+  REP: '#5a2a2a',
+  EM: '#36495a', EP: '#36495a', EL: '#36495a',
   RM: '#3a2858', RP: '#582840',
 }
 
@@ -59,11 +60,14 @@ export function LegendaCalendario({ variant = 'pubblica', className, style }: Pr
         ['P',   'Pomeriggio',  'TC:P'  ],
         ['L',   'Lungo (M+P)', 'TC:L'  ],
         ['REP', 'Reperibilità','TC:REP'],
-        ['E',   'Esterno',     'TC:E'  ],
+        ['EM',  'Esterno Mat.','TC:EM' ],
+        ['EP',  'Esterno Pom.','TC:EP' ],
+        ['EL',  'Esterno Lungo','TC:EL'],
         ['RM',  'Ric. mat.',   'TR:RM' ],
         ['RP',  'Ric. pom.',   'TR:RP' ],
       ] as [string,string,string][]).map(([t, label, payload]) => {
         const isRep = t === 'REP'
+        const isTwoChar = t.length > 1
         const dh = dragHandlers(payload)
         return (
           <span key={t} className="flex items-center gap-1">
@@ -77,7 +81,7 @@ export function LegendaCalendario({ variant = 'pubblica', className, style }: Pr
                 background: '#e8e3d8',
                 borderColor: '#8a9882',
                 color:      isRep ? '#b91c1c' : (CELL_FG[t] ?? '#3a3d30'),
-                fontSize:   isRep ? 8 : (t.length > 1 ? 8 : 10),
+                fontSize:   isTwoChar ? 8 : 10,
                 fontWeight: isRep ? 800 : 700,
                 letterSpacing: isRep ? '-0.3px' : undefined,
                 cursor: 'grab',

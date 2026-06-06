@@ -625,6 +625,8 @@ export const LABEL_TURNO: Record<string, string> = {
   P:   'P',
   L:   'L',
   REP: 'REP',
-  E:   'E',     // ceduto a Esterno
+  EM:  'EM',    // Esterno Mattina
+  EP:  'EP',    // Esterno Pomeriggio
+  EL:  'EL',    // Esterno Lungo
   '':  '',
 }

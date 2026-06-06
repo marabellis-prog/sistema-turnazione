@@ -42,13 +42,16 @@ interface RowStats {
   M:      number
   P:      number
   L:      number
-  E:      number   // turni ceduti a Esterno (NON lavorati dal medico)
-  S:      number   // sabati lavorati (qualunque TC ≠ '' e ≠ 'E')
-  D:      number   // domeniche lavorate (qualunque TC ≠ '' e ≠ 'E')
+  E:      number   // somma EM+EP+EL (turni ceduti a Esterno totali)
+  EM:     number   // dettaglio: ceduti mattina
+  EP:     number   //           : ceduti pomeriggio
+  EL:     number   //           : ceduti lungo
+  S:      number   // sabati lavorati (escludendo E*)
+  D:      number   // domeniche lavorate (escludendo E*)
   F:      number   // festivi nazionali italiani lavorati (NON domeniche)
   SUB:    number   // turni svolti in sub-intensiva (qualsiasi TC con flag is_sub)
   MED:    number   // turni svolti in medicina       (qualsiasi TC con flag is_med)
-  totale: number   // (M + P) + 2L — E NON conta perche` il medico non l'ha lavorato
+  totale: number   // (M + P) + 2L — E* NON conta perche` il medico non l'ha lavorato
 }
 
 export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, festivitaCustomSet }: Props) {
@@ -64,31 +67,35 @@ export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, f
       ? medici.filter(m => m.id === filtroMedicoId)
       : medici
     return list.map(m => {
-      let M = 0, P = 0, L = 0, E = 0, S = 0, D = 0, F = 0, SUB = 0, MED = 0
+      let M = 0, P = 0, L = 0, EM = 0, EP = 0, EL = 0, S = 0, D = 0, F = 0, SUB = 0, MED = 0
       for (const col of colonne) {
         const { tc, slot_mattina, slot_pomeriggio } = getCellInfo(m.id, col.data)
-        if (tc === 'M') M++
-        else if (tc === 'P') P++
-        else if (tc === 'L') L++
-        else if (tc === 'E') E++  // ceduto a esterno: lo segniamo separato
+        if      (tc === 'M')  M++
+        else if (tc === 'P')  P++
+        else if (tc === 'L')  L++
+        else if (tc === 'EM') EM++  // ceduto a esterno (mattina)
+        else if (tc === 'EP') EP++  // ceduto a esterno (pomeriggio)
+        else if (tc === 'EL') EL++  // ceduto a esterno (lungo)
         // S/D/F: il medico aveva un TC qualsiasi (escluso ''=riposo e
-        // 'E'=ceduto, perche` non l'ha lavorato lui).
+        // qualsiasi 'E*'=ceduto, perche` non l'ha lavorato lui).
         // Priorità: domenica > festivo > sabato. Mai doppio conteggio.
-        if (tc && tc !== 'E') {
+        const isExt = tc === 'EM' || tc === 'EP' || tc === 'EL'
+        if (tc && !isExt) {
           if (col.isDomenica) D++
           else if (festivi.has(col.data)) F++
           else if (new Date(col.data + 'T00:00:00').getDay() === 6) S++
         }
         // SUB/MED: contano la SOMMA delle metà giornate del MEDICO.
         // I turni ceduti a esterno non contano (li svolge l'esterno).
-        if (tc !== 'E') {
+        if (!isExt) {
           if (slot_mattina    === 'SUB') SUB++
           if (slot_pomeriggio === 'SUB') SUB++
           if (slot_mattina    === 'MED') MED++
           if (slot_pomeriggio === 'MED') MED++
         }
       }
-      return { medico: m, M, P, L, E, S, D, F, SUB, MED, totale: (M + P) + 2 * L }
+      const E = EM + EP + EL  // colonna "E" aggregata in tabella
+      return { medico: m, M, P, L, E, EM, EP, EL, S, D, F, SUB, MED, totale: (M + P) + 2 * L }
     })
   }, [medici, colonne, getCellInfo, filtroMedicoId, festivitaCustomSet])
 
@@ -154,7 +161,9 @@ export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, f
               background: s.E > 0 ? '#f1f5f9' : undefined,
               color:      s.E > 0 ? '#36495a' : undefined,
               fontStyle:  s.E > 0 ? 'italic'  : undefined,
-            }} title="Turni ceduti a Esterno">
+            }} title={s.E > 0
+              ? `Ceduti a Esterno — Em: ${s.EM} · Ep: ${s.EP} · El: ${s.EL}`
+              : 'Turni ceduti a Esterno'}>
               {s.E || ''}
             </td>
             <td style={tdStyle}>{s.S || ''}</td>

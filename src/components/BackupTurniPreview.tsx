@@ -24,7 +24,10 @@ const CELL_COLORS: Record<string, { bg: string; fg: string }> = {
   P:   { bg: '#d5e0e8', fg: '#253a4a' },
   L:   { bg: '#ece5d5', fg: '#4a3a1a' },
   REP: { bg: '#e8d5d5', fg: '#5a2a2a' },
-  E:   { bg: '#dbe4e8', fg: '#36495a' },  // ceduto a Esterno
+  // Varianti Esterno (EM/EP/EL): slate sobrio per "fuori gruppo"
+  EM:  { bg: '#dbe4e8', fg: '#36495a' },
+  EP:  { bg: '#dbe4e8', fg: '#36495a' },
+  EL:  { bg: '#dbe4e8', fg: '#36495a' },
   RM:  { bg: '#ddd8ea', fg: '#3a2858' },
   RP:  { bg: '#ead8e2', fg: '#582840' },
 }
@@ -52,14 +55,15 @@ function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
   slot_pomeriggio?: SlotPlacement
 }) {
   if (!tc) return null
-  const fontSize = tc === 'REP' ? 10 : 12
+  const isTwoChar = tc === 'REP' || tc === 'EM' || tc === 'EP' || tc === 'EL'
+  const fontSize = isTwoChar ? 10 : 12
   const color    = tc === 'REP' ? '#b91c1c' : (CELL_COLORS[tc]?.fg ?? '#3a3d30')
   let bg: string | undefined
-  if (tc === 'M' && slot_mattina) {
+  if ((tc === 'M' || tc === 'EM') && slot_mattina) {
     bg = PLACEMENT_BG[slot_mattina]
-  } else if (tc === 'P' && slot_pomeriggio) {
+  } else if ((tc === 'P' || tc === 'EP') && slot_pomeriggio) {
     bg = PLACEMENT_BG[slot_pomeriggio]
-  } else if ((tc === 'L' || tc === 'E') && (slot_mattina || slot_pomeriggio)) {
+  } else if ((tc === 'L' || tc === 'EL') && (slot_mattina || slot_pomeriggio)) {
     const colSX = PLACEMENT_BG[slot_mattina    ?? 'NONE']
     const colDX = PLACEMENT_BG[slot_pomeriggio ?? 'NONE']
     if (colSX === colDX && colSX !== 'transparent') bg = colSX
