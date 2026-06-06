@@ -25,7 +25,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Calendar, Save, Layers, Rows3, RefreshCw, AlertTriangle } from 'lucide-react'
+import { Calendar, Save, Layers, Rows3, RefreshCw, AlertTriangle, X, RotateCcw } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import {
   calcolaCalendarioCompleto, calcolaTurnoTeorico, primoLunediDelPeriodo,
@@ -1474,6 +1474,53 @@ export function ModificaTurniPage() {
     return out
   }, [config, colonne, medici, getCella, ferieStatus])
 
+  // ── Dismiss avvisi inconsistenze (per-device) ────────────────────
+  // L'admin puo` cliccare la X di un chip per nascondere quell'avviso
+  // specifico. La scelta e` persistita in localStorage cosi` sopravvive
+  // ai reload. Se la natura dell'avviso cambia (es. count attuale passa
+  // da "manca 1" a "manca 2") la chiave cambia e il chip riappare —
+  // comportamento voluto: nuova informazione, va valutata.
+  //
+  // Reset: bottone "Ripristina avvisi nascosti" nel header del banner
+  // svuota il Set.
+  const DISMISS_KEY = 'inconsistenze-dismissed'
+  const [dismissed, setDismissed] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(DISMISS_KEY)
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set()
+    } catch { return new Set() }
+  })
+
+  function keyOfInconsistenza(iss: Inconsistenza): string {
+    if (iss.kind === 'cella') {
+      return `c|${iss.medicoId}|${iss.data}|${iss.tipoCella}|${iss.dettaglio}`
+    }
+    return `s|${iss.data}|${iss.slotLabel}|${iss.expected}|${iss.actual}`
+  }
+
+  function dismissInconsistenza(iss: Inconsistenza) {
+    const k = keyOfInconsistenza(iss)
+    setDismissed(prev => {
+      const next = new Set(prev)
+      next.add(k)
+      try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...next])) } catch {}
+      return next
+    })
+  }
+
+  function ripristinaInconsistenze() {
+    setDismissed(new Set())
+    try { localStorage.removeItem(DISMISS_KEY) } catch {}
+  }
+
+  // Inconsistenze effettivamente visibili (al netto delle dismissed)
+  // + count di quelle nascoste per il "Ripristina N nascosti".
+  const inconsistenzeVisibili = useMemo(
+    () => inconsistenze.filter(iss => !dismissed.has(keyOfInconsistenza(iss))),
+    [inconsistenze, dismissed]
+  )
+  const nascostiCount = inconsistenze.length - inconsistenzeVisibili.length
+
   // Scroll-to-cell handler. Trova il td via id="cell-${medicoId}-${data}"
   // (settato in EditableCell.cellAnchorId) e fa scrollIntoView centrato.
   // Imposta anche selectedCell, cosi` l'outline grigio della selezione
@@ -1926,59 +1973,93 @@ export function ModificaTurniPage() {
           Due tipi di chip:
             - per-cella (TC senza placement SUB/MED): click → cella
             - per-giorno/slot (count != atteso da impostazioni): click → colonna
-          Le attese arrivano dalla pagina "Impostazioni" (configurazione). */}
-      {inconsistenze.length > 0 && (
+          Le attese arrivano dalla pagina "Impostazioni" (configurazione).
+          Ogni chip ha una piccola X in alto a destra per nasconderlo
+          come avviso (persistito in localStorage). */}
+      {(inconsistenzeVisibili.length > 0 || nascostiCount > 0) && (
         <div className="rounded-lg border-2 p-3"
           style={{ background: '#fef3c7', borderColor: '#fbbf24' }}>
           <div className="flex items-center gap-2 mb-2 flex-wrap">
             <AlertTriangle size={16} style={{ color: '#a16207' }} />
             <span className="text-sm font-bold" style={{ color: '#92400e' }}>
-              {inconsistenze.length} inconsistenz{inconsistenze.length === 1 ? 'a' : 'e'} nei turni
+              {inconsistenzeVisibili.length} inconsistenz{inconsistenzeVisibili.length === 1 ? 'a' : 'e'} nei turni
             </span>
-            <span className="text-[10px] text-stone-600 ml-1">
-              · clicca un chip per andare al giorno/cella
-            </span>
+            {inconsistenzeVisibili.length > 0 && (
+              <span className="text-[10px] text-stone-600 ml-1">
+                · clicca un chip per andare al giorno/cella · X per nascondere l'avviso
+              </span>
+            )}
+            {nascostiCount > 0 && (
+              <button
+                onClick={ripristinaInconsistenze}
+                className="ml-auto flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border transition-colors hover:bg-amber-100"
+                style={{ borderColor: '#fbbf24', color: '#92400e', background: '#fffbeb' }}
+                title="Mostra di nuovo tutti gli avvisi nascosti">
+                <RotateCcw size={10} />
+                Ripristina {nascostiCount} nascost{nascostiCount === 1 ? 'o' : 'i'}
+              </button>
+            )}
           </div>
-          <div className="overflow-auto" style={{ maxHeight: 140 }}>
-            <div className="flex flex-wrap gap-1.5">
-              {inconsistenze.map((iss, i) => {
-                if (iss.kind === 'cella') {
-                  return (
-                    <button key={`c-${iss.medicoId}-${iss.data}-${i}`}
-                      onClick={() => scrollToCella(iss.medicoId, iss.data)}
-                      className="text-[11px] px-2 py-1 rounded bg-white hover:bg-amber-50 transition-colors border shadow-sm"
-                      style={{ borderColor: '#fbbf24', color: '#92400e' }}
-                      title={`Vai alla cella di ${iss.medicoNome} del ${fmtDataItaliana(iss.data)}`}>
-                      <span className="font-semibold">{iss.medicoNome}</span>
-                      <span className="text-stone-500"> · </span>
-                      <span className="font-mono">{fmtDataItaliana(iss.data)}</span>
-                      <span className="text-stone-500"> · </span>
-                      <span className="font-bold">{iss.tipoCella}</span>
-                      <span className="text-stone-600"> ({iss.dettaglio})</span>
-                    </button>
-                  )
-                } else {
-                  // Slot count mismatch
-                  const diff = iss.actual - iss.expected
-                  const labelDiff = diff > 0
-                    ? `+${diff} di troppo`
-                    : `manca ${Math.abs(diff)}`
-                  return (
-                    <button key={`s-${iss.data}-${iss.slotLabel}-${i}`}
-                      onClick={() => scrollToGiorno(iss.data)}
-                      className="text-[11px] px-2 py-1 rounded bg-white hover:bg-amber-50 transition-colors border-2 shadow-sm"
-                      style={{ borderColor: '#f97316', color: '#9a3412' }}
-                      title={`Vai al giorno ${fmtDataItaliana(iss.data)} — atteso ${iss.expected}, attuale ${iss.actual}`}>
-                      <span className="font-mono">{fmtDataItaliana(iss.data)}</span>
-                      <span className="text-stone-500"> · </span>
-                      <span className="font-bold">{iss.slotLabel}</span>
-                      <span className="text-stone-600"> ({labelDiff})</span>
-                    </button>
-                  )
-                }
-              })}
+          {inconsistenzeVisibili.length > 0 && (
+            <div className="overflow-auto" style={{ maxHeight: 140 }}>
+              <div className="flex flex-wrap gap-2 pt-1 pr-1">
+                {inconsistenzeVisibili.map((iss, i) => {
+                  if (iss.kind === 'cella') {
+                    return (
+                      <div key={`c-${iss.medicoId}-${iss.data}-${i}`} className="relative">
+                        <button
+                          onClick={() => scrollToCella(iss.medicoId, iss.data)}
+                          className="text-[11px] px-2 py-1 pr-3.5 rounded bg-white hover:bg-amber-50 transition-colors border shadow-sm"
+                          style={{ borderColor: '#fbbf24', color: '#92400e' }}
+                          title={`Vai alla cella di ${iss.medicoNome} del ${fmtDataItaliana(iss.data)}`}>
+                          <span className="font-semibold">{iss.medicoNome}</span>
+                          <span className="text-stone-500"> · </span>
+                          <span className="font-mono">{fmtDataItaliana(iss.data)}</span>
+                          <span className="text-stone-500"> · </span>
+                          <span className="font-bold">{iss.tipoCella}</span>
+                          <span className="text-stone-600"> ({iss.dettaglio})</span>
+                        </button>
+                        <button
+                          onClick={e => { e.stopPropagation(); dismissInconsistenza(iss) }}
+                          className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center border shadow-sm transition-colors hover:bg-red-50"
+                          style={{ background: '#fff', borderColor: '#fbbf24', color: '#92400e' }}
+                          title="Nascondi questo avviso">
+                          <X size={9} strokeWidth={3} />
+                        </button>
+                      </div>
+                    )
+                  } else {
+                    // Slot count mismatch
+                    const diff = iss.actual - iss.expected
+                    const labelDiff = diff > 0
+                      ? `+${diff} di troppo`
+                      : `manca ${Math.abs(diff)}`
+                    return (
+                      <div key={`s-${iss.data}-${iss.slotLabel}-${i}`} className="relative">
+                        <button
+                          onClick={() => scrollToGiorno(iss.data)}
+                          className="text-[11px] px-2 py-1 pr-3.5 rounded bg-white hover:bg-amber-50 transition-colors border-2 shadow-sm"
+                          style={{ borderColor: '#f97316', color: '#9a3412' }}
+                          title={`Vai al giorno ${fmtDataItaliana(iss.data)} — atteso ${iss.expected}, attuale ${iss.actual}`}>
+                          <span className="font-mono">{fmtDataItaliana(iss.data)}</span>
+                          <span className="text-stone-500"> · </span>
+                          <span className="font-bold">{iss.slotLabel}</span>
+                          <span className="text-stone-600"> ({labelDiff})</span>
+                        </button>
+                        <button
+                          onClick={e => { e.stopPropagation(); dismissInconsistenza(iss) }}
+                          className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center border shadow-sm transition-colors hover:bg-red-50"
+                          style={{ background: '#fff', borderColor: '#f97316', color: '#9a3412' }}
+                          title="Nascondi questo avviso">
+                          <X size={9} strokeWidth={3} />
+                        </button>
+                      </div>
+                    )
+                  }
+                })}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
