@@ -63,28 +63,38 @@ export function LegendaCalendario({ variant = 'pubblica', className, style }: Pr
         ['EM',  'Esterno Mat.','TC:EM' ],
         ['EP',  'Esterno Pom.','TC:EP' ],
         ['EL',  'Esterno Lungo','TC:EL'],
+        // Chip "Vuoto": payload TC: (suffix vuoto) → cancella il TC della
+        // cella di destinazione. Simbolo "—" (em dash) per "niente turno".
+        ['—',   'Vuoto',       'TC:'   ],
         ['RM',  'Ric. mat.',   'TR:RM' ],
         ['RP',  'Ric. pom.',   'TR:RP' ],
       ] as [string,string,string][]).map(([t, label, payload]) => {
         const isRep = t === 'REP'
+        const isVuoto = label === 'Vuoto'
         const isTwoChar = t.length > 1
         const dh = dragHandlers(payload)
         return (
-          <span key={t} className="flex items-center gap-1">
+          <span key={`${t}|${label}`} className="flex items-center gap-1">
             <span
               draggable={dh.draggable}
               onDragStart={dh.onDragStart}
               className="inline-flex items-center justify-center rounded border select-none"
-              title={`Trascina su una cella per applicare ${t}`}
+              title={isVuoto
+                ? 'Trascina su una cella per CANCELLARE il turno'
+                : `Trascina su una cella per applicare ${t}`}
               style={{
                 width: 26, height: 18,
-                background: '#e8e3d8',
-                borderColor: '#8a9882',
-                color:      isRep ? '#b91c1c' : (CELL_FG[t] ?? '#3a3d30'),
-                fontSize:   isTwoChar ? 8 : 10,
+                background: isVuoto ? '#fafaf7' : '#e8e3d8',
+                borderColor: isVuoto ? '#a8a8a0' : '#8a9882',
+                color:      isVuoto ? '#7a7a70'
+                          : isRep   ? '#b91c1c'
+                          : (CELL_FG[t] ?? '#3a3d30'),
+                fontSize:   isVuoto ? 14 : (isTwoChar ? 8 : 10),
                 fontWeight: isRep ? 800 : 700,
                 letterSpacing: isRep ? '-0.3px' : undefined,
                 cursor: 'grab',
+                fontStyle: isVuoto ? 'normal' : undefined,
+                lineHeight: 1,
               }}>
               {t}
             </span>

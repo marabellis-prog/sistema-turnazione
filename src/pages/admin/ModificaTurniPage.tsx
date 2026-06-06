@@ -874,13 +874,19 @@ export function ModificaTurniPage() {
   const handleDropFromLegend = useCallback((medicoId: string, data: string, payload: string) => {
     if (payload.startsWith('TC:')) {
       const newTc = payload.slice(3) as TurnoClinico
-      if (newTc === 'M'  || newTc === 'P'  || newTc === 'L'  || newTc === 'REP' ||
+      // Payload "TC:" vuoto = chip "Vuoto" della legenda → cancella il TC.
+      if (newTc === '' ||
+          newTc === 'M'  || newTc === 'P'  || newTc === 'L'  || newTc === 'REP' ||
           newTc === 'EM' || newTc === 'EP' || newTc === 'EL') {
         const k = `${medicoId}|${data}`
         const local = modifiche.get(k)
         const dbT = turniByKey.get(k)
         const curTr = (local?.tr ?? dbT?.turno_ricerca ?? '') as TurnoRicerca
-        updateCella(medicoId, data, newTc, curTr)
+        // Chip "Vuoto" (newTc=''): cancella anche TR perche` RM/RP senza
+        // un TC che li ancora a mattina/pomeriggio non ha senso. Per gli
+        // altri TC manteniamo curTr — i ricalcoli interni decideranno.
+        const trToUse: TurnoRicerca = newTc === '' ? '' : curTr
+        updateCella(medicoId, data, newTc, trToUse)
       }
       return
     }
@@ -1138,54 +1144,24 @@ export function ModificaTurniPage() {
   // un key-repeat di Enter al commit faccia partire un edit indesiderato
   // sulla cella sotto, e mantiene l'utente in "modalita` navigazione"
   // libera di usare le frecce dopo ogni Enter.
+  //
+  // ⚠ Editing da tastiera DISATTIVATO. L'unico modo di modificare i turni
+  // e` il drag&drop dai chip della legenda (incluso il chip "Vuoto"
+  // che cancella il TC). La pagina e` solo "tabella + drop target",
+  // niente arrow navigation, niente edit da lettera, niente Delete.
+  // Mantieni solo Escape come "esci dalla selezione" se accidentalmente
+  // arrivi qui da una scroll-to-cella delle inconsistenze.
   useEffect(() => {
     if (!selectedCell) return
     function onKey(e: KeyboardEvent) {
-      // Se l'utente sta digitando in un campo input/textarea/select,
-      // l'editor della cella stessa o un'altra UI gestisce i tasti.
-      const ae = document.activeElement as HTMLElement | null
-      if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT')) {
-        return
-      }
-      const sel = selectedCell
-      if (!sel) return
-
-      const move = (dx: number, dy: number) => {
-        const mIdx = medici.findIndex(m => m.id === sel.medicoId)
-        const dIdx = colonne.findIndex(c => c.data === sel.data)
-        if (mIdx < 0 || dIdx < 0) return
-        const newM = Math.max(0, Math.min(medici.length - 1, mIdx + dy))
-        const newD = Math.max(0, Math.min(colonne.length - 1, dIdx + dx))
-        setSelectedCell({ medicoId: medici[newM].id, data: colonne[newD].data })
-      }
-
-      if (e.key === 'ArrowUp')    { e.preventDefault(); move(0, -1); return }
-      if (e.key === 'ArrowDown')  { e.preventDefault(); move(0, +1); return }
-      if (e.key === 'ArrowLeft')  { e.preventDefault(); move(-1, 0); return }
-      if (e.key === 'ArrowRight') { e.preventDefault(); move(+1, 0); return }
-      if (e.key === 'Enter')      { e.preventDefault(); move(0, +1); return }
-      if (e.key === 'Tab')        { e.preventDefault(); return }
-      if (e.key === 'Backspace')  { e.preventDefault(); return }
-      if (e.key === 'Escape')     { e.preventDefault(); setSelectedCell(null); return }
-      if (e.key === 'Delete') {
+      if (e.key === 'Escape') {
         e.preventDefault()
-        setEditIntent({ medicoId: sel.medicoId, data: sel.data, char: '' })
-        return
-      }
-      // Lettera singola A-Z (senza modificatori) → edit con quella lettera
-      if (
-        e.key.length === 1 &&
-        /^[a-zA-Z]$/.test(e.key) &&
-        !e.ctrlKey && !e.metaKey && !e.altKey
-      ) {
-        e.preventDefault()
-        setEditIntent({ medicoId: sel.medicoId, data: sel.data, char: e.key.toUpperCase() })
-        return
+        setSelectedCell(null)
       }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [selectedCell, medici, colonne])
+  }, [selectedCell])
 
   // ── Click fuori da una cella Clinica → reset selezione ─────────────
   // Solo le celle Clinica (rendering con data-clinica-cell="true") sono
@@ -1583,14 +1559,13 @@ export function ModificaTurniPage() {
     const ferie = ferieStatus(medicoId, col.data)
     const ferieColore = colorePerGiorno.get(col.data)?.color ?? null
     // Solo nella tabella clinica abbiamo selezione + editing da tastiera.
+    // Selezione visiva mantenuta SOLO per il scroll-to-cella delle
+    // inconsistenze (selectedCell viene settato da quel handler, mai
+    // dal click utente — vedi più sotto onSelect={undefined}).
     const isSel = tipo === 'clinica' &&
       selectedCell?.medicoId === medicoId &&
       selectedCell?.data === col.data
-    const pendingChar = (tipo === 'clinica' &&
-      editIntent?.medicoId === medicoId &&
-      editIntent?.data === col.data)
-      ? editIntent.char
-      : undefined
+    // pendingChar disattivato: niente editing da tastiera.
     return (
       <EditableCell
         key={`${medicoId}|${col.data}|${tipo}`}
@@ -1601,25 +1576,17 @@ export function ModificaTurniPage() {
         isFeriePending={ferie === 'pending'}
         isRedDay={col.isDomenica || col.isFestivo}
         ferieGiornoColore={ferieColore}
-        // Placement mattina/pomeriggio dal Map modifiche (ricalcolati
-        // automatic ad ogni cambio TC) o dal DB se non c'è modifica locale.
         slot_mattina={cur.slot_mattina}
         slot_pomeriggio={cur.slot_pomeriggio}
-        // Tabella RICERCA: read-only — RM/RP sono ricalcolati automatic
-        // dal cambio TC (regola: RM solo a P, RP solo a M).
-        readOnly={tipo === 'ricerca'}
-        // Selezione + editing tastiera (solo clinica, vedi pendingChar/isSel sopra)
+        // Editing da tastiera/click globalmente disabilitato: l'unico modo
+        // di cambiare un turno e` il drag dalla legenda. EditableCell
+        // resta come "drop target + render", niente piu` modalita` edit.
+        readOnly={true}
         isSelected={isSel}
-        pendingEditChar={pendingChar}
-        // Anchor DOM solo per le celle clinica (usato dal banner warning
-        // SUB/MED per scrollIntoView su una specifica cella)
+        pendingEditChar={undefined}
         cellAnchorId={tipo === 'clinica' ? `cell-${medicoId}-${col.data}` : undefined}
-        onSelect={tipo === 'clinica'
-          ? () => setSelectedCell({ medicoId, data: col.data })
-          : undefined}
-        onEditEnd={tipo === 'clinica'
-          ? (_committed, moveDown) => handleEditEnd(medicoId, col.data, moveDown)
-          : undefined}
+        onSelect={undefined}
+        onEditEnd={undefined}
         onChangeClinico={tcNew => updateCella(medicoId, col.data, tcNew, cur.tr)}
         onChangeRicerca={trNew => updateCella(medicoId, col.data, cur.tc, trNew)}
         // Paste multi-cella SOLO per la clinica: copia da Excel di un
