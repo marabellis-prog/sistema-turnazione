@@ -29,6 +29,9 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # OAuth Client ID (Web) per la sincronizzazione Google Calendar.
+          # E' un valore pubblico (finisce nel bundle): nessun rischio a esporlo.
+          VITE_GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.VITE_GOOGLE_OAUTH_CLIENT_ID }}
 
       - name: Deploy su gh-pages
         uses: peaceiris/actions-gh-pages@v4

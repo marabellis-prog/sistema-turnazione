@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { RefreshCw, Info, Plane, BarChart3, X, ArrowRightLeft } from 'lucide-react'
+import { RefreshCw, Info, Plane, BarChart3, X, ArrowRightLeft, CalendarCheck } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { generaColonne, MESI_IT } from '../lib/algorithm'
 import { CalendarLoadingScreen } from '../components/CalendarLoadingScreen'
@@ -8,6 +8,7 @@ import { FerieModal, expandRange, toRanges, type DayChange } from '../components
 import { CambioTurnoModal } from '../components/CambioTurnoModal'
 import { ForceLandscapeOverlay } from '../components/ForceLandscapeOverlay'
 import { RiepilogoTurni } from '../components/RiepilogoTurni'
+import { SyncCalendarModal } from '../components/SyncCalendarModal'
 import { LegendaCalendario } from '../components/LegendaCalendario'
 import { calcolaColoreFerie, COLORI_FERIE, ETICHETTA_COLORE } from '../lib/ferieColori'
 import { useAuth } from '../hooks/useAuth'
@@ -179,6 +180,7 @@ export function CalendarioPage() {
   const [showRichiediFerie, setShowRichiediFerie] = useState(false)
   const [showRichiediCambio, setShowRichiediCambio] = useState(false)
   const [showRiepilogo,     setShowRiepilogo]     = useState(false)
+  const [showSyncCal,       setShowSyncCal]       = useState(false)
   const [cambioMsg,         setCambioMsg]         = useState<string | null>(null)
 
   // Realtime sulle ferie: quando l'admin approva/respinge una richiesta
@@ -800,6 +802,18 @@ export function CalendarioPage() {
               <span className="hidden lg:inline">Richiedi cambio</span>
             </button>
           )}
+          {/* Sincronizza Calendario — esporta i turni su Google Calendar. */}
+          {mioMedico && (
+            <button onClick={() => setShowSyncCal(true)}
+              className="flex items-center gap-1.5 px-3.5 lg:px-2.5 py-2.5 lg:py-1.5 rounded-lg text-xs font-medium text-white shadow-sm transition-colors"
+              style={{ background: '#3367d6' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#2a56b5'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#3367d6'}
+              title="Sincronizza i tuoi turni con Google Calendar">
+              <CalendarCheck size={16} />
+              <span className="hidden lg:inline">Sincronizza calendario</span>
+            </button>
+          )}
           <button onClick={() => {
               if (config && mesi.length > 0) caricaTurni(config, mesi)
               qc.invalidateQueries({ queryKey: ['ferie-ranges'] })
@@ -897,6 +911,15 @@ export function CalendarioPage() {
             setCambioMsg('✓ Richiesta inviata all\'admin. Verrai aggiornato sullo stato.')
             setTimeout(() => setCambioMsg(null), 5000)
           }}
+        />
+      )}
+
+      {/* ── Modal Sincronizza Calendario (Google Calendar) ──────────── */}
+      {showSyncCal && mioMedico && (
+        <SyncCalendarModal
+          medico={mioMedico}
+          turni={turni}
+          onClose={() => setShowSyncCal(false)}
         />
       )}
 
