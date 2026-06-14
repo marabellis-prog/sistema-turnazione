@@ -203,14 +203,25 @@ export function getSavedCalendarColor(): string | null {
   try { return localStorage.getItem(LS_CAL_COLOR) } catch { return null }
 }
 
-async function findOrCreateCalendar(token: string, colorId: string): Promise<string> {
+// Errore sentinella: il calendario TURNAZIONE non esiste piu` (es.
+// eliminato a mano su Google Calendar). Il chiamante lo intercetta,
+// ricrea il calendario e riprova la sincronizzazione una volta.
+function calendarGone(): Error { return new Error('CALENDAR_GONE') }
+function isCalendarGone(e: unknown): boolean {
+  return e instanceof Error && e.message === 'CALENDAR_GONE'
+}
+
+async function findOrCreateCalendar(token: string, colorId: string, forceCreate = false): Promise<string> {
   // NB: il colore si applica SOLO alla creazione (ramo 3). Se il
   // calendario esiste gia` (rami 1/2) NON tocchiamo il colore, cosi` una
   // ri-sincronizzazione non sovrascrive un colore eventualmente cambiato
   // a mano dall'utente su Google Calendar.
+  //
+  // forceCreate=true: salta l'hint localStorage (puo` puntare a un
+  // calendario eliminato). Usato nel retry dopo un CALENDAR_GONE.
 
   // 1) hint da localStorage (re-sync sullo stesso dispositivo)
-  try {
+  if (!forceCreate) try {
     const hint = localStorage.getItem(LS_CAL_HINT)
     if (hint) {
       try {
@@ -347,7 +358,14 @@ async function listManagedEvents(token: string, calId: string): Promise<Map<stri
       maxResults: '2500',
     })
     if (pageToken) qs.set('pageToken', pageToken)
-    const res = await gcal<EventsResp>(token, 'GET', `/calendars/${encodeURIComponent(calId)}/events?${qs}`)
+    let res: EventsResp
+    try {
+      res = await gcal<EventsResp>(token, 'GET', `/calendars/${encodeURIComponent(calId)}/events?${qs}`)
+    } catch (e) {
+      // 404 sulla lista eventi = il calendario non esiste piu`.
+      if (/HTTP 404/.test((e as Error).message)) throw calendarGone()
+      throw e
+    }
     for (const ev of res.items ?? []) map.set(ev.id, ev)
     pageToken = res.nextPageToken
   } while (pageToken)
@@ -392,11 +410,34 @@ export async function syncToGoogleCalendar(opts: {
   onProgress?.({ phase: 'auth' })
   const token = await requestCalendarToken(clientId)
 
+  // Prova la sincronizzazione. Se durante l'operazione si scopre che il
+  // calendario non esiste piu` (eliminato a mano su Google → CALENDAR_GONE),
+  // si azzera l'hint, si ricrea il calendario da zero e si riprova UNA volta.
+  try {
+    return await runSyncOnce(token, medicoId, turni, colorId, false, onProgress)
+  } catch (e) {
+    if (isCalendarGone(e)) {
+      try { localStorage.removeItem(LS_CAL_HINT) } catch {}
+      return await runSyncOnce(token, medicoId, turni, colorId, true, onProgress)
+    }
+    throw e
+  }
+}
+
+async function runSyncOnce(
+  token: string,
+  medicoId: string,
+  turni: Turno[],
+  colorId: string,
+  forceCreate: boolean,
+  onProgress?: (p: SyncProgress) => void,
+): Promise<SyncResult> {
   onProgress?.({ phase: 'calendar' })
-  const calId = await findOrCreateCalendar(token, colorId)
+  const calId = await findOrCreateCalendar(token, colorId, forceCreate)
 
   onProgress?.({ phase: 'reading' })
-  const existing = await listManagedEvents(token, calId)
+  // Se appena ricreato (forceCreate) la lista e` vuota → tutto da creare.
+  const existing = forceCreate ? new Map<string, GEvent>() : await listManagedEvents(token, calId)
   const desired = buildDesiderati(turni, medicoId)
 
   // ── Diff ──────────────────────────────────────────────────────────
@@ -423,32 +464,49 @@ export async function syncToGoogleCalendar(opts: {
   const tick = () => { done++; onProgress?.({ phase: 'writing', done, total }) }
   onProgress?.({ phase: 'writing', done: 0, total })
 
-  // Concorrenza bassa (2) per non saturare il rate limit di scrittura del
-  // calendario; il backoff in gcal() copre eventuali picchi residui.
-  const WRITE_CONCURRENCY = 2
-  await pool(toCreate, WRITE_CONCURRENCY, async d => {
+  const eventsPath = `/calendars/${encodeURIComponent(calId)}/events`
+
+  // Helper: crea un evento gestendo 409 (esiste → update) e 404 (calendario
+  // sparito → CALENDAR_GONE).
+  const createEvent = async (d: Desiderato) => {
     try {
-      await gcal(token, 'POST', `/calendars/${encodeURIComponent(calId)}/events`, eventBody(d))
+      await gcal(token, 'POST', eventsPath, eventBody(d))
     } catch (e) {
-      // HTTP 409 "duplicate": un evento con questo ID esiste gia` (la lista
-      // letta per il diff non era aggiornata — Google Calendar e`
-      // eventualmente consistente). Con ID deterministici la creazione e`
-      // idempotente: aggiorno l'evento esistente invece di fallire.
-      if (/HTTP 409/.test((e as Error).message)) {
-        await gcal(token, 'PUT', `/calendars/${encodeURIComponent(calId)}/events/${d.id}`, eventBody(d))
+      const msg = (e as Error).message
+      if (/HTTP 409/.test(msg)) {
+        // ID gia` esistente (lista non aggiornata) → aggiorno.
+        await gcal(token, 'PUT', `${eventsPath}/${d.id}`, eventBody(d))
+      } else if (/HTTP 404/.test(msg)) {
+        throw calendarGone()
       } else {
         throw e
       }
     }
+  }
+
+  // Concorrenza bassa (2) per non saturare il rate limit di scrittura del
+  // calendario; il backoff in gcal() copre eventuali picchi residui.
+  const WRITE_CONCURRENCY = 2
+
+  await pool(toCreate, WRITE_CONCURRENCY, async d => {
+    await createEvent(d)
     tick()
   })
   await pool(toUpdate, WRITE_CONCURRENCY, async d => {
-    await gcal(token, 'PUT', `/calendars/${encodeURIComponent(calId)}/events/${d.id}`, eventBody(d))
+    try {
+      await gcal(token, 'PUT', `${eventsPath}/${d.id}`, eventBody(d))
+    } catch (e) {
+      // 404 in update: l'evento non c'e` piu`. Potrebbe mancare solo
+      // l'evento (→ lo creo) oppure l'intero calendario (→ CALENDAR_GONE,
+      // rilevato dalla createEvent che a sua volta becca 404).
+      if (/HTTP 404/.test((e as Error).message)) await createEvent(d)
+      else throw e
+    }
     tick()
   })
   await pool(toDelete, WRITE_CONCURRENCY, async id => {
     try {
-      await gcal(token, 'DELETE', `/calendars/${encodeURIComponent(calId)}/events/${id}`)
+      await gcal(token, 'DELETE', `${eventsPath}/${id}`)
     } catch (e) {
       // 404/410 = gia` eliminato → ok. Altri errori: rilancio.
       const msg = (e as Error).message
