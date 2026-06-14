@@ -144,8 +144,14 @@ export async function requestCalendarToken(clientId: string): Promise<string> {
 // REST helper
 // ════════════════════════════════════════════════════════════════════
 
+const MAX_RETRY = 6
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 async function gcal<T = unknown>(
-  token: string, method: string, path: string, body?: unknown,
+  token: string, method: string, path: string, body?: unknown, attempt = 0,
 ): Promise<T> {
   const res = await fetch(`${CAL_API}${path}`, {
     method,
@@ -157,6 +163,19 @@ async function gcal<T = unknown>(
   })
   if (!res.ok) {
     const txt = await res.text().catch(() => '')
+    // Errori transitori → retry con backoff esponenziale + jitter.
+    // Google Calendar limita le scritture in burst sullo stesso calendario
+    // (specie se appena creato): risponde 403 rateLimitExceeded o 429.
+    // Si risolve riprovando con attese crescenti (0.8s, 1.6s, 3.2s, …).
+    const transient =
+      res.status === 429 ||
+      res.status >= 500 ||
+      (res.status === 403 && /rate ?limit|userratelimit|quota/i.test(txt))
+    if (transient && attempt < MAX_RETRY) {
+      const delay = Math.min(30000, 800 * 2 ** attempt) + Math.floor(Math.random() * 400)
+      await sleep(delay)
+      return gcal<T>(token, method, path, body, attempt + 1)
+    }
     throw new Error(`Google Calendar ${method} ${path.split('?')[0]} → HTTP ${res.status} ${txt.slice(0, 120)}`)
   }
   // DELETE risponde 204 senza body
@@ -377,15 +396,18 @@ export async function syncToGoogleCalendar(opts: {
   const tick = () => { done++; onProgress?.({ phase: 'writing', done, total }) }
   onProgress?.({ phase: 'writing', done: 0, total })
 
-  await pool(toCreate, 6, async d => {
+  // Concorrenza bassa (2) per non saturare il rate limit di scrittura del
+  // calendario; il backoff in gcal() copre eventuali picchi residui.
+  const WRITE_CONCURRENCY = 2
+  await pool(toCreate, WRITE_CONCURRENCY, async d => {
     await gcal(token, 'POST', `/calendars/${encodeURIComponent(calId)}/events`, eventBody(d))
     tick()
   })
-  await pool(toUpdate, 6, async d => {
+  await pool(toUpdate, WRITE_CONCURRENCY, async d => {
     await gcal(token, 'PUT', `/calendars/${encodeURIComponent(calId)}/events/${d.id}`, eventBody(d))
     tick()
   })
-  await pool(toDelete, 6, async id => {
+  await pool(toDelete, WRITE_CONCURRENCY, async id => {
     try {
       await gcal(token, 'DELETE', `/calendars/${encodeURIComponent(calId)}/events/${id}`)
     } catch (e) {
