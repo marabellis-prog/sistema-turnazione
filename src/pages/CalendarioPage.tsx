@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw, Info, Plane, BarChart3, X, ArrowRightLeft, CalendarCheck } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -424,6 +424,39 @@ export function CalendarioPage() {
     }
   }, [medici.length, mostraLegenda, loadDone])
 
+  // ── Auto-scroll al giorno odierno + selezione iniziale ────────────
+  // Al primo caricamento: porta in vista il giorno di oggi, evidenzia la
+  // colonna (colSel) e — se l'utente NON e` ospite ed e` un turnista in
+  // elenco — anche la sua riga (rigaSel). Gli ospiti vedono solo la
+  // colonna evidenziata. Eseguito una sola volta (didInitScroll).
+  const didInitScroll = useRef(false)
+  useEffect(() => {
+    if (didInitScroll.current) return
+    if (!loadDone || colonne.length === 0) return
+    // Data odierna in fuso LOCALE (mai toISOString per i soliti motivi di TZ).
+    const d = new Date()
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    didInitScroll.current = true
+    // Se oggi e` fuori dal periodo del calendario, non forziamo nulla.
+    if (!colonne.some(c => c.data === today)) return
+
+    setColSel(today)
+    const isOspite = user?.ruolo === 'ospite'
+    const med = !isOspite ? mioMedico : undefined
+    if (med) setRigaSel(med.id)
+
+    const scroll = () => {
+      const id = med ? `pubcell-${med.id}-${today}` : `pubhdr-${today}`
+      document.getElementById(id)?.scrollIntoView({
+        behavior: 'smooth', block: 'center', inline: 'center',
+      })
+    }
+    // rAF + fallback: attende che la tabella sia montata e il layout settli.
+    const raf = requestAnimationFrame(scroll)
+    const t   = setTimeout(scroll, 450)
+    return () => { cancelAnimationFrame(raf); clearTimeout(t) }
+  }, [loadDone, colonne, mioMedico, user?.ruolo])
+
   // ── Loading screen ───────────────────────────────────────────────
   // Renderizzata da subito (frame 1), struttura COMPLETA con placeholder.
   // I valori si riempiono mano a mano che arrivano i dati — mai blank.
@@ -519,6 +552,7 @@ export function CalendarioPage() {
               const isColSelHeader = colSel === col.data
               return (
                 <th key={col.data}
+                  id={tipo === 'clinica' ? `pubhdr-${col.data}` : undefined}
                   onClick={() => setColSel(colSel === col.data ? null : col.data)}
                   className="cal-th !px-0 !py-0.5 w-8 cursor-pointer transition-colors"
                   style={{
@@ -554,7 +588,11 @@ export function CalendarioPage() {
                 onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = '#eae8e0' }}
                 onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = '' }}>
                 <td className="cal-td-nome"
-                  style={{ background: isSel ? 'rgba(190,140,90,0.4)' : undefined }}>
+                  // Sfondo OPACO (non rgba) quando selezionata: la colonna
+                  // nome e` sticky, con un colore semi-trasparente il
+                  // contenuto che scorre dietro traspariva e si sovrapponeva
+                  // al nome rendendolo illeggibile.
+                  style={{ background: isSel ? '#e3d1b4' : undefined }}>
                   {med.nome}
                 </td>
                 {colonne.map(col => {
@@ -616,6 +654,7 @@ export function CalendarioPage() {
 
                   return (
                     <td key={col.data}
+                      id={tipo === 'clinica' ? `pubcell-${med.id}-${col.data}` : undefined}
                       className={`cal-cell ${showModificato ? 'cal-cell-modificata' : ''}`}
                       style={{
                         background:  bg,

@@ -41,14 +41,13 @@ const PHASE_LABEL: Record<SyncProgress['phase'], string> = {
 
 export function SyncCalendarModal({ medico, turni, onClose }: Props) {
   const [step, setStep]         = useState<Step>('intro')
-  // Pre-seleziona il colore (hex) già scelto per il calendario TURNAZIONE
-  // (memorizzato all'ultima sincronizzazione). Fallback al primo colore
-  // se non noto o non più presente nella palette.
-  const [color, setColor]       = useState<string>(() => {
+  // Pre-seleziona il colore già scelto (colorId), memorizzato all'ultima
+  // sincronizzazione. Fallback al primo se non noto o fuori palette.
+  const [colorId, setColorId]   = useState<string>(() => {
     const saved = getSavedCalendarColor()
-    return saved && CAL_COLORS.some(c => c.hex.toLowerCase() === saved)
+    return saved && CAL_COLORS.some(c => c.colorId === saved)
       ? saved
-      : CAL_COLORS[0].hex
+      : CAL_COLORS[0].colorId
   })
   const [progress, setProgress] = useState<SyncProgress | null>(null)
   const [result, setResult]     = useState<SyncResult | null>(null)
@@ -65,7 +64,7 @@ export function SyncCalendarModal({ medico, turni, onClose }: Props) {
         clientId: GOOGLE_OAUTH_CLIENT_ID,
         medicoId: medico.id,
         turni,
-        color,
+        colorId,
         onProgress: setProgress,
       })
       setResult(res)
@@ -120,10 +119,10 @@ export function SyncCalendarModal({ medico, turni, onClose }: Props) {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {CAL_COLORS.map(c => {
-                    const sel = c.hex.toLowerCase() === color.toLowerCase()
+                    const sel = c.colorId === colorId
                     return (
-                      <button key={c.hex}
-                        onClick={() => setColor(c.hex)}
+                      <button key={c.colorId}
+                        onClick={() => setColorId(c.colorId)}
                         title={c.nome}
                         className="rounded-full transition-transform"
                         style={{

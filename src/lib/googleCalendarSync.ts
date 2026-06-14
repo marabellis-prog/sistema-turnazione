@@ -56,28 +56,31 @@ const SHIFT_TIMES: Record<'M' | 'P' | 'L' | 'REP', { start: string; end: string 
 // e '' (vuoto) sono esclusi: il medico non li lavora.
 const TC_SINCRONIZZABILI: TurnoClinico[] = ['M', 'P', 'L', 'REP']
 
-// ── Palette colori calendario ──────────────────────────────────────
-// Il colore si applica come hex ESATTO (backgroundColor + colorRgbFormat),
-// quindi lo swatch mostrato coincide sempre col colore reale su Google.
-export interface CalColor { hex: string; nome: string }
+// ── Palette colori EVENTI di Google Calendar (colorId 1-11) ─────────
+// I turni vengono colorati impostando event.colorId: i colori sono
+// quelli reali di Google Calendar, quindi lo swatch scelto coincide
+// ESATTAMENTE col colore dei turni sul calendario. (Funziona con lo
+// scope minimale calendar.app.created, a differenza del colore del
+// calendario che richiederebbe permessi piu` ampi.)
+export interface CalColor { colorId: string; hex: string; nome: string }
 export const CAL_COLORS: CalColor[] = [
-  { hex: '#4986e7', nome: 'Blu' },
-  { hex: '#9fc6e7', nome: 'Azzurro' },
-  { hex: '#9fe1e7', nome: 'Pavone' },
-  { hex: '#16a765', nome: 'Verde' },
-  { hex: '#42d692', nome: 'Eucalipto' },
-  { hex: '#b3dc6c', nome: 'Avocado' },
-  { hex: '#fad165', nome: 'Banana' },
-  { hex: '#ffad46', nome: 'Mango' },
-  { hex: '#ff7537', nome: 'Zucca' },
-  { hex: '#fa573c', nome: 'Mandarino' },
-  { hex: '#f83a22', nome: 'Pomodoro' },
-  { hex: '#f691b2', nome: 'Rosa' },
-  { hex: '#cd74e6', nome: 'Uva' },
-  { hex: '#9a9cff', nome: 'Lavanda' },
-  { hex: '#ac725e', nome: 'Cacao' },
-  { hex: '#c2c2c2', nome: 'Grafite' },
+  { colorId: '7',  hex: '#039be5', nome: 'Pavone' },
+  { colorId: '9',  hex: '#3f51b5', nome: 'Mirtillo' },
+  { colorId: '1',  hex: '#7986cb', nome: 'Lavanda' },
+  { colorId: '10', hex: '#0b8043', nome: 'Basilico' },
+  { colorId: '2',  hex: '#33b679', nome: 'Salvia' },
+  { colorId: '5',  hex: '#f6bf26', nome: 'Banana' },
+  { colorId: '6',  hex: '#f4511e', nome: 'Mandarino' },
+  { colorId: '11', hex: '#d50000', nome: 'Pomodoro' },
+  { colorId: '4',  hex: '#e67c73', nome: 'Salmone' },
+  { colorId: '3',  hex: '#8e24aa', nome: 'Uva' },
+  { colorId: '8',  hex: '#616161', nome: 'Grafite' },
 ]
+
+/** Hex corrispondente a un colorId evento (preview + best-effort calendar bg). */
+function hexForColorId(colorId: string): string {
+  return CAL_COLORS.find(c => c.colorId === colorId)?.hex ?? CAL_COLORS[0].hex
+}
 
 // ════════════════════════════════════════════════════════════════════
 // Google Identity Services (token client)
@@ -190,20 +193,15 @@ async function gcal<T = unknown>(
 
 interface CalListResp { items?: Array<{ id: string; summary?: string }> }
 
-/** Salva l'ultimo colore (hex) noto del calendario, per pre-selezionarlo
- *  nel modal alla prossima apertura. */
-function saveColor(hex: string | undefined): void {
-  if (!hex) return
-  try { localStorage.setItem(LS_CAL_COLOR, hex.toLowerCase()) } catch {}
+/** Salva l'ultimo colorId scelto, per pre-selezionarlo nel modal. */
+function saveColor(colorId: string | undefined): void {
+  if (!colorId) return
+  try { localStorage.setItem(LS_CAL_COLOR, colorId) } catch {}
 }
 
-/** Legge l'ultimo colore (hex) noto del calendario TURNAZIONE (o null).
- *  Usato dal modal per pre-selezionare lo swatch giusto. */
+/** Legge l'ultimo colorId scelto (o null). */
 export function getSavedCalendarColor(): string | null {
-  try {
-    const v = localStorage.getItem(LS_CAL_COLOR)
-    return v ? v.toLowerCase() : null
-  } catch { return null }
+  try { return localStorage.getItem(LS_CAL_COLOR) } catch { return null }
 }
 
 /** Testo leggibile (bianco/scuro) sul colore di sfondo, in base alla
@@ -226,12 +224,11 @@ function isCalendarGone(e: unknown): boolean {
   return e instanceof Error && e.message === 'CALENDAR_GONE'
 }
 
-async function findOrCreateCalendar(token: string, color: string, forceCreate = false): Promise<string> {
-  // Il colore scelto viene applicato SEMPRE (sia che il calendario esista
-  // gia`, sia alla creazione). Poiche` il modal pre-seleziona il colore
-  // corrente, se l'utente non lo cambia ri-applichiamo lo stesso (nessun
-  // effetto); se lo cambia, il calendario si aggiorna. Cosi` lo swatch
-  // scelto coincide sempre col colore reale.
+async function findOrCreateCalendar(token: string, colorId: string, forceCreate = false): Promise<string> {
+  // I turni vengono colorati a livello di EVENTO (vedi eventBody). Qui
+  // proviamo anche a dare al calendario lo stesso colore (best-effort:
+  // con lo scope minimale puo` non avere effetto, ma gli eventi restano
+  // colorati comunque).
   //
   // forceCreate=true: salta l'hint localStorage (puo` puntare a un
   // calendario eliminato). Usato nel retry dopo un CALENDAR_GONE.
@@ -242,8 +239,8 @@ async function findOrCreateCalendar(token: string, color: string, forceCreate = 
     if (hint) {
       try {
         await gcal(token, 'GET', `/calendars/${encodeURIComponent(hint)}`)
-        await applyColor(token, hint, color)
-        saveColor(color)
+        await applyColor(token, hint, colorId)
+        saveColor(colorId)
         return hint
       } catch {
         localStorage.removeItem(LS_CAL_HINT)  // calendario eliminato a mano
@@ -258,13 +255,13 @@ async function findOrCreateCalendar(token: string, color: string, forceCreate = 
     const found = list.items?.find(c => c.summary === CAL_SUMMARY)
     if (found) {
       try { localStorage.setItem(LS_CAL_HINT, found.id) } catch {}
-      await applyColor(token, found.id, color)
-      saveColor(color)
+      await applyColor(token, found.id, colorId)
+      saveColor(colorId)
       return found.id
     }
   } catch { /* calendarList non accessibile con questo scope: procedo a creare */ }
 
-  // 3) crea (e applica il colore scelto)
+  // 3) crea (e prova ad applicare il colore al calendario)
   const created = await gcal<{ id: string }>(token, 'POST', '/calendars', {
     summary: CAL_SUMMARY,
     timeZone: TZ,
@@ -272,24 +269,26 @@ async function findOrCreateCalendar(token: string, color: string, forceCreate = 
       'Non modificare manualmente: gli eventi vengono sovrascritti ad ogni sincronizzazione.',
   })
   try { localStorage.setItem(LS_CAL_HINT, created.id) } catch {}
-  await applyColor(token, created.id, color)
-  saveColor(color)  // memorizzo il colore appena scelto (hex)
+  await applyColor(token, created.id, colorId)
+  saveColor(colorId)  // memorizzo il colorId appena scelto
   return created.id
 }
 
-/** Applica il colore (hex esatto) al calendario via backgroundColor +
- *  colorRgbFormat=true, cosi` lo swatch scelto coincide col colore reale.
- *  Best-effort: se lo scope non consente la PATCH su calendarList,
- *  ignoriamo silenziosamente — il calendario resta col colore di default. */
-async function applyColor(token: string, calId: string, hex: string): Promise<void> {
-  if (!hex) return
+/** Best-effort: prova a dare al calendario il colore corrispondente al
+ *  colorId scelto (backgroundColor hex + colorRgbFormat). Con lo scope
+ *  minimale calendar.app.created puo` fallire silenziosamente: in tal
+ *  caso il calendario resta col colore di default, ma i singoli eventi
+ *  sono comunque colorati (event.colorId, vedi eventBody). */
+async function applyColor(token: string, calId: string, colorId: string): Promise<void> {
+  if (!colorId) return
+  const hex = hexForColorId(colorId)
   try {
     await gcal(
       token, 'PATCH',
       `/users/me/calendarList/${encodeURIComponent(calId)}?colorRgbFormat=true`,
       { backgroundColor: hex, foregroundColor: readableForeground(hex) },
     )
-  } catch { /* colore non applicabile con lo scope corrente */ }
+  } catch { /* colore del calendario non applicabile con lo scope corrente */ }
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -318,16 +317,18 @@ function eventTitle(tc: 'M' | 'P' | 'L' | 'REP', sm: SlotPlacement, sp: SlotPlac
   return slots.length > 0 ? `${base} (${slots.join('/')})` : base
 }
 
-/** Signature del contenuto: cambia se cambia TC o placement → guida il diff. */
-function sig(tc: string, sm: SlotPlacement, sp: SlotPlacement): string {
-  return `${tc}|${sm ?? '-'}|${sp ?? '-'}`
+/** Signature del contenuto: cambia se cambia TC, placement o COLORE →
+ *  guida il diff (cosi` cambiando colore tutti gli eventi si aggiornano). */
+function sig(tc: string, sm: SlotPlacement, sp: SlotPlacement, colorId: string): string {
+  return `${tc}|${sm ?? '-'}|${sp ?? '-'}|c${colorId}`
 }
 
 interface Desiderato {
-  id: string; date: string; start: string; end: string; title: string; sig: string
+  id: string; date: string; start: string; end: string
+  title: string; sig: string; colorId: string
 }
 
-function buildDesiderati(turni: Turno[], medicoId: string): Map<string, Desiderato> {
+function buildDesiderati(turni: Turno[], medicoId: string, colorId: string): Map<string, Desiderato> {
   const m = new Map<string, Desiderato>()
   for (const t of turni) {
     if (t.medico_id !== medicoId) continue
@@ -337,9 +338,9 @@ function buildDesiderati(turni: Turno[], medicoId: string): Map<string, Desidera
     const { start, end } = SHIFT_TIMES[key]
     const id = eventId(medicoId, t.data)
     m.set(id, {
-      id, date: t.data, start, end,
+      id, date: t.data, start, end, colorId,
       title: eventTitle(key, t.slot_mattina, t.slot_pomeriggio),
-      sig:   sig(tc, t.slot_mattina, t.slot_pomeriggio),
+      sig:   sig(tc, t.slot_mattina, t.slot_pomeriggio, colorId),
     })
   }
   return m
@@ -349,6 +350,7 @@ function eventBody(d: Desiderato) {
   return {
     id: d.id,
     summary: d.title,
+    colorId: d.colorId,  // colore dell'evento (palette eventi Google)
     start: { dateTime: `${d.date}T${d.start}:00`, timeZone: TZ },
     end:   { dateTime: `${d.date}T${d.end}:00`,   timeZone: TZ },
     extendedProperties: { private: { app: 'turnazione', sig: d.sig } },
@@ -420,10 +422,10 @@ export async function syncToGoogleCalendar(opts: {
   clientId: string
   medicoId: string
   turni: Turno[]
-  color: string
+  colorId: string
   onProgress?: (p: SyncProgress) => void
 }): Promise<SyncResult> {
-  const { clientId, medicoId, turni, color, onProgress } = opts
+  const { clientId, medicoId, turni, colorId, onProgress } = opts
 
   onProgress?.({ phase: 'auth' })
   const token = await requestCalendarToken(clientId)
@@ -432,11 +434,11 @@ export async function syncToGoogleCalendar(opts: {
   // calendario non esiste piu` (eliminato a mano su Google → CALENDAR_GONE),
   // si azzera l'hint, si ricrea il calendario da zero e si riprova UNA volta.
   try {
-    return await runSyncOnce(token, medicoId, turni, color, false, onProgress)
+    return await runSyncOnce(token, medicoId, turni, colorId, false, onProgress)
   } catch (e) {
     if (isCalendarGone(e)) {
       try { localStorage.removeItem(LS_CAL_HINT) } catch {}
-      return await runSyncOnce(token, medicoId, turni, color, true, onProgress)
+      return await runSyncOnce(token, medicoId, turni, colorId, true, onProgress)
     }
     throw e
   }
@@ -446,17 +448,17 @@ async function runSyncOnce(
   token: string,
   medicoId: string,
   turni: Turno[],
-  color: string,
+  colorId: string,
   forceCreate: boolean,
   onProgress?: (p: SyncProgress) => void,
 ): Promise<SyncResult> {
   onProgress?.({ phase: 'calendar' })
-  const calId = await findOrCreateCalendar(token, color, forceCreate)
+  const calId = await findOrCreateCalendar(token, colorId, forceCreate)
 
   onProgress?.({ phase: 'reading' })
   // Se appena ricreato (forceCreate) la lista e` vuota → tutto da creare.
   const existing = forceCreate ? new Map<string, GEvent>() : await listManagedEvents(token, calId)
-  const desired = buildDesiderati(turni, medicoId)
+  const desired = buildDesiderati(turni, medicoId, colorId)
 
   // ── Diff ──────────────────────────────────────────────────────────
   const toCreate: Desiderato[] = []
