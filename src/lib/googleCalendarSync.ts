@@ -56,27 +56,27 @@ const SHIFT_TIMES: Record<'M' | 'P' | 'L' | 'REP', { start: string; end: string 
 // e '' (vuoto) sono esclusi: il medico non li lavora.
 const TC_SINCRONIZZABILI: TurnoClinico[] = ['M', 'P', 'L', 'REP']
 
-// ── Palette colori calendario Google (colorId → hex indicativo) ─────
-// La selezione e` per colorId: Google applica la sua tinta esatta;
-// l'hex qui serve solo per la preview dello swatch nel modal.
-export interface CalColor { colorId: string; hex: string; nome: string }
+// ── Palette colori calendario ──────────────────────────────────────
+// Il colore si applica come hex ESATTO (backgroundColor + colorRgbFormat),
+// quindi lo swatch mostrato coincide sempre col colore reale su Google.
+export interface CalColor { hex: string; nome: string }
 export const CAL_COLORS: CalColor[] = [
-  { colorId: '16', hex: '#4986e7', nome: 'Blu' },
-  { colorId: '15', hex: '#9fc6e7', nome: 'Azzurro' },
-  { colorId: '14', hex: '#9fe1e7', nome: 'Pavone' },
-  { colorId: '8',  hex: '#16a765', nome: 'Verde' },
-  { colorId: '7',  hex: '#42d692', nome: 'Eucalipto' },
-  { colorId: '10', hex: '#b3dc6c', nome: 'Avocado' },
-  { colorId: '12', hex: '#fad165', nome: 'Banana' },
-  { colorId: '6',  hex: '#ffad46', nome: 'Mango' },
-  { colorId: '5',  hex: '#ff7537', nome: 'Zucca' },
-  { colorId: '4',  hex: '#fa573c', nome: 'Mandarino' },
-  { colorId: '3',  hex: '#f83a22', nome: 'Pomodoro' },
-  { colorId: '22', hex: '#f691b2', nome: 'Rosa' },
-  { colorId: '23', hex: '#cd74e6', nome: 'Uva' },
-  { colorId: '17', hex: '#9a9cff', nome: 'Lavanda' },
-  { colorId: '1',  hex: '#ac725e', nome: 'Cacao' },
-  { colorId: '19', hex: '#c2c2c2', nome: 'Grafite' },
+  { hex: '#4986e7', nome: 'Blu' },
+  { hex: '#9fc6e7', nome: 'Azzurro' },
+  { hex: '#9fe1e7', nome: 'Pavone' },
+  { hex: '#16a765', nome: 'Verde' },
+  { hex: '#42d692', nome: 'Eucalipto' },
+  { hex: '#b3dc6c', nome: 'Avocado' },
+  { hex: '#fad165', nome: 'Banana' },
+  { hex: '#ffad46', nome: 'Mango' },
+  { hex: '#ff7537', nome: 'Zucca' },
+  { hex: '#fa573c', nome: 'Mandarino' },
+  { hex: '#f83a22', nome: 'Pomodoro' },
+  { hex: '#f691b2', nome: 'Rosa' },
+  { hex: '#cd74e6', nome: 'Uva' },
+  { hex: '#9a9cff', nome: 'Lavanda' },
+  { hex: '#ac725e', nome: 'Cacao' },
+  { hex: '#c2c2c2', nome: 'Grafite' },
 ]
 
 // ════════════════════════════════════════════════════════════════════
@@ -188,19 +188,34 @@ async function gcal<T = unknown>(
 // Calendario TURNAZIONE: find or create + colore
 // ════════════════════════════════════════════════════════════════════
 
-interface CalListResp { items?: Array<{ id: string; summary?: string; colorId?: string }> }
+interface CalListResp { items?: Array<{ id: string; summary?: string }> }
 
-/** Salva l'ultimo colorId noto del calendario (per pre-selezionarlo nel
- *  modal alla prossima apertura). */
-function saveColor(colorId: string | undefined): void {
-  if (!colorId) return
-  try { localStorage.setItem(LS_CAL_COLOR, colorId) } catch {}
+/** Salva l'ultimo colore (hex) noto del calendario, per pre-selezionarlo
+ *  nel modal alla prossima apertura. */
+function saveColor(hex: string | undefined): void {
+  if (!hex) return
+  try { localStorage.setItem(LS_CAL_COLOR, hex.toLowerCase()) } catch {}
 }
 
-/** Legge l'ultimo colorId noto del calendario TURNAZIONE (o null).
+/** Legge l'ultimo colore (hex) noto del calendario TURNAZIONE (o null).
  *  Usato dal modal per pre-selezionare lo swatch giusto. */
 export function getSavedCalendarColor(): string | null {
-  try { return localStorage.getItem(LS_CAL_COLOR) } catch { return null }
+  try {
+    const v = localStorage.getItem(LS_CAL_COLOR)
+    return v ? v.toLowerCase() : null
+  } catch { return null }
+}
+
+/** Testo leggibile (bianco/scuro) sul colore di sfondo, in base alla
+ *  luminanza. Usato per foregroundColor del calendario. */
+function readableForeground(hex: string): string {
+  const h = hex.replace('#', '')
+  if (h.length < 6) return '#1d1d1d'
+  const r = parseInt(h.slice(0, 2), 16)
+  const g = parseInt(h.slice(2, 4), 16)
+  const b = parseInt(h.slice(4, 6), 16)
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  return lum > 0.6 ? '#1d1d1d' : '#ffffff'
 }
 
 // Errore sentinella: il calendario TURNAZIONE non esiste piu` (es.
@@ -211,11 +226,12 @@ function isCalendarGone(e: unknown): boolean {
   return e instanceof Error && e.message === 'CALENDAR_GONE'
 }
 
-async function findOrCreateCalendar(token: string, colorId: string, forceCreate = false): Promise<string> {
-  // NB: il colore si applica SOLO alla creazione (ramo 3). Se il
-  // calendario esiste gia` (rami 1/2) NON tocchiamo il colore, cosi` una
-  // ri-sincronizzazione non sovrascrive un colore eventualmente cambiato
-  // a mano dall'utente su Google Calendar.
+async function findOrCreateCalendar(token: string, color: string, forceCreate = false): Promise<string> {
+  // Il colore scelto viene applicato SEMPRE (sia che il calendario esista
+  // gia`, sia alla creazione). Poiche` il modal pre-seleziona il colore
+  // corrente, se l'utente non lo cambia ri-applichiamo lo stesso (nessun
+  // effetto); se lo cambia, il calendario si aggiorna. Cosi` lo swatch
+  // scelto coincide sempre col colore reale.
   //
   // forceCreate=true: salta l'hint localStorage (puo` puntare a un
   // calendario eliminato). Usato nel retry dopo un CALENDAR_GONE.
@@ -226,13 +242,9 @@ async function findOrCreateCalendar(token: string, colorId: string, forceCreate 
     if (hint) {
       try {
         await gcal(token, 'GET', `/calendars/${encodeURIComponent(hint)}`)
-        // Best-effort: leggo il colorId reale dalla calendarList e lo salvo
-        // per pre-selezionarlo nel modal la prossima volta.
-        try {
-          const entry = await gcal<{ colorId?: string }>(token, 'GET', `/users/me/calendarList/${encodeURIComponent(hint)}`)
-          saveColor(entry?.colorId)
-        } catch { /* colorId non leggibile: ignoro */ }
-        return hint  // gia` esiste → colore invariato
+        await applyColor(token, hint, color)
+        saveColor(color)
+        return hint
       } catch {
         localStorage.removeItem(LS_CAL_HINT)  // calendario eliminato a mano
       }
@@ -246,12 +258,13 @@ async function findOrCreateCalendar(token: string, colorId: string, forceCreate 
     const found = list.items?.find(c => c.summary === CAL_SUMMARY)
     if (found) {
       try { localStorage.setItem(LS_CAL_HINT, found.id) } catch {}
-      saveColor(found.colorId)  // memorizzo il colore reale
-      return found.id  // gia` esiste → colore invariato
+      await applyColor(token, found.id, color)
+      saveColor(color)
+      return found.id
     }
   } catch { /* calendarList non accessibile con questo scope: procedo a creare */ }
 
-  // 3) crea (e applica il colore scelto — solo qui)
+  // 3) crea (e applica il colore scelto)
   const created = await gcal<{ id: string }>(token, 'POST', '/calendars', {
     summary: CAL_SUMMARY,
     timeZone: TZ,
@@ -259,18 +272,23 @@ async function findOrCreateCalendar(token: string, colorId: string, forceCreate 
       'Non modificare manualmente: gli eventi vengono sovrascritti ad ogni sincronizzazione.',
   })
   try { localStorage.setItem(LS_CAL_HINT, created.id) } catch {}
-  await applyColor(token, created.id, colorId)
-  saveColor(colorId)  // memorizzo il colore appena scelto
+  await applyColor(token, created.id, color)
+  saveColor(color)  // memorizzo il colore appena scelto (hex)
   return created.id
 }
 
-/** Applica il colore al calendario (best-effort: se lo scope non consente
- *  la PATCH su calendarList, ignoriamo silenziosamente — il calendario
- *  resta col colore di default). */
-async function applyColor(token: string, calId: string, colorId: string): Promise<void> {
-  if (!colorId) return
+/** Applica il colore (hex esatto) al calendario via backgroundColor +
+ *  colorRgbFormat=true, cosi` lo swatch scelto coincide col colore reale.
+ *  Best-effort: se lo scope non consente la PATCH su calendarList,
+ *  ignoriamo silenziosamente — il calendario resta col colore di default. */
+async function applyColor(token: string, calId: string, hex: string): Promise<void> {
+  if (!hex) return
   try {
-    await gcal(token, 'PATCH', `/users/me/calendarList/${encodeURIComponent(calId)}`, { colorId })
+    await gcal(
+      token, 'PATCH',
+      `/users/me/calendarList/${encodeURIComponent(calId)}?colorRgbFormat=true`,
+      { backgroundColor: hex, foregroundColor: readableForeground(hex) },
+    )
   } catch { /* colore non applicabile con lo scope corrente */ }
 }
 
@@ -402,10 +420,10 @@ export async function syncToGoogleCalendar(opts: {
   clientId: string
   medicoId: string
   turni: Turno[]
-  colorId: string
+  color: string
   onProgress?: (p: SyncProgress) => void
 }): Promise<SyncResult> {
-  const { clientId, medicoId, turni, colorId, onProgress } = opts
+  const { clientId, medicoId, turni, color, onProgress } = opts
 
   onProgress?.({ phase: 'auth' })
   const token = await requestCalendarToken(clientId)
@@ -414,11 +432,11 @@ export async function syncToGoogleCalendar(opts: {
   // calendario non esiste piu` (eliminato a mano su Google → CALENDAR_GONE),
   // si azzera l'hint, si ricrea il calendario da zero e si riprova UNA volta.
   try {
-    return await runSyncOnce(token, medicoId, turni, colorId, false, onProgress)
+    return await runSyncOnce(token, medicoId, turni, color, false, onProgress)
   } catch (e) {
     if (isCalendarGone(e)) {
       try { localStorage.removeItem(LS_CAL_HINT) } catch {}
-      return await runSyncOnce(token, medicoId, turni, colorId, true, onProgress)
+      return await runSyncOnce(token, medicoId, turni, color, true, onProgress)
     }
     throw e
   }
@@ -428,12 +446,12 @@ async function runSyncOnce(
   token: string,
   medicoId: string,
   turni: Turno[],
-  colorId: string,
+  color: string,
   forceCreate: boolean,
   onProgress?: (p: SyncProgress) => void,
 ): Promise<SyncResult> {
   onProgress?.({ phase: 'calendar' })
-  const calId = await findOrCreateCalendar(token, colorId, forceCreate)
+  const calId = await findOrCreateCalendar(token, color, forceCreate)
 
   onProgress?.({ phase: 'reading' })
   // Se appena ricreato (forceCreate) la lista e` vuota → tutto da creare.

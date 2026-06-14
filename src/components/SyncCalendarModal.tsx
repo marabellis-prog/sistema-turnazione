@@ -41,14 +41,14 @@ const PHASE_LABEL: Record<SyncProgress['phase'], string> = {
 
 export function SyncCalendarModal({ medico, turni, onClose }: Props) {
   const [step, setStep]         = useState<Step>('intro')
-  // Pre-seleziona il colore già scelto per il calendario TURNAZIONE
+  // Pre-seleziona il colore (hex) già scelto per il calendario TURNAZIONE
   // (memorizzato all'ultima sincronizzazione). Fallback al primo colore
   // se non noto o non più presente nella palette.
-  const [colorId, setColorId]   = useState<string>(() => {
+  const [color, setColor]       = useState<string>(() => {
     const saved = getSavedCalendarColor()
-    return saved && CAL_COLORS.some(c => c.colorId === saved)
+    return saved && CAL_COLORS.some(c => c.hex.toLowerCase() === saved)
       ? saved
-      : CAL_COLORS[0].colorId
+      : CAL_COLORS[0].hex
   })
   const [progress, setProgress] = useState<SyncProgress | null>(null)
   const [result, setResult]     = useState<SyncResult | null>(null)
@@ -65,7 +65,7 @@ export function SyncCalendarModal({ medico, turni, onClose }: Props) {
         clientId: GOOGLE_OAUTH_CLIENT_ID,
         medicoId: medico.id,
         turni,
-        colorId,
+        color,
         onProgress: setProgress,
       })
       setResult(res)
@@ -120,10 +120,10 @@ export function SyncCalendarModal({ medico, turni, onClose }: Props) {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {CAL_COLORS.map(c => {
-                    const sel = c.colorId === colorId
+                    const sel = c.hex.toLowerCase() === color.toLowerCase()
                     return (
-                      <button key={c.colorId}
-                        onClick={() => setColorId(c.colorId)}
+                      <button key={c.hex}
+                        onClick={() => setColor(c.hex)}
                         title={c.nome}
                         className="rounded-full transition-transform"
                         style={{
