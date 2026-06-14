@@ -19,7 +19,7 @@ import { useState } from 'react'
 import { CalendarCheck, X, Loader2, Check, AlertTriangle, ExternalLink } from 'lucide-react'
 import type { Medico, Turno } from '../types'
 import {
-  syncToGoogleCalendar, GOOGLE_OAUTH_CLIENT_ID, CAL_COLORS,
+  syncToGoogleCalendar, GOOGLE_OAUTH_CLIENT_ID, CAL_COLORS, getSavedCalendarColor,
   type SyncProgress, type SyncResult,
 } from '../lib/googleCalendarSync'
 
@@ -41,7 +41,15 @@ const PHASE_LABEL: Record<SyncProgress['phase'], string> = {
 
 export function SyncCalendarModal({ medico, turni, onClose }: Props) {
   const [step, setStep]         = useState<Step>('intro')
-  const [colorId, setColorId]   = useState<string>(CAL_COLORS[0].colorId)
+  // Pre-seleziona il colore già scelto per il calendario TURNAZIONE
+  // (memorizzato all'ultima sincronizzazione). Fallback al primo colore
+  // se non noto o non più presente nella palette.
+  const [colorId, setColorId]   = useState<string>(() => {
+    const saved = getSavedCalendarColor()
+    return saved && CAL_COLORS.some(c => c.colorId === saved)
+      ? saved
+      : CAL_COLORS[0].colorId
+  })
   const [progress, setProgress] = useState<SyncProgress | null>(null)
   const [result, setResult]     = useState<SyncResult | null>(null)
   const [error, setError]       = useState<string | null>(null)

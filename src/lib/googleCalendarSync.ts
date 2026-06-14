@@ -40,7 +40,8 @@ const SCOPE = 'https://www.googleapis.com/auth/calendar.app.created'
 const CAL_API = 'https://www.googleapis.com/calendar/v3'
 const CAL_SUMMARY = 'TURNAZIONE'
 const TZ = 'Europe/Rome'
-const LS_CAL_HINT = 'turnazione_gcal_id'  // hint localStorage per ritrovare il calendario
+const LS_CAL_HINT  = 'turnazione_gcal_id'     // hint localStorage per ritrovare il calendario
+const LS_CAL_COLOR = 'turnazione_gcal_color'  // ultimo colorId noto del calendario TURNAZIONE
 
 // ── Orari turni (configurabili qui) ─────────────────────────────────
 //   M = Mattina, P = Pomeriggio, L = Lunga, REP = Reperibilita`
@@ -187,7 +188,20 @@ async function gcal<T = unknown>(
 // Calendario TURNAZIONE: find or create + colore
 // ════════════════════════════════════════════════════════════════════
 
-interface CalListResp { items?: Array<{ id: string; summary?: string }> }
+interface CalListResp { items?: Array<{ id: string; summary?: string; colorId?: string }> }
+
+/** Salva l'ultimo colorId noto del calendario (per pre-selezionarlo nel
+ *  modal alla prossima apertura). */
+function saveColor(colorId: string | undefined): void {
+  if (!colorId) return
+  try { localStorage.setItem(LS_CAL_COLOR, colorId) } catch {}
+}
+
+/** Legge l'ultimo colorId noto del calendario TURNAZIONE (o null).
+ *  Usato dal modal per pre-selezionare lo swatch giusto. */
+export function getSavedCalendarColor(): string | null {
+  try { return localStorage.getItem(LS_CAL_COLOR) } catch { return null }
+}
 
 async function findOrCreateCalendar(token: string, colorId: string): Promise<string> {
   // NB: il colore si applica SOLO alla creazione (ramo 3). Se il
@@ -201,6 +215,12 @@ async function findOrCreateCalendar(token: string, colorId: string): Promise<str
     if (hint) {
       try {
         await gcal(token, 'GET', `/calendars/${encodeURIComponent(hint)}`)
+        // Best-effort: leggo il colorId reale dalla calendarList e lo salvo
+        // per pre-selezionarlo nel modal la prossima volta.
+        try {
+          const entry = await gcal<{ colorId?: string }>(token, 'GET', `/users/me/calendarList/${encodeURIComponent(hint)}`)
+          saveColor(entry?.colorId)
+        } catch { /* colorId non leggibile: ignoro */ }
         return hint  // gia` esiste → colore invariato
       } catch {
         localStorage.removeItem(LS_CAL_HINT)  // calendario eliminato a mano
@@ -215,6 +235,7 @@ async function findOrCreateCalendar(token: string, colorId: string): Promise<str
     const found = list.items?.find(c => c.summary === CAL_SUMMARY)
     if (found) {
       try { localStorage.setItem(LS_CAL_HINT, found.id) } catch {}
+      saveColor(found.colorId)  // memorizzo il colore reale
       return found.id  // gia` esiste → colore invariato
     }
   } catch { /* calendarList non accessibile con questo scope: procedo a creare */ }
@@ -228,6 +249,7 @@ async function findOrCreateCalendar(token: string, colorId: string): Promise<str
   })
   try { localStorage.setItem(LS_CAL_HINT, created.id) } catch {}
   await applyColor(token, created.id, colorId)
+  saveColor(colorId)  // memorizzo il colore appena scelto
   return created.id
 }
 
