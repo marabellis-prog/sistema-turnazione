@@ -427,7 +427,19 @@ export async function syncToGoogleCalendar(opts: {
   // calendario; il backoff in gcal() copre eventuali picchi residui.
   const WRITE_CONCURRENCY = 2
   await pool(toCreate, WRITE_CONCURRENCY, async d => {
-    await gcal(token, 'POST', `/calendars/${encodeURIComponent(calId)}/events`, eventBody(d))
+    try {
+      await gcal(token, 'POST', `/calendars/${encodeURIComponent(calId)}/events`, eventBody(d))
+    } catch (e) {
+      // HTTP 409 "duplicate": un evento con questo ID esiste gia` (la lista
+      // letta per il diff non era aggiornata — Google Calendar e`
+      // eventualmente consistente). Con ID deterministici la creazione e`
+      // idempotente: aggiorno l'evento esistente invece di fallire.
+      if (/HTTP 409/.test((e as Error).message)) {
+        await gcal(token, 'PUT', `/calendars/${encodeURIComponent(calId)}/events/${d.id}`, eventBody(d))
+      } else {
+        throw e
+      }
+    }
     tick()
   })
   await pool(toUpdate, WRITE_CONCURRENCY, async d => {
