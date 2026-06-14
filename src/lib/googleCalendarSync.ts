@@ -34,8 +34,12 @@ import type { Turno, TurnoClinico, SlotPlacement } from '../types'
 export const GOOGLE_OAUTH_CLIENT_ID =
   (import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID as string | undefined) ?? ''
 
-// Scope minimale: solo i calendari creati dall'app. Massima privacy.
-const SCOPE = 'https://www.googleapis.com/auth/calendar.app.created'
+// Scope completo calendario: necessario per impostare il COLORE del
+// calendario (calendarList.patch), oltre a creare il calendario e
+// gestirne gli eventi. Operiamo comunque solo sul calendario TURNAZIONE
+// e sugli eventi taggati app=turnazione: gli altri eventi/calendari non
+// vengono mai toccati.
+const SCOPE = 'https://www.googleapis.com/auth/calendar'
 
 const CAL_API = 'https://www.googleapis.com/calendar/v3'
 const CAL_SUMMARY = 'TURNAZIONE'
