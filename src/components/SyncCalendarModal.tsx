@@ -101,27 +101,14 @@ export function SyncCalendarModal({ medico, turni, onClose }: Props) {
           {step === 'intro' && (
             <>
               <p className="text-sm text-stone-700 leading-relaxed">
-                Esporta i tuoi turni di <strong>{medico.nome}</strong> (solo Clinica) nel tuo
-                Google Calendar, nell'account Google con cui hai effettuato l'accesso.
-              </p>
-              <ul className="text-xs text-stone-600 mt-3 space-y-1.5 leading-relaxed">
-                <li>• Crea (se non esiste) un calendario dedicato <strong>"TURNAZIONE"</strong>.</li>
-                <li>• <strong>M</strong>→Mattina, <strong>P</strong>→Pomeriggio, <strong>L</strong>→Lunga, <strong>REP</strong>→REP, con indicazione sub/med (es. <em>POMERIGGIO (med)</em>).</li>
-                <li>• Ad ogni sincronizzazione aggiorna <strong>solo i turni cambiati</strong> e rimuove quelli cancellati: cambi turno e cancellazioni vengono riflessi.</li>
-                <li>• Tocca <strong>solo</strong> il calendario TURNAZIONE: gli altri tuoi eventi non vengono mai modificati.</li>
-              </ul>
-
-              <p className="text-xs text-stone-500 mt-4">
-                {nTurni > 0
-                  ? <>Verranno sincronizzati <strong>{nTurni}</strong> turni nel periodo.</>
-                  : <>Nessun turno Clinica da sincronizzare nel periodo.</>}
+                Continuando verrà creato il calendario <strong>TURNAZIONE</strong> (se non
+                esiste già) e saranno sincronizzati tutti i tuoi turni.
               </p>
 
               {/* Scelta colore */}
               <div className="mt-4">
                 <div className="text-xs font-semibold text-stone-600 mb-2">
-                  Colore del calendario su Google
-                  <span className="font-normal text-stone-400"> (solo alla prima creazione)</span>
+                  Scegli il colore del calendario o conferma quello esistente
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {CAL_COLORS.map(c => {
@@ -141,6 +128,10 @@ export function SyncCalendarModal({ medico, turni, onClose }: Props) {
                   })}
                 </div>
               </div>
+
+              {nTurni === 0 && (
+                <p className="text-xs text-stone-500 mt-4">Nessun turno da sincronizzare nel periodo.</p>
+              )}
 
               {!configured && (
                 <div className="mt-4 rounded-lg p-3 text-xs flex items-start gap-2"
@@ -228,7 +219,7 @@ export function SyncCalendarModal({ medico, turni, onClose }: Props) {
               <button onClick={handleSync} disabled={!configured || nTurni === 0}
                 className="btn-primary py-2 px-4 text-sm">
                 <CalendarCheck size={16} />
-                Continua
+                Sincronizza
               </button>
             </>
           )}
