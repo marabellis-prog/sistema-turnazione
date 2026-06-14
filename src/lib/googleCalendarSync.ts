@@ -276,11 +276,16 @@ function eventId(medicoId: string, dataISO: string): string {
 }
 
 /** Titolo evento: M→MATTINA, P→POMERIGGIO, L→LUNGA, REP→REP, con il
- *  suffisso sub/med dai placement. Es: "POMERIGGIO (med)", "LUNGA (med/sub)". */
+ *  suffisso sub/med dai placement.
+ *  - Es: "POMERIGGIO (med)"
+ *  - LUNGA con le due meta` UGUALI → sigla singola: "LUNGA (med)"
+ *  - LUNGA con le due meta` DIVERSE → entrambe: "LUNGA (med/sub)" */
 function eventTitle(tc: 'M' | 'P' | 'L' | 'REP', sm: SlotPlacement, sp: SlotPlacement): string {
   if (tc === 'REP') return 'REP'
   const base = tc === 'M' ? 'MATTINA' : tc === 'P' ? 'POMERIGGIO' : 'LUNGA'
-  const slots = [sm, sp].filter(Boolean).map(s => (s as string).toLowerCase())
+  let slots = [sm, sp].filter(Boolean).map(s => (s as string).toLowerCase())
+  // Due meta` identiche (es. sub/sub, med/med) → una sola scritta.
+  if (slots.length === 2 && slots[0] === slots[1]) slots = [slots[0]]
   return slots.length > 0 ? `${base} (${slots.join('/')})` : base
 }
 
