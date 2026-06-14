@@ -121,6 +121,7 @@ export function SyncCalendarModal({ medico, turni, onClose }: Props) {
               <div className="mt-4">
                 <div className="text-xs font-semibold text-stone-600 mb-2">
                   Colore del calendario su Google
+                  <span className="font-normal text-stone-400"> (solo alla prima creazione)</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {CAL_COLORS.map(c => {

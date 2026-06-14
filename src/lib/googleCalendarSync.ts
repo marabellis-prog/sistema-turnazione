@@ -171,14 +171,18 @@ async function gcal<T = unknown>(
 interface CalListResp { items?: Array<{ id: string; summary?: string }> }
 
 async function findOrCreateCalendar(token: string, colorId: string): Promise<string> {
+  // NB: il colore si applica SOLO alla creazione (ramo 3). Se il
+  // calendario esiste gia` (rami 1/2) NON tocchiamo il colore, cosi` una
+  // ri-sincronizzazione non sovrascrive un colore eventualmente cambiato
+  // a mano dall'utente su Google Calendar.
+
   // 1) hint da localStorage (re-sync sullo stesso dispositivo)
   try {
     const hint = localStorage.getItem(LS_CAL_HINT)
     if (hint) {
       try {
         await gcal(token, 'GET', `/calendars/${encodeURIComponent(hint)}`)
-        await applyColor(token, hint, colorId)
-        return hint
+        return hint  // gia` esiste → colore invariato
       } catch {
         localStorage.removeItem(LS_CAL_HINT)  // calendario eliminato a mano
       }
@@ -192,12 +196,11 @@ async function findOrCreateCalendar(token: string, colorId: string): Promise<str
     const found = list.items?.find(c => c.summary === CAL_SUMMARY)
     if (found) {
       try { localStorage.setItem(LS_CAL_HINT, found.id) } catch {}
-      await applyColor(token, found.id, colorId)
-      return found.id
+      return found.id  // gia` esiste → colore invariato
     }
   } catch { /* calendarList non accessibile con questo scope: procedo a creare */ }
 
-  // 3) crea
+  // 3) crea (e applica il colore scelto — solo qui)
   const created = await gcal<{ id: string }>(token, 'POST', '/calendars', {
     summary: CAL_SUMMARY,
     timeZone: TZ,
