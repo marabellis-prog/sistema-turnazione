@@ -958,6 +958,7 @@ export function CalendarioPage() {
         <SyncCalendarModal
           medico={mioMedico}
           turni={turni}
+          ferie={ferieDelMioMedico}
           onClose={() => setShowSyncCal(false)}
         />
       )}

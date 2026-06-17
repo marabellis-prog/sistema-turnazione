@@ -44,16 +44,28 @@ const SCOPE = 'https://www.googleapis.com/auth/calendar'
 const CAL_API = 'https://www.googleapis.com/calendar/v3'
 const CAL_SUMMARY = 'TURNAZIONE'
 const TZ = 'Europe/Rome'
-const LS_CAL_HINT  = 'turnazione_gcal_id'     // hint localStorage per ritrovare il calendario
-const LS_CAL_COLOR = 'turnazione_gcal_color'  // ultimo colorId noto del calendario TURNAZIONE
+const LS_CAL_HINT    = 'turnazione_gcal_id'          // hint localStorage per ritrovare il calendario
+const LS_CAL_COLOR   = 'turnazione_gcal_color'       // ultimo colorId turni
+const LS_FERIE_COLOR = 'turnazione_gcal_ferie_color' // ultimo colorId ferie
+
+// Colore ferie di default (palette eventi Google): Salvia (verde).
+export const DEFAULT_FERIE_COLOR = '2'
 
 // ── Orari turni (configurabili qui) ─────────────────────────────────
-//   M = Mattina, P = Pomeriggio, L = Lunga, REP = Reperibilita`
+//   M = Mattina, P = Pomeriggio, L = Lunga, REP = Reperibilita`, FERIE 09-18
 const SHIFT_TIMES: Record<'M' | 'P' | 'L' | 'REP', { start: string; end: string }> = {
   M:   { start: '08:00', end: '14:00' },
   P:   { start: '14:00', end: '20:00' },
   L:   { start: '08:00', end: '20:00' },
   REP: { start: '10:00', end: '16:00' },
+}
+const FERIE_TIME = { start: '09:00', end: '18:00' }
+
+/** Range ferie minimo necessario per la sincronizzazione. */
+export interface FerieRange {
+  data_inizio: string
+  data_fine:   string
+  approvate:   boolean
 }
 
 // Solo questi TC finiscono sul calendario. EM/EP/EL (ceduti a esterno)
@@ -208,6 +220,15 @@ export function getSavedCalendarColor(): string | null {
   try { return localStorage.getItem(LS_CAL_COLOR) } catch { return null }
 }
 
+/** Salva/legge l'ultimo colorId scelto per le FERIE. */
+function saveFerieColor(colorId: string | undefined): void {
+  if (!colorId) return
+  try { localStorage.setItem(LS_FERIE_COLOR, colorId) } catch {}
+}
+export function getSavedFerieColor(): string | null {
+  try { return localStorage.getItem(LS_FERIE_COLOR) } catch { return null }
+}
+
 /** Testo leggibile (bianco/scuro) sul colore di sfondo, in base alla
  *  luminanza. Usato per foregroundColor del calendario. */
 function readableForeground(hex: string): string {
@@ -307,6 +328,31 @@ function eventId(medicoId: string, dataISO: string): string {
   return `trn${med}${day}`
 }
 
+/** ID evento FERIE (prefisso "fer" distinto dai turni). */
+function ferieEventId(medicoId: string, dataISO: string): string {
+  const med = medicoId.replace(/-/g, '').toLowerCase()
+  const day = dataISO.replace(/-/g, '')
+  return `fer${med}${day}`
+}
+
+/** Espande un range [start, end] inclusivo in singoli giorni ISO (locale).
+ *  Cap di sicurezza a 400 giorni per evitare runaway su dati anomali. */
+function expandDays(start: string, end: string): string[] {
+  const out: string[] = []
+  const [ys, ms, ds] = start.split('-').map(Number)
+  const [ye, me, de] = end.split('-').map(Number)
+  if (!ys || !ye) return out
+  const cur  = new Date(ys, ms - 1, ds)
+  const last = new Date(ye, me - 1, de)
+  let guard = 0
+  while (cur <= last && guard < 400) {
+    out.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`)
+    cur.setDate(cur.getDate() + 1)
+    guard++
+  }
+  return out
+}
+
 /** Titolo evento: M→MATTINA, P→POMERIGGIO, L→LUNGA, REP→REP, con il
  *  suffisso sub/med dai placement.
  *  - Es: "POMERIGGIO (med)"
@@ -332,10 +378,24 @@ interface Desiderato {
   title: string; sig: string; colorId: string
 }
 
-function buildDesiderati(turni: Turno[], medicoId: string, colorId: string): Map<string, Desiderato> {
+function buildDesiderati(
+  turni: Turno[], ferie: FerieRange[], medicoId: string,
+  colorId: string, ferieColorId: string,
+): Map<string, Desiderato> {
   const m = new Map<string, Desiderato>()
+
+  // Giorni di ferie APPROVATE del medico (un Set per lookup veloce). Su
+  // questi giorni mostriamo "FERIE" al posto del turno.
+  const ferieDays = new Set<string>()
+  for (const f of ferie) {
+    if (!f.approvate) continue
+    for (const day of expandDays(f.data_inizio, f.data_fine)) ferieDays.add(day)
+  }
+
+  // Turni (saltando i giorni di ferie: in ferie non si lavora)
   for (const t of turni) {
     if (t.medico_id !== medicoId) continue
+    if (ferieDays.has(t.data)) continue
     const tc = t.turno_clinico
     if (!TC_SINCRONIZZABILI.includes(tc)) continue
     const key = tc as 'M' | 'P' | 'L' | 'REP'
@@ -347,6 +407,18 @@ function buildDesiderati(turni: Turno[], medicoId: string, colorId: string): Map
       sig:   sig(tc, t.slot_mattina, t.slot_pomeriggio, colorId),
     })
   }
+
+  // Ferie → evento "FERIE" 09:00-18:00 col colore dedicato
+  for (const day of ferieDays) {
+    const id = ferieEventId(medicoId, day)
+    m.set(id, {
+      id, date: day, start: FERIE_TIME.start, end: FERIE_TIME.end,
+      colorId: ferieColorId,
+      title: 'FERIE',
+      sig:   `FERIE|c${ferieColorId}`,
+    })
+  }
+
   return m
 }
 
@@ -426,23 +498,26 @@ export async function syncToGoogleCalendar(opts: {
   clientId: string
   medicoId: string
   turni: Turno[]
+  ferie: FerieRange[]
   colorId: string
+  ferieColorId: string
   onProgress?: (p: SyncProgress) => void
 }): Promise<SyncResult> {
-  const { clientId, medicoId, turni, colorId, onProgress } = opts
+  const { clientId, medicoId, turni, ferie, colorId, ferieColorId, onProgress } = opts
 
   onProgress?.({ phase: 'auth' })
   const token = await requestCalendarToken(clientId)
+  saveFerieColor(ferieColorId)  // memorizza per pre-selezione nel modal
 
   // Prova la sincronizzazione. Se durante l'operazione si scopre che il
   // calendario non esiste piu` (eliminato a mano su Google → CALENDAR_GONE),
   // si azzera l'hint, si ricrea il calendario da zero e si riprova UNA volta.
   try {
-    return await runSyncOnce(token, medicoId, turni, colorId, false, onProgress)
+    return await runSyncOnce(token, medicoId, turni, ferie, colorId, ferieColorId, false, onProgress)
   } catch (e) {
     if (isCalendarGone(e)) {
       try { localStorage.removeItem(LS_CAL_HINT) } catch {}
-      return await runSyncOnce(token, medicoId, turni, colorId, true, onProgress)
+      return await runSyncOnce(token, medicoId, turni, ferie, colorId, ferieColorId, true, onProgress)
     }
     throw e
   }
@@ -452,7 +527,9 @@ async function runSyncOnce(
   token: string,
   medicoId: string,
   turni: Turno[],
+  ferie: FerieRange[],
   colorId: string,
+  ferieColorId: string,
   forceCreate: boolean,
   onProgress?: (p: SyncProgress) => void,
 ): Promise<SyncResult> {
@@ -462,7 +539,7 @@ async function runSyncOnce(
   onProgress?.({ phase: 'reading' })
   // Se appena ricreato (forceCreate) la lista e` vuota → tutto da creare.
   const existing = forceCreate ? new Map<string, GEvent>() : await listManagedEvents(token, calId)
-  const desired = buildDesiderati(turni, medicoId, colorId)
+  const desired = buildDesiderati(turni, ferie, medicoId, colorId, ferieColorId)
 
   // ── Diff ──────────────────────────────────────────────────────────
   const toCreate: Desiderato[] = []

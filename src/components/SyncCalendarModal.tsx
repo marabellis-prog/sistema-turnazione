@@ -19,13 +19,16 @@ import { useState } from 'react'
 import { CalendarCheck, X, Loader2, Check, AlertTriangle, ExternalLink } from 'lucide-react'
 import type { Medico, Turno } from '../types'
 import {
-  syncToGoogleCalendar, GOOGLE_OAUTH_CLIENT_ID, CAL_COLORS, getSavedCalendarColor,
-  type SyncProgress, type SyncResult,
+  syncToGoogleCalendar, GOOGLE_OAUTH_CLIENT_ID, CAL_COLORS,
+  getSavedCalendarColor, getSavedFerieColor, DEFAULT_FERIE_COLOR,
+  type SyncProgress, type SyncResult, type FerieRange,
 } from '../lib/googleCalendarSync'
 
 interface Props {
   medico: Medico
   turni:  Turno[]
+  /** Ferie del medico (verranno sincronizzate quelle approvate). */
+  ferie:  FerieRange[]
   onClose: () => void
 }
 
@@ -39,15 +42,21 @@ const PHASE_LABEL: Record<SyncProgress['phase'], string> = {
   done:     'Completato',
 }
 
-export function SyncCalendarModal({ medico, turni, onClose }: Props) {
+export function SyncCalendarModal({ medico, turni, ferie, onClose }: Props) {
   const [step, setStep]         = useState<Step>('intro')
-  // Pre-seleziona il colore già scelto (colorId), memorizzato all'ultima
-  // sincronizzazione. Fallback al primo se non noto o fuori palette.
+  // Pre-seleziona i colori già scelti (turni / ferie), memorizzati
+  // all'ultima sincronizzazione. Fallback ai default se non noti.
   const [colorId, setColorId]   = useState<string>(() => {
     const saved = getSavedCalendarColor()
     return saved && CAL_COLORS.some(c => c.colorId === saved)
       ? saved
       : CAL_COLORS[0].colorId
+  })
+  const [ferieColorId, setFerieColorId] = useState<string>(() => {
+    const saved = getSavedFerieColor()
+    return saved && CAL_COLORS.some(c => c.colorId === saved)
+      ? saved
+      : DEFAULT_FERIE_COLOR
   })
   const [progress, setProgress] = useState<SyncProgress | null>(null)
   const [result, setResult]     = useState<SyncResult | null>(null)
@@ -64,7 +73,9 @@ export function SyncCalendarModal({ medico, turni, onClose }: Props) {
         clientId: GOOGLE_OAUTH_CLIENT_ID,
         medicoId: medico.id,
         turni,
+        ferie,
         colorId,
+        ferieColorId,
         onProgress: setProgress,
       })
       setResult(res)
@@ -79,6 +90,9 @@ export function SyncCalendarModal({ medico, turni, onClose }: Props) {
     t.medico_id === medico.id &&
     ['M', 'P', 'L', 'REP'].includes(t.turno_clinico)
   ).length
+  const nFerie = ferie.filter(f => f.approvate).length
+  // C'e` qualcosa da sincronizzare se ci sono turni o ferie approvate.
+  const haDati = nTurni > 0 || nFerie > 0
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3"
@@ -109,10 +123,10 @@ export function SyncCalendarModal({ medico, turni, onClose }: Props) {
             <>
               <p className="text-sm text-stone-700 leading-relaxed">
                 Continuando verrà creato il calendario <strong>TURNAZIONE</strong> (se non
-                esiste già) e saranno sincronizzati tutti i tuoi turni.
+                esiste già) e saranno sincronizzati tutti i tuoi turni e le ferie.
               </p>
 
-              {/* Scelta colore */}
+              {/* Scelta colore TURNI */}
               <div className="mt-4">
                 <div className="text-xs font-semibold text-stone-600 mb-2">
                   Scegli il colore del calendario o conferma quello esistente
@@ -136,8 +150,32 @@ export function SyncCalendarModal({ medico, turni, onClose }: Props) {
                 </div>
               </div>
 
-              {nTurni === 0 && (
-                <p className="text-xs text-stone-500 mt-4">Nessun turno da sincronizzare nel periodo.</p>
+              {/* Scelta colore FERIE */}
+              <div className="mt-4">
+                <div className="text-xs font-semibold text-stone-600 mb-2">
+                  Scegli il colore con cui visualizzerai i giorni di ferie
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {CAL_COLORS.map(c => {
+                    const sel = c.colorId === ferieColorId
+                    return (
+                      <button key={c.colorId}
+                        onClick={() => setFerieColorId(c.colorId)}
+                        title={c.nome}
+                        className="rounded-full transition-transform"
+                        style={{
+                          width: 26, height: 26, background: c.hex,
+                          border: sel ? '3px solid #2b3c24' : '2px solid #fff',
+                          boxShadow: sel ? '0 0 0 1px #2b3c24' : '0 0 0 1px #d5ccb8',
+                          transform: sel ? 'scale(1.12)' : 'scale(1)',
+                        }} />
+                    )
+                  })}
+                </div>
+              </div>
+
+              {!haDati && (
+                <p className="text-xs text-stone-500 mt-4">Nessun turno o ferie da sincronizzare nel periodo.</p>
               )}
 
               {!configured && (
@@ -223,7 +261,7 @@ export function SyncCalendarModal({ medico, turni, onClose }: Props) {
           {step === 'intro' && (
             <>
               <button onClick={onClose} className="btn-secondary py-2 px-4 text-sm">Annulla</button>
-              <button onClick={handleSync} disabled={!configured || nTurni === 0}
+              <button onClick={handleSync} disabled={!configured || !haDati}
                 className="btn-primary py-2 px-4 text-sm">
                 <CalendarCheck size={16} />
                 Sincronizza
