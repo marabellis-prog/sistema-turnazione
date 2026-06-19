@@ -210,7 +210,7 @@ export function CambioTurnoModal({
     // Almeno UNA modifica deve essere diversa fra da e a (sul TC)
     const haAlmenoUnaModifica = modifiche.some(m => m.da.tc !== m.a.tc)
     if (!haAlmenoUnaModifica) {
-      setError('Nessuna modifica effettiva: cambia il TC di almeno una riga.')
+      setError('Nessun cambio turno effettivo: cambia il TC di almeno una riga.')
       return
     }
 
@@ -266,6 +266,12 @@ export function CambioTurnoModal({
               (RM/RP) verranno ricalcolati in automatico, gli eventuali SUB/MED li
               sistema l'admin a mano.
             </p>
+            <p className="text-xs mt-2 rounded-lg px-2.5 py-2"
+              style={{ background: '#eef4e9', border: '1px solid #c7dab6', color: '#456b3a' }}>
+              💡 <strong>Se scambi il turno con un collega</strong>, inserisci sia la
+              modifica al tuo turno che quella del collega. Es: <em>Mario Rossi da L
+              diventa “–”</em> e <em>Luigi Verdi da “–” diventa L</em>.
+            </p>
           </div>
           <button onClick={onClose}
             className="text-stone-400 hover:text-stone-600 transition-colors p-1">
@@ -281,7 +287,7 @@ export function CambioTurnoModal({
               <div key={i} className="rounded-lg border border-stone-200 p-3 bg-stone-50">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-semibold text-stone-600">
-                    Modifica #{i + 1}
+                    Cambio Turno #{i + 1}
                   </span>
                   {rows.length > 1 && (
                     <button onClick={() => removeRow(i)}
@@ -347,7 +353,7 @@ export function CambioTurnoModal({
           {/* Aggiungi riga */}
           <button onClick={addRow}
             className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-stone-300 text-xs font-semibold text-stone-600 hover:bg-stone-50 transition-colors">
-            <Plus size={14} /> Aggiungi modifica
+            <Plus size={14} /> Aggiungi cambio turno
           </button>
 
           {/* Motivo */}
