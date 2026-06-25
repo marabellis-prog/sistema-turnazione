@@ -35,6 +35,10 @@ interface Props {
   /** Set ISO "YYYY-MM-DD" delle festività custom (santo patrono, ecc.).
    *  Sommate alle italiane nel conteggio "F" (festivi lavorati). */
   festivitaCustomSet?: Set<string>
+  /** Aggiustamento manuale del Totale per medico (delta da sommare).
+   *  Usato nella vista pubblica per riconoscere turni svolti fuori
+   *  sistema. Default: nessun aggiustamento. */
+  aggiustaTotale?: (medico: Medico) => number
 }
 
 interface RowStats {
@@ -54,7 +58,7 @@ interface RowStats {
   totale: number   // (M + P) + 2L — E* NON conta perche` il medico non l'ha lavorato
 }
 
-export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, festivitaCustomSet }: Props) {
+export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, festivitaCustomSet, aggiustaTotale }: Props) {
   const stats = useMemo<RowStats[]>(() => {
     // Pre-calcolo festività italiane + custom (admin-defined) per gli
     // anni coperti dal periodo.
@@ -95,9 +99,11 @@ export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, f
         }
       }
       const E = EM + EP + EL  // colonna "E" aggregata in tabella
-      return { medico: m, M, P, L, E, EM, EP, EL, S, D, F, SUB, MED, totale: (M + P) + 2 * L }
+      // Totale = (M + P) + 2L + eventuale aggiustamento manuale per il medico.
+      const totale = (M + P) + 2 * L + (aggiustaTotale?.(m) ?? 0)
+      return { medico: m, M, P, L, E, EM, EP, EL, S, D, F, SUB, MED, totale }
     })
-  }, [medici, colonne, getCellInfo, filtroMedicoId, festivitaCustomSet])
+  }, [medici, colonne, getCellInfo, filtroMedicoId, festivitaCustomSet, aggiustaTotale])
 
   // Stili condivisi per le celle
   const headBg = '#7eb6d4'   // azzurro pastello (stesso della riga TURNI TOTALI)

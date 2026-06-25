@@ -1007,6 +1007,11 @@ export function CalendarioPage() {
                 medici={medici}
                 colonne={colonne}
                 festivitaCustomSet={festivitaCustomSet}
+                // Aggiustamento manuale (solo vista pubblica): +4 al totale
+                // di Marabelli per turni svolti fuori sistema.
+                aggiustaTotale={(med) =>
+                  med.nome.toUpperCase().trim().startsWith('MARABELLI') ? 4 : 0
+                }
                 getCellInfo={(mid, data) => {
                   const cell = turniMap.get(mid)?.get(data)
                   return {
