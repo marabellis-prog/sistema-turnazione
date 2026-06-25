@@ -41,6 +41,7 @@ interface Props {
    *  sistema. Default: nessun aggiustamento. */
   aggiustaConteggi?: (medico: Medico) => {
     M?: number; P?: number; L?: number; SUB?: number; MED?: number
+    S?: number; D?: number; F?: number
   }
 }
 
@@ -109,6 +110,9 @@ export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, f
       L   += adj.L   ?? 0
       SUB += adj.SUB ?? 0
       MED += adj.MED ?? 0
+      S   += adj.S   ?? 0
+      D   += adj.D   ?? 0
+      F   += adj.F   ?? 0
 
       const E = EM + EP + EL  // colonna "E" aggregata in tabella
       const totale = (M + P) + 2 * L

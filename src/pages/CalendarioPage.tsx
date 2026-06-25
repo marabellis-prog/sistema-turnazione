@@ -1008,11 +1008,11 @@ export function CalendarioPage() {
                 colonne={colonne}
                 festivitaCustomSet={festivitaCustomSet}
                 // Aggiustamento manuale (solo vista pubblica) per Marabelli:
-                // +1 M, +1 P, +1 L (→ Totale +4) e +2 SUB / +2 MED, cosi`
-                // i conteggi e il totale tornano coerenti.
+                // +1 M, +1 P, +1 L (→ Totale +4), +2 SUB / +2 MED e +1 F
+                // (festivo), cosi` i conteggi e il totale tornano coerenti.
                 aggiustaConteggi={(med) =>
                   med.nome.toUpperCase().trim().startsWith('MARABELLI')
-                    ? { M: 1, P: 1, L: 1, SUB: 2, MED: 2 }
+                    ? { M: 1, P: 1, L: 1, SUB: 2, MED: 2, F: 1 }
                     : {}
                 }
                 getCellInfo={(mid, data) => {
