@@ -35,10 +35,13 @@ interface Props {
   /** Set ISO "YYYY-MM-DD" delle festività custom (santo patrono, ecc.).
    *  Sommate alle italiane nel conteggio "F" (festivi lavorati). */
   festivitaCustomSet?: Set<string>
-  /** Aggiustamento manuale del Totale per medico (delta da sommare).
-   *  Usato nella vista pubblica per riconoscere turni svolti fuori
+  /** Aggiustamento manuale dei conteggi per medico (delta da sommare a
+   *  M/P/L/SUB/MED). Il Totale (M+P+2L) si ricalcola di conseguenza, cosi`
+   *  i conti tornano. Usato nella vista pubblica per turni svolti fuori
    *  sistema. Default: nessun aggiustamento. */
-  aggiustaTotale?: (medico: Medico) => number
+  aggiustaConteggi?: (medico: Medico) => {
+    M?: number; P?: number; L?: number; SUB?: number; MED?: number
+  }
 }
 
 interface RowStats {
@@ -58,7 +61,7 @@ interface RowStats {
   totale: number   // (M + P) + 2L — E* NON conta perche` il medico non l'ha lavorato
 }
 
-export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, festivitaCustomSet, aggiustaTotale }: Props) {
+export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, festivitaCustomSet, aggiustaConteggi }: Props) {
   const stats = useMemo<RowStats[]>(() => {
     // Pre-calcolo festività italiane + custom (admin-defined) per gli
     // anni coperti dal periodo.
@@ -98,12 +101,20 @@ export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, f
           if (slot_pomeriggio === 'MED') MED++
         }
       }
+      // Aggiustamento manuale dei conteggi (vista pubblica): somma i delta
+      // a M/P/L/SUB/MED → il Totale (M+P+2L) torna coerente da solo.
+      const adj = aggiustaConteggi?.(m) ?? {}
+      M   += adj.M   ?? 0
+      P   += adj.P   ?? 0
+      L   += adj.L   ?? 0
+      SUB += adj.SUB ?? 0
+      MED += adj.MED ?? 0
+
       const E = EM + EP + EL  // colonna "E" aggregata in tabella
-      // Totale = (M + P) + 2L + eventuale aggiustamento manuale per il medico.
-      const totale = (M + P) + 2 * L + (aggiustaTotale?.(m) ?? 0)
+      const totale = (M + P) + 2 * L
       return { medico: m, M, P, L, E, EM, EP, EL, S, D, F, SUB, MED, totale }
     })
-  }, [medici, colonne, getCellInfo, filtroMedicoId, festivitaCustomSet, aggiustaTotale])
+  }, [medici, colonne, getCellInfo, filtroMedicoId, festivitaCustomSet, aggiustaConteggi])
 
   // Stili condivisi per le celle
   const headBg = '#7eb6d4'   // azzurro pastello (stesso della riga TURNI TOTALI)

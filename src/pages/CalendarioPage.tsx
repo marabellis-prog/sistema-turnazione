@@ -1007,10 +1007,13 @@ export function CalendarioPage() {
                 medici={medici}
                 colonne={colonne}
                 festivitaCustomSet={festivitaCustomSet}
-                // Aggiustamento manuale (solo vista pubblica): +4 al totale
-                // di Marabelli per turni svolti fuori sistema.
-                aggiustaTotale={(med) =>
-                  med.nome.toUpperCase().trim().startsWith('MARABELLI') ? 4 : 0
+                // Aggiustamento manuale (solo vista pubblica) per Marabelli:
+                // +1 M, +1 P, +1 L (→ Totale +4) e +2 SUB / +2 MED, cosi`
+                // i conteggi e il totale tornano coerenti.
+                aggiustaConteggi={(med) =>
+                  med.nome.toUpperCase().trim().startsWith('MARABELLI')
+                    ? { M: 1, P: 1, L: 1, SUB: 2, MED: 2 }
+                    : {}
                 }
                 getCellInfo={(mid, data) => {
                   const cell = turniMap.get(mid)?.get(data)
