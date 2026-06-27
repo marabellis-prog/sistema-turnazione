@@ -1,12 +1,13 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useLocation, useNavigate, useHref } from 'react-router-dom'
-import { LogOut, Calendar, CalendarDays, Settings, Users, AlertTriangle, RefreshCw, Mail, Shield, X } from 'lucide-react'
+import { LogOut, Calendar, CalendarDays, Settings, Users, AlertTriangle, RefreshCw, Mail, Shield, X, CalendarClock } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { usePendingActions } from '../contexts/PendingActionsContext'
 import { useVersionCheck } from '../hooks/useVersionCheck'
 import { useMessaggiRealtime } from '../hooks/useMessaggiRealtime'
 import { useFerieRealtime } from '../hooks/useFerieRealtime'
 import { useCambiTurnoRealtime } from '../hooks/useCambiTurnoRealtime'
+import { useTurnazioneAnteprima } from '../hooks/useTurnazioneAnteprima'
 import { MessaggiModal } from './MessaggiModal'
 import { supabase } from '../lib/supabase'
 import type { AuthUser, Medico, Messaggio } from '../types'
@@ -45,7 +46,12 @@ export function NavBar({ user, onSignOut }: Props) {
   const hrefCalendario     = useHref('/calendario')
   const hrefSettimanale    = useHref('/settimanale')
   const hrefSettimanaleAlt = useHref('/settimanale-alt')
+  const hrefAnteprima      = useHref('/anteprima-calendario')
   const hrefAdmin          = useHref('/admin')
+
+  // Bozza di nuova turnazione in attesa → mostra il link "Anteprima" ai
+  // turnisti (non agli ospiti). Realtime via useTurnazioneAnteprima.
+  const { data: bozzaAnteprima } = useTurnazioneAnteprima()
 
   // ── Casella messaggi (medici turnisti loggati) ───────────────────
   // Realtime su `messaggi` per aggiornare il badge e mostrare toast pop-up
@@ -386,6 +392,20 @@ export function NavBar({ user, onSignOut }: Props) {
               smartLink('/calendario',      hrefCalendario,     TAB_TURNI, 'Calendario',      Calendar)}
             {smartLink('/settimanale',      hrefSettimanale,    TAB_TURNI, 'Settimanale',     CalendarDays)}
             {smartLink('/settimanale-alt',  hrefSettimanaleAlt, TAB_TURNI, 'Settimanale Alt', AltCalendarIcon)}
+            {/* Anteprima nuova turnazione — solo turnisti, solo se c'è una bozza. */}
+            {user.ruolo !== 'ospite' && bozzaAnteprima && (
+              <a
+                href={hrefAnteprima}
+                target={TAB_TURNI}
+                onClick={e => handleSmartNav(e, '/anteprima-calendario', hrefAnteprima, TAB_TURNI,
+                                              loc.pathname === '/anteprima-calendario')}
+                className="flex items-center gap-1.5 px-3 py-2.5 lg:py-1.5 rounded-lg text-sm font-medium transition-colors animate-pulse"
+                style={{ background: '#f59e0b', color: '#1c2818' }}
+                title="Nuova turnazione in anteprima — guardala">
+                <CalendarClock size={16} />
+                <span className="hidden lg:inline">Anteprima</span>
+              </a>
+            )}
             {user.ruolo === 'admin' &&
               smartLink('/admin',           hrefAdmin,          TAB_ADMIN, 'Admin',           Settings)}
           </div>

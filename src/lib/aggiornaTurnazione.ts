@@ -245,3 +245,52 @@ export async function creaBozzaAggiornamento(
   if (error) throw error
   return inserted as TurnazioneAnteprima
 }
+
+// ════════════════════════════════════════════════════════════════════
+// Pubblica la bozza (→ produzione) / Scarta la bozza
+// ════════════════════════════════════════════════════════════════════
+
+/** Applica lo snapshot a `turni` (replace completo), aggiorna `configurazione`
+ *  dai meta, elimina la bozza. Ritorna il numero di turni inseriti. */
+export async function pubblicaBozza(anteprima: TurnazioneAnteprima, configId: string): Promise<number> {
+  const turni = anteprima.snapshot?.turni ?? []
+
+  // 1) Replace completo dei turni con lo snapshot (lo snapshot È lo stato
+  //    finale: i mesi non toccati sono copiati invariati).
+  const { error: delErr } = await supabase.from('turni')
+    .delete().neq('id', '00000000-0000-0000-0000-000000000000')
+  if (delErr) throw delErr
+
+  const CHUNK = 500
+  let inserted = 0
+  for (let i = 0; i < turni.length; i += CHUNK) {
+    const chunk = turni.slice(i, i + CHUNK).map(t => {
+      // Rimuovi eventuali id/timestamp dallo snapshot (li rigenera il DB).
+      const r = { ...(t as unknown as Record<string, unknown>) }
+      delete r.id; delete r.created_at; delete r.updated_at
+      return r
+    })
+    const { error } = await supabase.from('turni').insert(chunk)
+    if (error) throw error
+    inserted += chunk.length
+  }
+
+  // 2) Aggiorna configurazione (periodo/schema/n_medici_base) + updated_at.
+  const { error: cfgErr } = await supabase.from('configurazione')
+    .update({ ...anteprima.meta.config_payload, updated_at: new Date().toISOString() })
+    .eq('id', configId)
+  if (cfgErr) throw cfgErr
+
+  // 3) Elimina la bozza.
+  const { error: bkErr } = await supabase.from('turnazione_anteprima')
+    .delete().eq('id', anteprima.id)
+  if (bkErr) throw bkErr
+
+  return inserted
+}
+
+/** Scarta la bozza (solo DELETE). */
+export async function scartaBozza(anteprimaId: string): Promise<void> {
+  const { error } = await supabase.from('turnazione_anteprima').delete().eq('id', anteprimaId)
+  if (error) throw error
+}

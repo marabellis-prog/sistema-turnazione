@@ -268,6 +268,8 @@ export function BackupTurniPreview({ turni, medici, festivitaCustomSet }: Props)
                 const tr = t?.turno_ricerca ?? ''
                 const isRedDay = c.isDomenica || c.isFestivo
                 const monthEnd = lastDaysOfMonth.has(c.data)
+                // Cambio portato oltre un aggiornamento → bordo rosso (clinica).
+                const isCambio = tipo === 'clinica' && t?.turno_clinico_originario != null
                 let bg: string
                 if (tipo === 'clinica') {
                   if (t?.is_ferie) bg = '#d5e5d0'
@@ -282,6 +284,7 @@ export function BackupTurniPreview({ turni, medici, festivitaCustomSet }: Props)
                     background: bg,
                     border: '1px solid #c0b8a8',
                     borderRight: monthEnd ? MONTH_END_BORDER : '1px solid #c0b8a8',
+                    boxShadow: isCambio ? 'inset 0 0 0 2px #dc2626' : undefined,
                     textAlign: 'center', verticalAlign: 'middle',
                     padding: 0,
                   }}>

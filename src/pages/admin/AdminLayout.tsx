@@ -1,5 +1,5 @@
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
-import { Users, Calendar, UserCheck, Zap, Table2, AlertCircle, ArrowRightLeft, Settings, Archive } from 'lucide-react'
+import { Users, Calendar, UserCheck, Zap, Table2, AlertCircle, ArrowRightLeft, Settings, Archive, CalendarClock } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase'
 const links = [
   { to: '/admin/schema',  label: 'Disegna Schema',    Icon: Table2 },
   { to: '/admin/genera',  label: 'Genera Calendario', Icon: Zap },
+  { to: '/admin/anteprima-turnazione', label: 'Anteprima turnazione', Icon: CalendarClock },
   { to: '/admin/turni',   label: 'Modifica Turni',    Icon: Calendar },
   { to: '/admin/ferie',   label: 'Gestione Ferie',    Icon: Calendar },
   { to: '/admin/cambi',   label: 'Cambi Turno',       Icon: ArrowRightLeft },

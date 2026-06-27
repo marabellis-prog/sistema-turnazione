@@ -8,6 +8,7 @@ import { AuthCallbackPage }  from './pages/AuthCallbackPage'
 import { CalendarioPage }     from './pages/CalendarioPage'
 import { SettimanalePage }    from './pages/SettimanalePage'
 import { SettimanaleAltPage } from './pages/SettimanaleAltPage'
+import { AnteprimaCalendarioPage } from './pages/AnteprimaCalendarioPage'
 import { AdminLayout }       from './pages/admin/AdminLayout'
 import { GeneraCalendarioPage } from './pages/admin/GeneraCalendarioPage'
 import { GestioneMediciPage }   from './pages/admin/GestioneMediciPage'
@@ -18,6 +19,7 @@ import { GestioneUtentiPage }   from './pages/admin/GestioneUtentiPage'
 import { ConfigPage }           from './pages/admin/ConfigPage'
 import { GestioneSchemaPage }   from './pages/admin/GestioneSchemaPage'
 import { BackupRipristinoPage } from './pages/admin/BackupRipristinoPage'
+import { AnteprimaTurnazionePage } from './pages/admin/AnteprimaTurnazionePage'
 import { useAuth }                from './hooks/useAuth'
 import { PendingActionsProvider } from './contexts/PendingActionsContext'
 
@@ -123,6 +125,18 @@ function AppRoutes() {
           }
         />
 
+        {/* Anteprima calendario — bozza di nuova turnazione, visibile ai
+            turnisti (admin/user), NON agli ospiti. */}
+        <Route
+          path="/anteprima-calendario"
+          element={
+            <ProtectedRoute user={user} loading={loading}
+              allowedRoles={['admin', 'user']}>
+              <AnteprimaCalendarioPage />
+            </ProtectedRoute>
+          }
+        />
+
         {/* Admin (richiede login + admin) */}
         <Route
           path="/admin"
@@ -142,6 +156,7 @@ function AppRoutes() {
           <Route path="schema"  element={<GestioneSchemaPage />} />
           <Route path="backup"  element={<BackupRipristinoPage />} />
           <Route path="turni"   element={<ModificaTurniPage />} />
+          <Route path="anteprima-turnazione" element={<AnteprimaTurnazionePage />} />
         </Route>
 
         {/* Root → redirect (spinner durante loading, mai pagina bianca).
