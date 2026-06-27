@@ -7,7 +7,7 @@ import { CalendarLoadingScreen } from '../components/CalendarLoadingScreen'
 import { FerieModal, expandRange, toRanges, type DayChange } from '../components/FerieModal'
 import { CambioTurnoModal } from '../components/CambioTurnoModal'
 import { ForceLandscapeOverlay } from '../components/ForceLandscapeOverlay'
-import { RiepilogoTurni } from '../components/RiepilogoTurni'
+import { RiepilogoTurni, aggiustaConteggiRiepilogo } from '../components/RiepilogoTurni'
 import { SyncCalendarModal } from '../components/SyncCalendarModal'
 import { LegendaCalendario } from '../components/LegendaCalendario'
 import { calcolaColoreFerie, COLORI_FERIE, ETICHETTA_COLORE } from '../lib/ferieColori'
@@ -1009,14 +1009,10 @@ export function CalendarioPage() {
                 medici={medici}
                 colonne={colonne}
                 festivitaCustomSet={festivitaCustomSet}
-                // Aggiustamento manuale (solo vista pubblica) per Marabelli:
-                // +1 M, +1 P, +1 L (→ Totale +4), +2 SUB / +2 MED e +1 F
-                // (festivo), cosi` i conteggi e il totale tornano coerenti.
-                aggiustaConteggi={(med) =>
-                  med.nome.toUpperCase().trim().startsWith('MARABELLI')
-                    ? { M: 1, P: 1, L: 1, SUB: 2, MED: 2, F: 1 }
-                    : {}
-                }
+                // Aggiustamento manuale conteggi (Marabelli): UNICA fonte di
+                // verità condivisa con la vista admin (ModificaTurniPage), così
+                // i due riepiloghi combaciano sempre. Vedi RiepilogoTurni.tsx.
+                aggiustaConteggi={aggiustaConteggiRiepilogo}
                 getCellInfo={(mid, data) => {
                   const cell = turniMap.get(mid)?.get(data)
                   return {

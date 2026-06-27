@@ -35,7 +35,7 @@ import {
 import { soglieForDay } from '../../lib/soglieImpostazioni'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { useConfirm } from '../../hooks/useConfirm'
-import { RiepilogoTurni } from '../../components/RiepilogoTurni'
+import { RiepilogoTurni, aggiustaConteggiRiepilogo } from '../../components/RiepilogoTurni'
 import { LegendaCalendario, DRAG_MIME } from '../../components/LegendaCalendario'
 import { calcolaColoreFerie, COLORI_FERIE, ETICHETTA_COLORE } from '../../lib/ferieColori'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
@@ -2173,6 +2173,9 @@ export function ModificaTurniPage() {
               medici={medici}
               colonne={colonne}
               festivitaCustomSet={festivitaCustomSet}
+              // Stesso aggiustamento della vista pubblica (Marabelli +4 ecc.):
+              // i due riepiloghi devono combaciare. Fonte unica in RiepilogoTurni.
+              aggiustaConteggi={aggiustaConteggiRiepilogo}
               getCellInfo={(mid, data) => {
                 const cur = getCella(mid, data)
                 return {

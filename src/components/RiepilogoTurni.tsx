@@ -25,6 +25,28 @@ interface CellInfo {
   slot_pomeriggio: SlotPlacement
 }
 
+/** Delta da sommare ai conteggi di un medico nel riepilogo. */
+export type AggiustamentoConteggi = {
+  M?: number; P?: number; L?: number; SUB?: number; MED?: number
+  S?: number; D?: number; F?: number
+}
+
+/**
+ * Aggiustamento MANUALE dei conteggi del riepilogo — UNICA fonte di verità,
+ * da usare IDENTICA sia nella vista pubblica (CalendarioPage) sia in admin
+ * (ModificaTurniPage). I due riepiloghi DEVONO combaciare: passare questa
+ * stessa funzione a `aggiustaConteggi` in ENTRAMBE le viste.
+ *
+ * Marabelli: +1 M, +1 P, +1 L (→ Totale +4), +2 SUB, +2 MED, +1 F (festivo),
+ * per i turni svolti fuori sistema. Cambiando i numeri qui cambiano in
+ * automatico in tutte e due le viste (niente più copie inline da allineare).
+ */
+export function aggiustaConteggiRiepilogo(med: Medico): AggiustamentoConteggi {
+  return med.nome.toUpperCase().trim().startsWith('MARABELLI')
+    ? { M: 1, P: 1, L: 1, SUB: 2, MED: 2, F: 1 }
+    : {}
+}
+
 interface Props {
   medici:          Medico[]
   colonne:         ColonnaCal[]
@@ -39,10 +61,7 @@ interface Props {
    *  M/P/L/SUB/MED). Il Totale (M+P+2L) si ricalcola di conseguenza, cosi`
    *  i conti tornano. Usato nella vista pubblica per turni svolti fuori
    *  sistema. Default: nessun aggiustamento. */
-  aggiustaConteggi?: (medico: Medico) => {
-    M?: number; P?: number; L?: number; SUB?: number; MED?: number
-    S?: number; D?: number; F?: number
-  }
+  aggiustaConteggi?: (medico: Medico) => AggiustamentoConteggi
 }
 
 interface RowStats {
