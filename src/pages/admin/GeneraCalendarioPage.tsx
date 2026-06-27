@@ -1,12 +1,13 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Zap, AlertTriangle, CheckCircle, Info } from 'lucide-react'
+import { Zap, AlertTriangle, CheckCircle, Info, RefreshCw } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { calcolaCalendarioCompleto, primoLunediDelPeriodo, MESI_IT } from '../../lib/algorithm'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
+import { AggiornaTurnazioneModal } from '../../components/AggiornaTurnazioneModal'
 import type { Configurazione, Medico, SchemaModello } from '../../types'
 
 // Colori pastello coerenti con la pagina Schema
@@ -203,6 +204,7 @@ export function GeneraCalendarioPage() {
   const [conferma,    setConferma]    = useState(false)
   const [stato,       setStato]       = useState<'idle'|'loading'|'ok'|'error'>('idle')
   const [messaggio,   setMessaggio]   = useState('')
+  const [showAggiorna, setShowAggiorna] = useState(false)
 
   // ── Queries ──────────────────────────────────────────────────
   const { data: config } = useQuery<Configurazione | null>({
@@ -379,6 +381,19 @@ export function GeneraCalendarioPage() {
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
         onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
 
+      {showAggiorna && config && (
+        <AggiornaTurnazioneModal
+          config={config}
+          schemi={schemi}
+          medici={medici}
+          params={{
+            schemaNuovo: schemaNum,
+            annoInizio, meseInizio, annoFine, meseFine,
+          }}
+          onClose={() => setShowAggiorna(false)}
+        />
+      )}
+
       {/* ═══ COLONNA SINISTRA ═══════════════════════════════════ */}
       <div className="flex-1 space-y-5">
         <div>
@@ -511,6 +526,22 @@ export function GeneraCalendarioPage() {
               <Zap size={16} />
               Genera Calendario
             </button>
+
+            {/* ── Aggiorna turnazione (azzurro) — continua la rotazione
+                attuale col nuovo schema, crea un'anteprima da approvare. */}
+            <button
+              onClick={() => setShowAggiorna(true)}
+              disabled={!conferma || medici.length === 0 || slotSchema === 0 || !config}
+              className="w-full justify-center py-2.5 rounded-lg font-medium text-white shadow inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              style={{ background: '#0284c7' }}
+            >
+              <RefreshCw size={16} />
+              Aggiorna turnazione
+            </button>
+            <p className="text-[11px] text-stone-500 -mt-2">
+              "Aggiorna turnazione" continua la rotazione attuale dal primo lunedì del mese di
+              inizio col nuovo schema, mantenendo i cambi: crea un'anteprima da approvare (non va subito in produzione).
+            </p>
           </>
         )}
 
