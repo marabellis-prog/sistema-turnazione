@@ -50,6 +50,8 @@ const PLACEMENT_BG_PUB: Record<'SUB'|'MED'|'NONE', string> = {
   MED:  '#bae6fd',
   NONE: 'transparent',
 }
+// Grigio del "Supporto"/jolly (metà che lavora senza SUB/MED).
+const SUPPORTO_BG_PUB = '#d4d4d4'
 
 /** Etichetta del turno clinico (M / P / L / REP) — più grande perché unico
  *  nella sua tabella. Cerchio pastello che riflette slot_mattina/pomeriggio:
@@ -72,19 +74,19 @@ function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
                  : isE          ? '#36495a'   // Esterno: slate
                  : '#3a3d30'
 
+  // Metà attiva senza placement = Supporto/jolly → cerchio grigio.
+  const half = (s: SlotPlacement) => (s ? PLACEMENT_BG_PUB[s] : SUPPORTO_BG_PUB)
   let bg: string | undefined
-  if ((tc === 'M' || tc === 'EM') && slot_mattina) {
-    bg = PLACEMENT_BG_PUB[slot_mattina]
-  } else if ((tc === 'P' || tc === 'EP') && slot_pomeriggio) {
-    bg = PLACEMENT_BG_PUB[slot_pomeriggio]
-  } else if ((tc === 'L' || tc === 'EL') && (slot_mattina || slot_pomeriggio)) {
-    const colSX = PLACEMENT_BG_PUB[slot_mattina    ?? 'NONE']
-    const colDX = PLACEMENT_BG_PUB[slot_pomeriggio ?? 'NONE']
-    if (colSX === colDX && colSX !== 'transparent') {
-      bg = colSX
-    } else {
-      bg = `linear-gradient(90deg, ${colSX} 0%, ${colSX} 50%, ${colDX} 50%, ${colDX} 100%)`
-    }
+  if (tc === 'M' || tc === 'EM') {
+    bg = half(slot_mattina ?? null)
+  } else if (tc === 'P' || tc === 'EP') {
+    bg = half(slot_pomeriggio ?? null)
+  } else if (tc === 'L' || tc === 'EL') {
+    const colSX = half(slot_mattina ?? null)
+    const colDX = half(slot_pomeriggio ?? null)
+    bg = colSX === colDX
+      ? colSX
+      : `linear-gradient(90deg, ${colSX} 0%, ${colSX} 50%, ${colDX} 50%, ${colDX} 100%)`
   }
 
   if (!bg) {

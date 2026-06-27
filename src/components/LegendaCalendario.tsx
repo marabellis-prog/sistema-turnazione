@@ -138,6 +138,21 @@ export function LegendaCalendario({ variant = 'pubblica', className, style }: Pr
         <span style={{ color: '#5a5a4a' }}>Medicina</span>
       </span>
 
+      {/* Supporto (jolly) — cerchio grigio, NON draggabile: il jolly e'
+          semplicemente una cella che lavora senza flag SUB ne' MED. */}
+      <span className="flex items-center gap-1">
+        <span
+          className="select-none"
+          title="Cella che lavora senza assegnazione SUB/MED (jolly di supporto)"
+          style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 22, height: 22, borderRadius: '50%',
+            background: '#d4d4d4', border: '1.5px solid #6b7280',
+            fontSize: 12, fontWeight: 800, color: '#374151', lineHeight: 1,
+          }} />
+        <span style={{ color: '#5a5a4a' }}>Supporto (jolly)</span>
+      </span>
+
       {/* L con SUB mattina + MED pomeriggio — cerchio diviso, draggable.
           Drop su una cella con TC=L → setta slot_mattina=SUB, slot_pomeriggio=MED
           direttamente (in un solo movimento). Su TC ≠ L è no-op. */}

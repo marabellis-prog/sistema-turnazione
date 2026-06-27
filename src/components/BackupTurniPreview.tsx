@@ -44,6 +44,7 @@ const PLACEMENT_BG: Record<'SUB'|'MED'|'NONE', string> = {
   MED:  '#bae6fd',
   NONE: 'transparent',
 }
+const SUPPORTO_BG = '#d4d4d4'  // grigio del Supporto/jolly
 
 // Bordo destro sull'ultimo giorno di ogni mese (eccetto l'ultimo del periodo)
 const MONTH_END_BORDER = '2px solid #1a1a1a'
@@ -58,16 +59,17 @@ function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
   const isTwoChar = tc === 'REP' || tc === 'EM' || tc === 'EP' || tc === 'EL'
   const fontSize = isTwoChar ? 10 : 12
   const color    = tc === 'REP' ? '#b91c1c' : (CELL_COLORS[tc]?.fg ?? '#3a3d30')
+  const half = (s: SlotPlacement) => (s ? PLACEMENT_BG[s] : SUPPORTO_BG)
   let bg: string | undefined
-  if ((tc === 'M' || tc === 'EM') && slot_mattina) {
-    bg = PLACEMENT_BG[slot_mattina]
-  } else if ((tc === 'P' || tc === 'EP') && slot_pomeriggio) {
-    bg = PLACEMENT_BG[slot_pomeriggio]
-  } else if ((tc === 'L' || tc === 'EL') && (slot_mattina || slot_pomeriggio)) {
-    const colSX = PLACEMENT_BG[slot_mattina    ?? 'NONE']
-    const colDX = PLACEMENT_BG[slot_pomeriggio ?? 'NONE']
-    if (colSX === colDX && colSX !== 'transparent') bg = colSX
-    else bg = `linear-gradient(90deg, ${colSX} 0%, ${colSX} 50%, ${colDX} 50%, ${colDX} 100%)`
+  if (tc === 'M' || tc === 'EM') {
+    bg = half(slot_mattina ?? null)
+  } else if (tc === 'P' || tc === 'EP') {
+    bg = half(slot_pomeriggio ?? null)
+  } else if (tc === 'L' || tc === 'EL') {
+    const colSX = half(slot_mattina ?? null)
+    const colDX = half(slot_pomeriggio ?? null)
+    bg = colSX === colDX ? colSX
+       : `linear-gradient(90deg, ${colSX} 0%, ${colSX} 50%, ${colDX} 50%, ${colDX} 100%)`
   }
   if (!bg) {
     return <span style={{ fontSize, fontWeight: 700, color, letterSpacing: tc === 'REP' ? '-0.3px' : undefined }}>{tc}</span>

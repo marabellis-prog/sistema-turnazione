@@ -32,11 +32,12 @@ import type { Configurazione, Medico, Turno, Ferie, SlotPlacement } from '../typ
 const GIORNI_IT = ['', 'LUNEDÌ', 'MARTEDÌ', 'MERCOLEDÌ', 'GIOVEDÌ', 'VENERDÌ', 'SABATO', 'DOMENICA']
 const GIORNO_BG = ['#f0f4ee', '#ecf3e0', '#fef3c7', '#fee0c0', '#e8e0f5', '#f0f0f0', '#fde0e0']
 
-/** Sfondo cerchio del placement (SUB rosa / MED azzurro / nessun grigio chiaro) */
+/** Sfondo cerchio del placement (SUB rosa / MED azzurro / Supporto grigio).
+ *  NONE = lavora senza SUB/MED = Supporto/jolly → grigio. */
 const PLACEMENT_BG: Record<'SUB'|'MED'|'NONE', string> = {
   SUB:  '#fecaca',
   MED:  '#bae6fd',
-  NONE: '#f3f4f6',
+  NONE: '#d4d4d4',
 }
 
 /** Stripe bianco + arancio chiaro per evidenziare il "buco":

@@ -88,6 +88,8 @@ const PLACEMENT_BG: Record<'SUB'|'MED'|'NONE', string> = {
   MED:  '#bae6fd',
   NONE: 'transparent',
 }
+// Grigio del "Supporto"/jolly: metà che lavora ma senza SUB/MED.
+const SUPPORTO_BG = '#d4d4d4'
 
 /** Etichetta TC (M / P / L / REP) con cerchio pastello che riflette
  *  slot_mattina (metà sx) e slot_pomeriggio (metà dx).
@@ -107,25 +109,21 @@ function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
   const fontSize = isTwoChar ? 10 : 12
   const color    = tc === 'REP' ? '#b91c1c' : (CELL_COLORS[tc]?.fg ?? '#3a3d30')
 
-  // Calcola lo sfondo del cerchio
-  // Le varianti Esterno seguono la stessa logica delle loro controparti:
-  //   EM ~ M (solo mattina rilevante)
-  //   EP ~ P (solo pomeriggio rilevante)
-  //   EL ~ L (entrambi)
+  // Calcola lo sfondo del cerchio. Una metà ATTIVA senza placement
+  // (SUB/MED) è un "Supporto"/jolly → cerchio GRIGIO. Le varianti Esterno
+  // seguono le controparti (EM~M, EP~P, EL~L).
+  const half = (s: 'SUB' | 'MED' | null | undefined) => (s ? PLACEMENT_BG[s] : SUPPORTO_BG)
   let bg: string | undefined
-  if ((tc === 'M' || tc === 'EM') && slot_mattina) {
-    bg = PLACEMENT_BG[slot_mattina]
-  } else if ((tc === 'P' || tc === 'EP') && slot_pomeriggio) {
-    bg = PLACEMENT_BG[slot_pomeriggio]
-  } else if ((tc === 'L' || tc === 'EL') && (slot_mattina || slot_pomeriggio)) {
-    const colSX = PLACEMENT_BG[slot_mattina    ?? 'NONE']
-    const colDX = PLACEMENT_BG[slot_pomeriggio ?? 'NONE']
-    if (colSX === colDX && colSX !== 'transparent') {
-      bg = colSX   // entrambi uguali: cerchio pieno
-    } else {
-      // Cerchio diviso: sx | dx (verticale 50/50)
-      bg = `linear-gradient(90deg, ${colSX} 0%, ${colSX} 50%, ${colDX} 50%, ${colDX} 100%)`
-    }
+  if (tc === 'M' || tc === 'EM') {
+    bg = half(slot_mattina)
+  } else if (tc === 'P' || tc === 'EP') {
+    bg = half(slot_pomeriggio)
+  } else if (tc === 'L' || tc === 'EL') {
+    const colSX = half(slot_mattina)
+    const colDX = half(slot_pomeriggio)
+    bg = colSX === colDX
+      ? colSX
+      : `linear-gradient(90deg, ${colSX} 0%, ${colSX} 50%, ${colDX} 50%, ${colDX} 100%)`
   }
 
   const baseProps = {

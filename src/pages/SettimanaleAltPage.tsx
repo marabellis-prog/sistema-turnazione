@@ -301,16 +301,15 @@ export function SettimanaleAltPage() {
   /** "(SUB)" o "(MED)" colorato. Per i lunghi misti restituisce
    *  "(SUB→MED)" o "(MED→SUB)" con i due colori. */
   function PlacementTag({ placement }: { placement: SlotPlacement }) {
-    if (!placement) return null
-    const color = placement === 'SUB' ? '#9f1239' : '#0c4a6e'
+    // null = lavora senza SUB/MED = Supporto/jolly → grigio
+    const color = placement === 'SUB' ? '#9f1239' : placement === 'MED' ? '#0c4a6e' : '#6b7280'
     return (
       <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 800, color }}>
-        ({placement})
+        ({placement ?? 'Supp'})
       </span>
     )
   }
   function MixedPlacementTag({ sm, sp }: { sm: SlotPlacement; sp: SlotPlacement }) {
-    if (!sm && !sp) return null
     if (sm === sp) return <PlacementTag placement={sm} />
     // Misto — l'arrow è più grande e scuro per essere ben visibile
     // (a 10px confondeva con un trattino)
