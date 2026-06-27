@@ -1,12 +1,12 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Save, RotateCcw, Plus, X, Trash2, Eye, EyeOff, AlertTriangle } from 'lucide-react'
+import { Save, RotateCcw, Plus, X, Trash2, Eye, EyeOff, AlertTriangle, Copy } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
-import type { SchemaModello, Medico } from '../../types'
+import type { SchemaModello, Medico, Configurazione } from '../../types'
 
 // ── Colori pastello (uno per turnista) ───────────────────────────
 const PASTEL: { bg: string; fg: string }[] = [
@@ -361,6 +361,23 @@ export function GestioneSchemaPage() {
     },
   })
 
+  // Schema attualmente attivo (dal config): serve a decidere se segnalare
+  // "Rigenera calendario" al salvataggio. Modificare uno schema NON attivo
+  // non deve far comparire l'avviso di rigenerazione.
+  const { data: config } = useQuery<Configurazione | null>({
+    queryKey: ['configurazione'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('configurazione').select('*')
+        .order('updated_at', { ascending: false }).limit(1).maybeSingle()
+      if (error) throw error
+      return data
+    },
+  })
+  const schemaAttivo = config?.schema_attivo ?? 1
+
+  // Menu "Copia da…" (apre la scelta di un altro schema come base)
+  const [copyMenuOpen, setCopyMenuOpen] = useState(false)
+
   const colorMap = useMemo(() => {
     const m: Record<number, { bg: string; fg: string }> = {}
     medici.forEach((med, i) => { m[med.numero_ordine] = PASTEL[i % PASTEL.length] })
@@ -631,10 +648,16 @@ export function GestioneSchemaPage() {
         const { error: insErr } = await supabase.from('schemi_modello').insert(rows)
         if (insErr) throw insErr
       }
-      setMsg(`✓ Schema ${schemaNum} salvato (${rows.length} slot)`)
       setHasUnsaved(false)  // ← salvato: nessuna modifica pendente
-      // 🔴 Schema modificato → rotazione cambiata → rigenera
-      setNeedsRegen(`Schema ${schemaNum} modificato (${rows.length} slot)`)
+      // 🔴 Segnala "Rigenera calendario" SOLO se ho modificato lo schema
+      // ATTUALMENTE ATTIVO: cambiare uno schema non attivo non incide sul
+      // calendario generato, quindi nessun avviso di rigenerazione.
+      if (schemaNum === schemaAttivo) {
+        setNeedsRegen(`Schema ${schemaNum} (attivo) modificato (${rows.length} slot)`)
+        setMsg(`✓ Schema ${schemaNum} salvato (${rows.length} slot)`)
+      } else {
+        setMsg(`✓ Schema ${schemaNum} salvato (${rows.length} slot) — non attivo, nessuna rigenerazione`)
+      }
       qc.invalidateQueries({ queryKey: ['schemi_modello'] })
     } catch (e: unknown) {
       setMsg('Errore: ' + (e as Error).message)
@@ -642,6 +665,49 @@ export function GestioneSchemaPage() {
       setSaving(false)
       setTimeout(() => setMsg(''), 4000)
     }
+  }
+
+  // ── Copia da un altro schema (base di partenza) ───────────────────
+  // Carica IN MEMORIA i contenuti dello schema sorgente nello schema
+  // corrente (id azzerati = righe nuove). L'utente puo` poi modificare e
+  // salvare. Non scrive nulla finche` non si preme "Salva schema".
+  async function copiaDaSchema(sourceNum: number) {
+    setCopyMenuOpen(false)
+    const rows = schemi.filter(s => s.schema_num === sourceNum)
+    if (rows.length === 0) {
+      showWarning(`Lo schema ${sourceNum} e' vuoto: niente da copiare.`)
+      return
+    }
+    const ok = await confirm({
+      title:        `Copia dallo schema ${sourceNum}`,
+      message:      `I contenuti dello schema ${schemaNum} verranno sostituiti con una copia dello schema ${sourceNum}. Potrai modificarli e poi salvare. Continuare?`,
+      confirmLabel: 'Copia',
+    })
+    if (!ok) return
+
+    const g: Record<number, SlotRow[]> = {}
+    const giorniUsati = new Set<number>()
+    rows.forEach(r => {
+      giorniUsati.add(r.giorno_settimana)
+      if (!g[r.giorno_settimana]) g[r.giorno_settimana] = []
+      g[r.giorno_settimana].push({
+        id: null,  // riga NUOVA per lo schema corrente (non riuso l'id sorgente)
+        slot: r.slot,
+        vals: { M: r.numero_medico_mattina, P: r.numero_medico_pomeriggio,
+                RM: r.numero_medico_rm,     RP: r.numero_medico_rp },
+        REP: r.is_reperibilita,
+        SUB: r.is_sub ?? false,
+        MED: r.is_med ?? false,
+      })
+    })
+    Object.values(g).forEach(rs => rs.sort((a, b) => a.slot - b.slot))
+    setGriglia(g)
+    const sorted = [...giorniUsati].sort((a, b) => a - b)
+    setGiorni(sorted)
+    setTipoSchema(sorted.length < 7 ? 'custom' : 'weekly')
+    markUnsaved()
+    setMsg(`✓ Copiato dallo schema ${sourceNum} — ricordati di salvare`)
+    setTimeout(() => setMsg(''), 4000)
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -774,6 +840,37 @@ export function GestioneSchemaPage() {
           >
             {showPreview ? <><EyeOff size={12} /> Chiudi anteprima</> : <><Eye size={12} /> Prova Schema</>}
           </button>
+          {/* Copia da un altro schema (base di partenza) */}
+          <div className="relative">
+            <button
+              onClick={() => setCopyMenuOpen(o => !o)}
+              className="btn-secondary py-1 px-2 text-xs gap-1"
+              title="Copia i contenuti di un altro schema come base di partenza"
+              style={copyMenuOpen ? { background: '#e0e8d8', borderColor: '#9ab488' } : undefined}
+            >
+              <Copy size={12} /> Copia da…
+            </button>
+            {copyMenuOpen && (
+              <>
+                {/* Backdrop per chiudere cliccando fuori */}
+                <div className="fixed inset-0 z-10" onClick={() => setCopyMenuOpen(false)} />
+                <div className="absolute right-0 z-20 mt-1 rounded-lg border border-stone-200 bg-white shadow-lg py-1"
+                  style={{ minWidth: 150 }}>
+                  {[1, 2, 3].filter(n => n !== schemaNum).map(n => (
+                    <button key={n} onClick={() => copiaDaSchema(n)}
+                      className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-xs text-stone-700 hover:bg-stone-50 transition-colors">
+                      <Copy size={11} style={{ color: '#476540' }} />
+                      Copia da Schema {n}
+                      {n === schemaAttivo && (
+                        <span className="ml-auto text-[9px] font-bold px-1 rounded"
+                          style={{ background: '#e0e8d8', color: '#456b3a' }}>ATTIVO</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
           <button onClick={azzera} className="btn-secondary py-1 px-2 text-xs gap-1">
             <RotateCcw size={12} /> Azzera
           </button>
