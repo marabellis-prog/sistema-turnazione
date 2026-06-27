@@ -32,6 +32,7 @@ import {
   getDayOfWeek, ricalcolaGiorno, generaColonne, MESI_IT,
   type RicalcCell,
 } from '../../lib/algorithm'
+import { soglieForDay } from '../../lib/soglieImpostazioni'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { useConfirm } from '../../hooks/useConfirm'
 import { RiepilogoTurni } from '../../components/RiepilogoTurni'
@@ -1438,62 +1439,40 @@ export function ModificaTurniPage() {
     const out: Inconsistenza[] = []
     if (!config || colonne.length === 0 || medici.length === 0) return out
 
-    // Estraggo le 8 attese dal config (default 0 = no check)
-    const att = {
-      sub_m_fer: config.sub_mattina_feriale    ?? 0,
-      sub_m_fes: config.sub_mattina_festivo    ?? 0,
-      sub_p_fer: config.sub_pomeriggio_feriale ?? 0,
-      sub_p_fes: config.sub_pomeriggio_festivo ?? 0,
-      med_m_fer: config.med_mattina_feriale    ?? 0,
-      med_m_fes: config.med_mattina_festivo    ?? 0,
-      med_p_fer: config.med_pomeriggio_feriale ?? 0,
-      med_p_fes: config.med_pomeriggio_festivo ?? 0,
-    }
-
+    // Solo controllo per-GIORNO dei conteggi SUB / MED / Supporto.
+    // (Niente più avviso per-cella "manca SUB/MED": una cella che lavora
+    //  senza placement è un Supporto/jolly valido, conteggiato qui sotto.)
     for (const col of colonne) {
-      // Per-cella + count del giorno in un'unica passata
-      let countSubM = 0, countSubP = 0, countMedM = 0, countMedP = 0
+      let countSubM = 0, countSubP = 0, countMedM = 0, countMedP = 0, countSupM = 0, countSupP = 0
       for (const m of medici) {
         if (ferieStatus(m.id, col.data) === 'approved') continue
         const cur = getCella(m.id, col.data)
-
-        // Conteggi per slot del giorno
-        if (cur.slot_mattina    === 'SUB') countSubM++
-        if (cur.slot_pomeriggio === 'SUB') countSubP++
-        if (cur.slot_mattina    === 'MED') countMedM++
-        if (cur.slot_pomeriggio === 'MED') countMedP++
-
-        // Check per-cella: TC con placement mancante.
-        // EM ~ M (solo mattina), EP ~ P (solo pomeriggio), EL ~ L (entrambi)
-        let dett: string | null = null
-        if ((cur.tc === 'M' || cur.tc === 'EM') && !cur.slot_mattina) {
-          dett = 'manca SUB/MED mattina'
-        } else if ((cur.tc === 'P' || cur.tc === 'EP') && !cur.slot_pomeriggio) {
-          dett = 'manca SUB/MED pomeriggio'
-        } else if (cur.tc === 'L' || cur.tc === 'EL') {
-          if (!cur.slot_mattina && !cur.slot_pomeriggio) dett = 'manca SUB/MED entrambi'
-          else if (!cur.slot_mattina)                    dett = 'manca SUB/MED mattina'
-          else if (!cur.slot_pomeriggio)                 dett = 'manca SUB/MED pomeriggio'
-        }
-        if (dett) {
-          out.push({
-            kind: 'cella',
-            medicoId:   m.id,
-            medicoNome: m.nome,
-            data:       col.data,
-            tipoCella:  cur.tc as 'M' | 'P' | 'L' | 'EM' | 'EP' | 'EL',
-            dettaglio:  dett,
-          })
-        }
+        // Metà giornata "attiva" (la persona lavora quella metà).
+        const attivaM = cur.tc === 'M' || cur.tc === 'L' || cur.tc === 'EM' || cur.tc === 'EL'
+        const attivaP = cur.tc === 'P' || cur.tc === 'L' || cur.tc === 'EP' || cur.tc === 'EL'
+        // Mattina: SUB / MED / Supporto(=lavora ma senza placement)
+        if      (cur.slot_mattina === 'SUB') countSubM++
+        else if (cur.slot_mattina === 'MED') countMedM++
+        else if (attivaM)                    countSupM++
+        // Pomeriggio
+        if      (cur.slot_pomeriggio === 'SUB') countSubP++
+        else if (cur.slot_pomeriggio === 'MED') countMedP++
+        else if (attivaP)                       countSupP++
       }
 
-      // Check count per il giorno (solo se l'attesa e` > 0)
+      // Soglie valide PER QUESTO GIORNO (tengono conto della validità
+      // temporale: dopo un Aggiorna turnazione le soglie possono cambiare
+      // da una data in poi senza far scattare errori sulla vecchia parte).
+      const s = soglieForDay(config, col.data)
       const isFestivo = col.isDomenica || col.isFestivo
+      const pick = (fer: number, fes: number) => (isFestivo ? fes : fer)
       const checks: Array<{ atteso: number; act: number; label: string }> = [
-        { atteso: isFestivo ? att.sub_m_fes : att.sub_m_fer, act: countSubM, label: 'SUB mattina'    },
-        { atteso: isFestivo ? att.sub_p_fes : att.sub_p_fer, act: countSubP, label: 'SUB pomeriggio' },
-        { atteso: isFestivo ? att.med_m_fes : att.med_m_fer, act: countMedM, label: 'MED mattina'    },
-        { atteso: isFestivo ? att.med_p_fes : att.med_p_fer, act: countMedP, label: 'MED pomeriggio' },
+        { atteso: pick(s.sub_mattina_feriale,    s.sub_mattina_festivo),    act: countSubM, label: 'SUB mattina'        },
+        { atteso: pick(s.sub_pomeriggio_feriale, s.sub_pomeriggio_festivo), act: countSubP, label: 'SUB pomeriggio'     },
+        { atteso: pick(s.med_mattina_feriale,    s.med_mattina_festivo),    act: countMedM, label: 'MED mattina'        },
+        { atteso: pick(s.med_pomeriggio_feriale, s.med_pomeriggio_festivo), act: countMedP, label: 'MED pomeriggio'     },
+        { atteso: pick(s.sup_mattina_feriale,    s.sup_mattina_festivo),    act: countSupM, label: 'Supporto mattina'   },
+        { atteso: pick(s.sup_pomeriggio_feriale, s.sup_pomeriggio_festivo), act: countSupP, label: 'Supporto pomeriggio'},
       ]
       for (const c of checks) {
         if (c.atteso > 0 && c.act !== c.atteso) {

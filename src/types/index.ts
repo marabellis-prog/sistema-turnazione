@@ -34,6 +34,17 @@ export interface Configurazione {
   med_mattina_festivo:    number
   med_pomeriggio_feriale: number
   med_pomeriggio_festivo: number
+  /** Soglie "Supporto" (jolly) = celle che lavorano senza SUB/MED.
+   *  Stessa convenzione di sub/med (0 = nessun controllo). */
+  sup_mattina_feriale:    number
+  sup_mattina_festivo:    number
+  sup_pomeriggio_feriale: number
+  sup_pomeriggio_festivo: number
+  /** Data (ISO) da cui valgono le soglie correnti; null = sempre. */
+  impostazioni_valido_dal?: string | null
+  /** Epoche passate delle soglie (per il check su periodi con composizioni
+   *  diverse dopo un Aggiorna turnazione). */
+  impostazioni_storico?: SogliaEpoca[]
   /** Intervallo in giorni per l'auto-backup dei turni (default 7) */
   backup_intervallo_giorni: number
   /** Quanti backup conservare prima di iniziare a rotare (default 10) */
@@ -43,6 +54,20 @@ export interface Configurazione {
    *  null finche` non si fa una generazione col nuovo codice. */
   n_medici_base?: number | null
   updated_at: string
+}
+
+/** Le 12 soglie di coerenza (sub/med/sup × mattina/pomeriggio × feriale/festivo). */
+export type SoglieSlot = Pick<Configurazione,
+  | 'sub_mattina_feriale' | 'sub_mattina_festivo' | 'sub_pomeriggio_feriale' | 'sub_pomeriggio_festivo'
+  | 'med_mattina_feriale' | 'med_mattina_festivo' | 'med_pomeriggio_feriale' | 'med_pomeriggio_festivo'
+  | 'sup_mattina_feriale' | 'sup_mattina_festivo' | 'sup_pomeriggio_feriale' | 'sup_pomeriggio_festivo'
+>
+
+/** Epoca passata delle soglie: valide per i giorni in [valido_dal, valido_fino). */
+export interface SogliaEpoca {
+  valido_dal:  string | null   // ISO o null = dall'inizio
+  valido_fino: string          // ISO esclusivo
+  soglie:      SoglieSlot
 }
 
 // ─── Backup turni ───────────────────────────────────────────────────
