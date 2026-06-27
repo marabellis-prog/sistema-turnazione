@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useLocation, useNavigate, useHref } from 'react-router-dom'
-import { LogOut, Calendar, CalendarDays, Settings, Users, AlertTriangle, RefreshCw, Mail, Shield } from 'lucide-react'
+import { LogOut, Calendar, CalendarDays, Settings, Users, AlertTriangle, RefreshCw, Mail, Shield, X } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { usePendingActions } from '../contexts/PendingActionsContext'
 import { useVersionCheck } from '../hooks/useVersionCheck'
@@ -39,7 +39,7 @@ function tabForPath(pathname: string): string | null {
 export function NavBar({ user, onSignOut }: Props) {
   const loc      = useLocation()
   const navigate = useNavigate()
-  const { needsRegen, needsRefresh } = usePendingActions()
+  const { needsRegen, needsRefresh, clearRegen } = usePendingActions()
   const { updateAvailable, applyUpdate } = useVersionCheck()
   // useHref → applica il basename "/sistema-turnazione" automaticamente.
   const hrefCalendario     = useHref('/calendario')
@@ -349,6 +349,14 @@ export function NavBar({ user, onSignOut }: Props) {
           >
             <AlertTriangle size={13} />
             Rigenera calendario
+            {/* X per ignorare l'avviso senza rigenerare (es. avviso stale). */}
+            <span
+              role="button"
+              onClick={e => { e.preventDefault(); e.stopPropagation(); clearRegen() }}
+              title="Ignora questo avviso (non rigenerare)"
+              className="ml-0.5 inline-flex items-center rounded p-0.5 cursor-pointer hover:bg-white/25">
+              <X size={12} />
+            </span>
           </a>
         )}
 

@@ -46,6 +46,8 @@ interface PendingActionsCtx extends PendingActionsState {
   setNeedsRefresh: (reason: string) => void
   /** Azzera solo il flag di aggiornamento */
   clearRefresh: () => void
+  /** Azzera solo il flag di rigenerazione (es. avviso stale da ignorare) */
+  clearRegen: () => void
   /** Azzera tutto (chiamato dopo generazione riuscita) */
   clearAll: () => void
   /**
@@ -108,6 +110,14 @@ export function PendingActionsProvider({ children }: { children: ReactNode }) {
     update({ ...state, needsRefresh: null })
   }, [update, state])
 
+  const clearRegen = useCallback(() => {
+    setState(prev => {
+      const next = { ...prev, needsRegen: null }
+      saveToStorage(next)
+      return next
+    })
+  }, [])
+
   const clearAll = useCallback(() => {
     update({ needsRegen: null, needsRefresh: null })
   }, [update])
@@ -121,7 +131,7 @@ export function PendingActionsProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={{
       ...state,
-      setNeedsRegen, setNeedsRefresh, clearRefresh, clearAll,
+      setNeedsRegen, setNeedsRefresh, clearRefresh, clearRegen, clearAll,
       navGuard, registerNavGuard,
     }}>
       {children}
