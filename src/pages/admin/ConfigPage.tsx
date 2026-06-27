@@ -19,7 +19,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Settings, Save, AlertTriangle, CheckCircle2, CalendarPlus, Trash2, Loader2,
-  CalendarDays, Database, Archive, Sparkles,
+  CalendarDays, Database, Archive, Sparkles, CalendarClock, X,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfigurazioneRealtime } from '../../hooks/useConfigurazioneRealtime'
@@ -28,7 +28,7 @@ import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { getItalianHolidaysWithNames } from '../../lib/holidays'
 import { MESI_IT } from '../../lib/algorithm'
-import type { Configurazione, DbStats } from '../../types'
+import type { Configurazione, DbStats, SoglieSlot, SogliaEpoca } from '../../types'
 
 // Soglie free tier Supabase (al momento di scrittura).
 const FREE_DB_LIMIT_BYTES      = 500 * 1024 * 1024     // 500 MB
@@ -56,7 +56,8 @@ function fmtDataLunga(iso: string): string {
   return `${d} ${MESI_ABBR[m-1] ?? '?'} ${y}`
 }
 
-// Le 8 chiavi delle impostazioni in ordine di rendering
+// Le 12 chiavi delle impostazioni in ordine di rendering
+// (SUB, MED e SUPPORTO × mattina/pomeriggio × feriale/festivo)
 const KEYS = [
   'sub_mattina_feriale',
   'sub_mattina_festivo',
@@ -66,6 +67,10 @@ const KEYS = [
   'med_mattina_festivo',
   'med_pomeriggio_feriale',
   'med_pomeriggio_festivo',
+  'sup_mattina_feriale',
+  'sup_mattina_festivo',
+  'sup_pomeriggio_feriale',
+  'sup_pomeriggio_festivo',
 ] as const
 
 type SettingKey = typeof KEYS[number]
@@ -83,6 +88,13 @@ export function ConfigPage() {
   const [saving,  setSaving]  = useState(false)
   const [msg,     setMsg]     = useState<string | null>(null)
   const [err,     setErr]     = useState<string | null>(null)
+
+  // Modal "Salva impostazioni con validità dal…" (impostazioni datate):
+  // archivia le soglie correnti nello storico con valido_fino = data scelta
+  // e imposta le nuove dal form a partire da quella data.
+  const [validitaOpen,   setValiditaOpen]   = useState(false)
+  const [validitaData,   setValiditaData]   = useState('')
+  const [savingValidita, setSavingValidita] = useState(false)
 
   // Form festività custom
   const [festData,    setFestData]    = useState('')
@@ -213,6 +225,62 @@ export function ConfigPage() {
       setErr((e as Error).message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  // Apre il modal "Salva con validità dal…" con default = oggi.
+  function openValiditaModal() {
+    const d = new Date()
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    setValiditaData(iso)
+    setErr(null)
+    setValiditaOpen(true)
+  }
+
+  // ── Salva con validità temporale ──────────────────────────────────
+  // Archivia le soglie ATTUALI (colonne DB) nello storico marcandole valide
+  // fino a `validitaData` (esclusivo), poi scrive nelle colonne le NUOVE
+  // soglie del form e imposta impostazioni_valido_dal = validitaData.
+  // Risultato: prima di X valgono le vecchie soglie, da X le nuove — cosi`
+  // un cambio composizione dopo un "Aggiorna turnazione" non genera errori
+  // falsi sulla vecchia turnazione.
+  async function handleSaveConValidita() {
+    if (!config) return
+    if (!validitaData) { setErr('Seleziona la data di inizio validità.'); return }
+    setSavingValidita(true); setErr(null); setMsg(null)
+    try {
+      // Soglie ATTUALI dal DB = epoca che stiamo chiudendo
+      const soglieAttuali = {} as SoglieSlot
+      for (const k of KEYS) soglieAttuali[k] = config[k] ?? 0
+      // Push dell'epoca corrente nello storico (valido_fino esclusivo)
+      const storicoPrec = Array.isArray(config.impostazioni_storico)
+        ? config.impostazioni_storico : []
+      const epoca: SogliaEpoca = {
+        valido_dal:  config.impostazioni_valido_dal ?? null,
+        valido_fino: validitaData,
+        soglie:      soglieAttuali,
+      }
+      // Payload: nuove soglie del form + valido_dal + storico aggiornato
+      const payload: Record<string, unknown> = {}
+      for (const k of KEYS) {
+        const n = parseInt(draft[k] || '0', 10)
+        payload[k] = Number.isFinite(n) && n >= 0 ? n : 0
+      }
+      payload.impostazioni_valido_dal = validitaData
+      payload.impostazioni_storico    = [...storicoPrec, epoca]
+      const { error } = await supabase.from('configurazione')
+        .update(payload).eq('id', config.id)
+      if (error) throw error
+      setMsg('Impostazioni salvate con validità dal ' + fmtDataLunga(validitaData) +
+        '. Prima di quella data restano valide le soglie precedenti.')
+      setDirty(false)
+      setValiditaOpen(false)
+      qc.invalidateQueries({ queryKey: ['configurazione'] })
+      setTimeout(() => setMsg(null), 6000)
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setSavingValidita(false)
     }
   }
 
@@ -578,7 +646,7 @@ export function ConfigPage() {
               <td className="text-center"><NumInput k="med_mattina_feriale" /></td>
               <td className="text-center"><NumInput k="med_mattina_festivo" /></td>
             </tr>
-            <tr>
+            <tr className="border-b border-stone-100">
               <td className="py-2 px-2">
                 <div className="flex items-center gap-2">
                   <span className="inline-block w-3 h-3 rounded-full" style={{ background: '#bae6fd', border: '1px solid #0284c7' }} />
@@ -588,12 +656,45 @@ export function ConfigPage() {
               <td className="text-center"><NumInput k="med_pomeriggio_feriale" /></td>
               <td className="text-center"><NumInput k="med_pomeriggio_festivo" /></td>
             </tr>
+            {/* SUPPORTO (jolly grigio): celle che lavorano senza flag SUB/MED */}
+            <tr className="border-b border-stone-100">
+              <td className="py-2 px-2">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 rounded-full" style={{ background: '#d4d4d4', border: '1px solid #6b7280' }} />
+                  <span className="font-medium">Supporto mattina</span>
+                </div>
+              </td>
+              <td className="text-center"><NumInput k="sup_mattina_feriale" /></td>
+              <td className="text-center"><NumInput k="sup_mattina_festivo" /></td>
+            </tr>
+            <tr>
+              <td className="py-2 px-2">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 rounded-full" style={{ background: '#d4d4d4', border: '1px solid #6b7280' }} />
+                  <span className="font-medium">Supporto pomeriggio</span>
+                </div>
+              </td>
+              <td className="text-center"><NumInput k="sup_pomeriggio_feriale" /></td>
+              <td className="text-center"><NumInput k="sup_pomeriggio_festivo" /></td>
+            </tr>
           </tbody>
         </table>
       </div>
 
-      {/* Pulsante salva */}
-      <div className="flex justify-end gap-2">
+      {/* Pulsanti salva */}
+      <div className="flex justify-end gap-2 flex-wrap">
+        {/* Salva con validità dal… — sempre visibile. Applica le soglie del
+            form solo da una certa data, archiviando le precedenti nello
+            storico (per non far scattare errori sulla vecchia turnazione). */}
+        <button
+          onClick={openValiditaModal}
+          disabled={!config || saving || savingValidita}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white shadow disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          style={{ background: !config || saving || savingValidita ? '#9ca3af' : '#7a5a2f' }}
+          title="Applica queste soglie solo a partire da una certa data, mantenendo le precedenti per i giorni anteriori">
+          <CalendarClock size={14} />
+          Salva con validità dal…
+        </button>
         <button
           onClick={handleSave}
           disabled={!dirty || saving || !config}
@@ -605,12 +706,24 @@ export function ConfigPage() {
       </div>
 
       {/* Esempio interpretativo */}
-      <div className="rounded-lg p-3 text-xs text-stone-600"
+      <div className="rounded-lg p-3 text-xs text-stone-600 space-y-1.5"
         style={{ background: '#f4f1ea', border: '1px solid #d5ccb8' }}>
-        <strong className="text-stone-700">Come funziona il count:</strong> ogni cella di calendario contribuisce in base
-        al suo TC e ai placement SUB/MED. Esempio: <code>L</code> con <code>slot_mattina=SUB</code> e
-        <code> slot_pomeriggio=MED</code> conta 1 per "SUB mattina" e 1 per "MED pomeriggio". Una <code>M</code>
-        con <code>slot_mattina=SUB</code> conta 1 per "SUB mattina" (e niente pomeriggio).
+        <p>
+          <strong className="text-stone-700">Come funziona il count:</strong> ogni cella di calendario contribuisce in base
+          al suo TC e ai placement SUB/MED. Esempio: <code>L</code> con <code>slot_mattina=SUB</code> e
+          <code> slot_pomeriggio=MED</code> conta 1 per "SUB mattina" e 1 per "MED pomeriggio". Una <code>M</code>
+          con <code>slot_mattina=SUB</code> conta 1 per "SUB mattina" (e niente pomeriggio).
+        </p>
+        <p>
+          <strong className="text-stone-700">Supporto (jolly, cerchio grigio):</strong> una cella che <em>lavora</em>
+          (M/P/L) ma <em>non</em> e` assegnata né a SUB né a MED conta come Supporto. È il caso del pomeridiano
+          "aiuto" che fa da spalla a entrambi: nel giorno ti aspetti es. 2 SUB + 2 MED + 1 Supporto.
+        </p>
+        <p>
+          <strong className="text-stone-700">Salva con validità dal…:</strong> applica queste soglie solo ai giorni
+          <strong> ≥ </strong> alla data scelta; per i giorni precedenti restano valide le soglie salvate prima.
+          Utile dopo un <strong>Aggiorna turnazione</strong>, quando la composizione cambia da una certa data in poi.
+        </p>
       </div>
 
       {/* ── SEZIONE FESTIVITÀ LOCALI (custom) ───────────────────────── */}
@@ -736,6 +849,60 @@ export function ConfigPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Salva impostazioni con validità dal… ─────────────── */}
+      {validitaOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.45)' }}
+          onClick={() => { if (!savingValidita) setValiditaOpen(false) }}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-5"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-bold text-stone-800 flex items-center gap-2">
+                <CalendarClock size={18} style={{ color: '#7a5a2f' }} />
+                Salva con validità dal…
+              </h3>
+              <button onClick={() => setValiditaOpen(false)}
+                disabled={savingValidita}
+                className="text-stone-400 hover:text-stone-700 transition-colors disabled:opacity-40">
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-sm text-stone-600 mb-3">
+              Le soglie impostate sopra varranno <strong>a partire dal giorno scelto</strong>.
+              Per i giorni precedenti restano valide le soglie attuali, che vengono archiviate.
+              Usalo quando hai cambiato la composizione con un <strong>Aggiorna turnazione</strong>.
+            </p>
+            <label className="block text-xs text-stone-600 mb-1 font-medium">
+              Valide a partire dal
+            </label>
+            <input type="date"
+              value={validitaData}
+              onChange={e => setValiditaData(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-stone-300 text-sm mb-4" />
+            {err && (
+              <div className="mb-3 px-2 py-1.5 rounded text-xs"
+                style={{ background: '#fde0e0', color: '#7a2020', border: '1px solid #f0c0c0' }}>
+                {err}
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setValiditaOpen(false)}
+                disabled={savingValidita}
+                className="px-3 py-1.5 rounded-lg text-sm font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 disabled:opacity-50 transition-colors">
+                Annulla
+              </button>
+              <button onClick={handleSaveConValidita}
+                disabled={savingValidita || !validitaData}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold text-white shadow disabled:opacity-50 transition-colors"
+                style={{ background: '#7a5a2f' }}>
+                {savingValidita ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                {savingValidita ? 'Salvataggio…' : 'Conferma'}
+              </button>
+            </div>
           </div>
         </div>
       )}
