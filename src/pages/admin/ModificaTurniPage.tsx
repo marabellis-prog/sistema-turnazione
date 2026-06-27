@@ -623,7 +623,7 @@ export function ModificaTurniPage() {
         for (const { di, df } of mesi) {
           const { data, error } = await supabase
             .from('turni')
-            .select('id, medico_id, data, turno_clinico, turno_ricerca, modificato_manualmente, is_ferie, is_sub, is_med, slot_mattina, slot_pomeriggio, note, created_at, updated_at')
+            .select('id, medico_id, data, turno_clinico, turno_ricerca, modificato_manualmente, is_ferie, is_sub, is_med, slot_mattina, slot_pomeriggio, turno_clinico_base, turno_ricerca_base, turno_clinico_originario, note, created_at, updated_at')
             .gte('data', di).lte('data', df)
           if (error) throw error
           all = [...all, ...((data ?? []) as Turno[])]
@@ -632,7 +632,11 @@ export function ModificaTurniPage() {
       },
     })
 
-  // ── Calcola turni teorici (originali da schema) ────────────────────
+  // ── Turni teorici "di base" — FALLBACK ricalcolato da schema ───────
+  // Usato solo per le celle che NON hanno il base memorizzato nel DB
+  // (turni legacy generati prima della feature). Quando il base e`
+  // presente sulla riga turni, si usa quello (vedi getOriginale): cosi`
+  // l'originario resta corretto anche con mesi su schemi diversi.
   const teoriciByKey = useMemo(() => {
     const map = new Map<string, { tc: TurnoClinico; tr: TurnoRicerca }>()
     if (!config || medici.length === 0 || schemi.length === 0) return map
@@ -690,8 +694,18 @@ export function ModificaTurniPage() {
   }, [modifiche, turniByKey])
 
   const getOriginale = useCallback((medicoId: string, data: string): { tc: TurnoClinico; tr: TurnoRicerca } => {
+    // Preferisci il "base" memorizzato sulla riga turni (robusto con schemi
+    // misti dopo un Aggiorna turnazione). Fallback al ricalcolo per i turni
+    // legacy privi di base.
+    const t = turniByKey.get(`${medicoId}|${data}`)
+    if (t && (t.turno_clinico_base != null || t.turno_ricerca_base != null)) {
+      return {
+        tc: (t.turno_clinico_base ?? '') as TurnoClinico,
+        tr: (t.turno_ricerca_base ?? '') as TurnoRicerca,
+      }
+    }
     return teoriciByKey.get(`${medicoId}|${data}`) ?? { tc: '', tr: '' }
-  }, [teoriciByKey])
+  }, [turniByKey, teoriciByKey])
 
   // "Ferie" come nel calendario pubblico:
   //   - is_ferie del singolo turno (legacy/manual) → conta come approvata
