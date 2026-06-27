@@ -38,6 +38,10 @@ export interface Configurazione {
   backup_intervallo_giorni: number
   /** Quanti backup conservare prima di iniziare a rotare (default 10) */
   backup_da_tenere:         number
+  /** Numero di medici attivi all'ultima generazione/approvazione turnazione.
+   *  Usato dal controllo di consistenza prima di un "Aggiorna turnazione".
+   *  null finche` non si fa una generazione col nuovo codice. */
+  n_medici_base?: number | null
   updated_at: string
 }
 
@@ -106,8 +110,38 @@ export interface Turno {
   //   is_med = slot_mattina === 'MED' || slot_pomeriggio === 'MED'
   is_sub: boolean
   is_med: boolean
+  /** Turno teorico (rotazione) della cella, settato a generazione/aggiornamento.
+   *  "modificato_manualmente" ⇔ turno_clinico/ricerca != base. null = legacy
+   *  (turni generati prima della feature → fallback ricalcolo). */
+  turno_clinico_base?: TurnoClinico | null
+  turno_ricerca_base?: TurnoRicerca | null
+  /** Per le celle modificate PORTATE oltre un "Aggiorna turnazione": il base
+   *  PRIMA dell'aggiornamento (il vecchio calendario sostituito). null
+   *  altrimenti → marcatore del bordo/righe ROSSE in Modifica Turni. */
+  turno_clinico_originario?: TurnoClinico | null
   created_at: string
   updated_at: string
+}
+
+// ─── Bozza turnazione (anteprima in attesa di approvazione) ─────────
+
+export interface TurnazioneAnteprima {
+  id:          string
+  created_at:  string
+  descrizione: string | null
+  /** Snapshot del calendario completo proposto. */
+  snapshot:    { turni: Turno[] }
+  /** Metadati per la pubblicazione e l'anteprima. */
+  meta: {
+    cutover:        string   // ISO data del primo lunedì (stacco)
+    schema_nuovo:   number
+    anno_inizio:    number
+    mese_inizio:    number   // mese di inizio del NUOVO schema (richiesto dall'utente)
+    anno_fine:      number
+    mese_fine:      number
+    n_cambi:        number
+    config_payload: Partial<Configurazione>
+  }
 }
 
 // ─── Festività custom (oltre a quelle nazionali italiane) ───────────

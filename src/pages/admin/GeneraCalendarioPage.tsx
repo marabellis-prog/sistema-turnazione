@@ -279,6 +279,9 @@ export function GeneraCalendarioPage() {
         anno_inizio: annoInizio, mese_inizio: meseInizio,
         anno_fine:   annoFine,   mese_fine:   meseFine,
         schema_attivo: schemaNum,
+        // n. medici attivi della generazione (controllo consistenza
+        // per un futuro "Aggiorna turnazione").
+        n_medici_base: medici.length,
         updated_at: new Date().toISOString(),
       }
       if (config?.id) {
@@ -311,7 +314,15 @@ export function GeneraCalendarioPage() {
         backup_da_tenere:         config?.backup_da_tenere         ?? 10,
         updated_at: new Date().toISOString(),
       }
-      const turniGenerati = calcolaCalendarioCompleto(cfgObj, schemi, medici)
+      const turniGen = calcolaCalendarioCompleto(cfgObj, schemi, medici)
+      // Popola il "turno base" = valore generato (originario azzerato): una
+      // generazione completa riparte pulita, niente celle "rosse".
+      const turniGenerati = turniGen.map(t => ({
+        ...t,
+        turno_clinico_base:       t.turno_clinico,
+        turno_ricerca_base:       t.turno_ricerca,
+        turno_clinico_originario: null,
+      }))
 
       // Cancella turni esistenti per il periodo
       setMessaggio('Cancellazione turni precedenti...')

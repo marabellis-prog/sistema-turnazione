@@ -161,7 +161,13 @@ export function calcolaTurnoTeorico(
 export function calcolaCalendarioCompleto(
   config: Configurazione,
   schemi: SchemaModello[],
-  medici: Medico[]
+  medici: Medico[],
+  /** Override dell'anchor di rotazione (primo lunedì di riferimento).
+   *  Se passato, la fase di rotazione viene calcolata rispetto a QUESTO
+   *  anchor invece che al primo lunedì del periodo → permette di
+   *  "continuare" una rotazione esistente con un nuovo schema/periodo
+   *  (feature Aggiorna turnazione). Assente = comportamento standard. */
+  anchorOverride?: Date,
 ): TurnoGenerato[] {
   const mediciAttivi = [...medici]
     .filter(m => m.attivo)
@@ -180,7 +186,8 @@ export function calcolaCalendarioCompleto(
   // ── Punto di riferimento rotazione: primo lunedì del periodo ──────
   // I giorni prima (es. Ven-Dom se il mese inizia venerdì) ricevono
   // sett=-1 e sono calcolati come fine del ciclo precedente.
-  const dataRifRotazione = primoLunediDelPeriodo(dataInizio)
+  // Con anchorOverride si usa un anchor esterno (continuità di fase).
+  const dataRifRotazione = anchorOverride ?? primoLunediDelPeriodo(dataInizio)
 
   const risultati: TurnoGenerato[] = []
 
