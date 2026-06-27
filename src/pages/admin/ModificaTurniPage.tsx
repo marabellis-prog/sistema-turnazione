@@ -227,6 +227,7 @@ interface EditableCellProps {
   tc:               TurnoClinico  // sempre passati per la coerenza del modello
   tr:               TurnoRicerca
   isModified:       boolean       // valore corrente diverso dall'originale (per il tipo)
+  isCambioRosso?:   boolean       // cambio turno portato oltre un Aggiorna turnazione → bordo rosso
   isFerieApproved:  boolean       // ferie approvate → bg verde solido
   isFeriePending:   boolean       // ferie in attesa → bg verde a righe diagonali
   isRedDay:         boolean       // domenica/festivo
@@ -276,7 +277,7 @@ interface EditableCellProps {
 }
 
 function EditableCell({
-  tipo, tc, tr, isModified, isFerieApproved, isFeriePending, isRedDay,
+  tipo, tc, tr, isModified, isCambioRosso = false, isFerieApproved, isFeriePending, isRedDay,
   ferieGiornoColore = null,
   slot_mattina = null, slot_pomeriggio = null, readOnly = false,
   onChangeClinico, onChangeRicerca, onPasteRange, onDropFromLegend,
@@ -372,10 +373,11 @@ function EditableCell({
   // attiva → lento su tabelle grosse. `outline` invece e` "free" (zero
   // costo di compositing). Combinato con outlineOffset: -2px si comporta
   // visivamente come un inset box-shadow ma senza il costo.
-  // Priorita`: drag-over > selected > modified
+  // Priorita`: drag-over > selected > cambio-rosso > modified
   const outlineColor = dragOver
     ? '#f59e0b'                            // arancione — drop intent
     : (isSelected && !editing) ? '#6b7280' // grigio neutro — selected
+    : isCambioRosso             ? '#dc2626' // rosso — cambio oltre un Aggiorna turnazione
     : isModified                ? '#38bdf8' // azzurro — modificato vs originale
     : undefined
 
@@ -706,6 +708,29 @@ export function ModificaTurniPage() {
     }
     return teoriciByKey.get(`${medicoId}|${data}`) ?? { tc: '', tr: '' }
   }, [turniByKey, teoriciByKey])
+
+  // ── Cambi turno portati oltre un Aggiorna turnazione (div ROSSO) ───
+  // Celle con turno_clinico_originario valorizzato: mostriamo nome, data,
+  // Originario (vecchia turnazione) → Cambiato (attuale applicato) →
+  // Attuale (nuova rotazione = base). Servono a capire quali cambi sono
+  // diventati inutili con la nuova turnazione.
+  const cambiTurnazione = useMemo(() => {
+    const nome = (id: string) => medici.find(m => m.id === id)?.nome ?? '?'
+    return turni
+      .filter(t => t.turno_clinico_originario != null)
+      .map(t => ({
+        medicoId:   t.medico_id,
+        medicoNome: nome(t.medico_id),
+        data:       t.data,
+        originario: (t.turno_clinico_originario ?? '') as TurnoClinico,
+        cambiato:   t.turno_clinico,
+        attuale:    (t.turno_clinico_base ?? '') as TurnoClinico,
+      }))
+      .sort((a, b) =>
+        a.medicoNome.localeCompare(b.medicoNome, 'it', { sensitivity: 'base' }) ||
+        a.data.localeCompare(b.data),
+      )
+  }, [turni, medici])
 
   // "Ferie" come nel calendario pubblico:
   //   - is_ferie del singolo turno (legacy/manual) → conta come approvata
@@ -1570,6 +1595,9 @@ export function ModificaTurniPage() {
     const cur  = getCella(medicoId, col.data)
     const orig = getOriginale(medicoId, col.data)
     const isMod = tipo === 'clinica' && cur.tc !== orig.tc
+    // Cambio turno portato oltre un Aggiorna turnazione → bordo rosso.
+    const isCambioRosso = tipo === 'clinica' &&
+      turniByKey.get(`${medicoId}|${col.data}`)?.turno_clinico_originario != null
     const ferie = ferieStatus(medicoId, col.data)
     const ferieColore = colorePerGiorno.get(col.data)?.color ?? null
     // Solo nella tabella clinica abbiamo selezione + editing da tastiera.
@@ -1586,6 +1614,7 @@ export function ModificaTurniPage() {
         tipo={tipo}
         tc={cur.tc} tr={cur.tr}
         isModified={isMod}
+        isCambioRosso={isCambioRosso}
         isFerieApproved={ferie === 'approved'}
         isFeriePending={ferie === 'pending'}
         isRedDay={col.isDomenica || col.isFestivo}
@@ -1969,6 +1998,44 @@ export function ModificaTurniPage() {
         <div className="px-3 py-2 rounded-lg text-xs"
           style={{ background: '#fde0e0', color: '#7a2020', border: '1px solid #f0c0c0' }}>
           Errore: {err}
+        </div>
+      )}
+
+      {/* Div ROSSO — cambi turno mantenuti dopo un Aggiorna turnazione.
+          Sopra il banner giallo delle inconsistenze. Ogni chip → cella. */}
+      {cambiTurnazione.length > 0 && (
+        <div className="rounded-lg border-2 p-3"
+          style={{ background: '#fee2e2', borderColor: '#dc2626' }}>
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <AlertTriangle size={16} style={{ color: '#dc2626' }} />
+            <span className="text-sm font-bold" style={{ color: '#991b1b' }}>
+              {cambiTurnazione.length} cambi turno mantenuti dalla turnazione precedente
+            </span>
+            <span className="text-[10px] text-stone-600 ml-1">
+              · Originario → Cambiato → Attuale (nuova rotazione) · clicca per andare alla cella
+            </span>
+          </div>
+          <div className="overflow-auto" style={{ maxHeight: 150 }}>
+            <div className="flex flex-wrap gap-1.5">
+              {cambiTurnazione.map((c, i) => (
+                <button key={`${c.medicoId}-${c.data}-${i}`}
+                  onClick={() => scrollToCella(c.medicoId, c.data)}
+                  className="text-[11px] px-2 py-1 rounded bg-white hover:bg-red-50 transition-colors border-2 shadow-sm"
+                  style={{ borderColor: '#dc2626', color: '#991b1b' }}
+                  title={`Vai alla cella di ${c.medicoNome} del ${fmtDataItaliana(c.data)}`}>
+                  <span className="font-semibold">{c.medicoNome}</span>
+                  <span className="text-stone-500"> · </span>
+                  <span className="font-mono">{fmtDataItaliana(c.data)}</span>
+                  <span className="text-stone-500"> · </span>
+                  <span className="font-mono">{c.originario || '—'}</span>
+                  <span className="text-stone-400"> → </span>
+                  <span className="font-mono font-bold">{c.cambiato || '—'}</span>
+                  <span className="text-stone-400"> → </span>
+                  <span className="font-mono">{c.attuale || '—'}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
