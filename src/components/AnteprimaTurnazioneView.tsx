@@ -13,7 +13,7 @@
  * La tabella di ricerca NON viene mostrata.
  */
 
-import { useMemo, useState, Fragment } from 'react'
+import { useMemo, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { isFestivo } from '../lib/holidays'
@@ -35,8 +35,7 @@ const DAY_LETTERS = ['D', 'L', 'M', 'M', 'G', 'V', 'S']
 const MONTH_END_BORDER = '2px solid #1a1a1a'
 
 const FERIE_BG      = '#bbf7d0'   // verde ferie approvate
-const SCAMBIO_BG    = '#fed7aa'   // arancione: turno scambiato vs basale
-const DIVERSO_BLU   = 'inset 0 0 0 2px #2563eb'  // bordo blu: diverso vs vecchia
+const DIVERSO_BLU   = 'inset 0 0 0 2px #2563eb'  // bordo blu: giorno con cambio
 const OLD_ROW_BG    = '#ededeb'   // grigio riga vecchia
 const CUTOVER_BG      = '#fce7f3' // rosa colonna di stacco (celle piane)
 const CUTOVER_HEAD_BG = '#fbcfe8' // rosa header colonna di stacco
@@ -143,8 +142,6 @@ interface Props {
 }
 
 export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSet, editable, onDropCell, fullHeight }: Props) {
-  const [info, setInfo] = useState<{ x: number; y: number; text: string } | null>(null)
-
   const byKey = useMemo(() => {
     const m = new Map<string, Turno>()
     for (const t of turni) m.set(`${t.medico_id}|${t.data}`, t)
@@ -230,11 +227,6 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
     return map
   }, [colonne, mediciOrd, byKey, ferieApproved, config])
 
-  const cutoverLabel = (() => {
-    const [y, m, d] = meta.cutover.split('-').map(Number)
-    return `${d} ${MESI_IT[m]} ${y}`
-  })()
-
   const dropHandlers = (medicoId: string, data: string) => editable && onDropCell ? {
     onDragOver: (e: React.DragEvent) => {
       const ts = Array.from(e.dataTransfer.types)
@@ -266,22 +258,12 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
 
   return (
     <div className={fullHeight ? 'flex flex-col h-full min-h-0 gap-3' : 'space-y-3'}>
-      {/* Metadati */}
-      <div className="rounded-lg border p-3 text-xs flex flex-wrap gap-x-5 gap-y-1 shrink-0"
-        style={{ background: '#f0f7fb', borderColor: '#bfdde8', color: '#1f4a70' }}>
-        <span><strong>Schema nuovo:</strong> {meta.schema_nuovo}</span>
-        <span><strong>Stacco:</strong> {cutoverLabel} (primo lunedì)</span>
-        <span><strong>Fino a:</strong> {MESI_IT[meta.mese_fine]} {meta.anno_fine}</span>
-        <span><strong>Cambi:</strong> {meta.n_cambi}</span>
-      </div>
-
       {/* Legenda trascinabile (solo admin/editabile) */}
       {editable && <div className="shrink-0"><LegendaCalendario variant="admin" /></div>}
 
       {/* Legenda colori */}
       <div className="text-[11px] text-stone-500 flex flex-wrap gap-x-4 gap-y-1 shrink-0">
-        <span><span style={{ background: SCAMBIO_BG, padding: '0 6px', borderRadius: 3 }}>arancione</span> = scambiato (clicca per l'originario)</span>
-        <span><span style={{ boxShadow: DIVERSO_BLU, padding: '0 6px', borderRadius: 3 }}>blu</span> = diverso dalla vecchia</span>
+        <span><span style={{ boxShadow: DIVERSO_BLU, padding: '0 6px', borderRadius: 3 }}>blu</span> = giorno con cambio (riga "turno originario")</span>
         <span><span style={{ background: FERIE_BG, padding: '0 6px', borderRadius: 3 }}>verde</span> = ferie</span>
         <span><span style={{ background: CUTOVER_HEAD_BG, padding: '0 6px', borderRadius: 3 }}>rosa</span> = inizio nuova turnazione</span>
       </div>
@@ -337,25 +319,24 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
                   </td>
                   {colonne.map(c => {
                     const t = byKey.get(`${m.id}|${c.data}`)
-                    const tc = t?.turno_clinico ?? ''
+                    // Turni NUOVI puliti: la rotazione nuova senza i cambi
+                    // (turno_clinico_base). Fallback a turno_clinico se assente.
+                    const tcShow = (t?.turno_clinico_base ?? t?.turno_clinico ?? '') as string
                     const red = c.isDomenica || c.isFestivo
                     const monthEnd = lastDaysOfMonth.has(c.data)
                     const isCut = c.data === meta.cutover
                     const ferie = inFerie(ferieApproved, m.id, c.data)
-                    const scambio = !!t && (t.turno_clinico ?? '') !== (t.turno_clinico_base ?? '')
-                    const base = t?.turno_clinico_base ?? ''
-                    const bg = ferie ? FERIE_BG : scambio ? SCAMBIO_BG : isCut ? CUTOVER_BG : red ? '#fef3c7' : '#fefefe'
+                    const bg = ferie ? FERIE_BG : isCut ? CUTOVER_BG : red ? '#fef3c7' : '#fefefe'
                     return (
                       <td key={c.data}
                         {...dropHandlers(m.id, c.data)}
-                        onClick={scambio ? (e: React.MouseEvent) => setInfo({ x: e.clientX, y: e.clientY, text: `Originario: ${base || '(vuoto)'}` }) : undefined}
                         style={{ width: 32, minWidth: 32, height: 26, background: bg,
                           borderTop: '1px solid #c0b8a8', borderBottom: '1px dashed #cfc8ba',
                           borderRight: monthEnd ? MONTH_END_BORDER : '1px solid #c0b8a8',
                           borderLeft: isCut ? CUTOVER_BORDER : '1px solid #c0b8a8',
                           textAlign: 'center', verticalAlign: 'middle', padding: 0,
-                          cursor: scambio ? 'help' : editable ? 'copy' : undefined }}>
-                        <LabelClinico tc={tc} sm={t?.slot_mattina} sp={t?.slot_pomeriggio} />
+                          cursor: editable ? 'copy' : undefined }}>
+                        <LabelClinico tc={tcShow} sm={t?.slot_mattina} sp={t?.slot_pomeriggio} />
                       </td>
                     )
                   })}
@@ -371,16 +352,17 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
                   {colonne.map(c => {
                     const t = byKey.get(`${m.id}|${c.data}`)
                     const vecchio = t?.turno_clinico_vecchio ?? ''
-                    const nuovo = t?.turno_clinico ?? ''
                     const monthEnd = lastDaysOfMonth.has(c.data)
                     const isCut = c.data === meta.cutover
-                    const diverso = (vecchio ?? '') !== (nuovo ?? '')
+                    // Cambio = la cella ha uno scambio rispetto alla rotazione
+                    // pulita (turno_clinico != turno_clinico_base): bordo blu.
+                    const cambio = !!t && (t.turno_clinico ?? '') !== (t.turno_clinico_base ?? '')
                     return (
                       <td key={c.data} style={{ width: 32, minWidth: 32, height: 20, background: OLD_ROW_BG,
                         borderBottom: '1px solid #cfc8ba',
                         borderRight: monthEnd ? MONTH_END_BORDER : '1px solid #d8d2c4',
                         borderLeft: isCut ? CUTOVER_BORDER : '1px solid #d8d2c4',
-                        boxShadow: diverso ? DIVERSO_BLU : undefined,
+                        boxShadow: cambio ? DIVERSO_BLU : undefined,
                         textAlign: 'center', verticalAlign: 'middle', padding: 0 }}>
                         <LabelVecchio tc={vecchio} />
                       </td>
@@ -434,17 +416,6 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
         </table>
       </div>
 
-      {/* Popover "turno originario" su click di una cella arancione */}
-      {info && (
-        <>
-          <div onClick={() => setInfo(null)} style={{ position: 'fixed', inset: 0, zIndex: 60 }} />
-          <div style={{ position: 'fixed', left: Math.min(info.x + 10, window.innerWidth - 160), top: info.y + 10, zIndex: 61,
-            background: '#1f2937', color: '#fff', fontSize: 12, fontWeight: 600, padding: '5px 10px',
-            borderRadius: 6, boxShadow: '0 2px 10px rgba(0,0,0,0.35)', pointerEvents: 'none' }}>
-            {info.text}
-          </div>
-        </>
-      )}
     </div>
   )
 }
