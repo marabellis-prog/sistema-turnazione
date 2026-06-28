@@ -67,8 +67,29 @@ function RepartiSection() {
     const nome = nuovoNome.trim()
     if (!nome) return
     setErr('')
-    const { error } = await supabase.from('reparti').insert({ nome })
+    const { data, error } = await supabase.from('reparti').insert({ nome }).select('id').single()
     if (error) { setErr(error.message); return }
+    const newId = (data as { id: string }).id
+    // Bootstrap: copia tipi di turno + proprieta' dal reparto 11N (template),
+    // cosi' un reparto nuovo nasce gia' con i turni standard (M/P/L/REP, sub/med/sup).
+    try {
+      const [{ data: tipi }, { data: props }] = await Promise.all([
+        supabase.from('tipi_turno').select('*').eq('reparto_id', REPARTO_11N),
+        supabase.from('proprieta_turno').select('*').eq('reparto_id', REPARTO_11N),
+      ])
+      if (tipi?.length) {
+        await supabase.from('tipi_turno').insert(tipi.map(t => ({
+          reparto_id: newId, sigla: t.sigla, nome: t.nome, ora_inizio: t.ora_inizio, ora_fine: t.ora_fine,
+          peso: t.peso, copre_mattina: t.copre_mattina, copre_pomeriggio: t.copre_pomeriggio,
+          is_reperibilita: t.is_reperibilita, colore_bg: t.colore_bg, colore_fg: t.colore_fg, ordine: t.ordine,
+        })))
+      }
+      if (props?.length) {
+        await supabase.from('proprieta_turno').insert(props.map(p => ({
+          reparto_id: newId, sigla: p.sigla, nome: p.nome, colore_bg: p.colore_bg, ordine: p.ordine,
+        })))
+      }
+    } catch { /* se il bootstrap fallisce, i tipi si aggiungono a mano in Tipi di turno */ }
     setNuovoNome(''); reload()
   }
   async function salvaNome(id: string) {
