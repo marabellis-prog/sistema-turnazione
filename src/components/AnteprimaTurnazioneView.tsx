@@ -128,9 +128,12 @@ interface Props {
   festivitaCustomSet?: Set<string>
   editable?:           boolean
   onDropCell?:         (medicoId: string, data: string, payload: string) => void
+  /** true = calendario lineare a tutta altezza (come "Calendario"), scorre
+   *  dx/sx senza box con scrollbar. false = box con maxHeight (admin). */
+  fullHeight?:         boolean
 }
 
-export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSet, editable, onDropCell }: Props) {
+export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSet, editable, onDropCell, fullHeight }: Props) {
   const byKey = useMemo(() => {
     const m = new Map<string, Turno>()
     for (const t of turni) m.set(`${t.medico_id}|${t.data}`, t)
@@ -222,7 +225,7 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
   )
 
   return (
-    <div className="space-y-3">
+    <div className={fullHeight ? 'flex flex-col h-full min-h-0 gap-3' : 'space-y-3'}>
       {/* Metadati */}
       <div className="rounded-lg border p-3 text-xs flex flex-wrap gap-x-5 gap-y-1"
         style={{ background: '#f0f7fb', borderColor: '#bfdde8', color: '#1f4a70' }}>
@@ -243,7 +246,8 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
       </div>
 
       {/* Tabella clinica a doppia riga + ricerca */}
-      <div className="overflow-auto rounded-lg border border-stone-300 bg-white" style={{ maxHeight: '64vh' }}>
+      <div className={`overflow-auto rounded-lg border border-stone-300 bg-white${fullHeight ? ' flex-1 min-h-0' : ''}`}
+        style={fullHeight ? undefined : { maxHeight: '64vh' }}>
         <table className="border-collapse" style={{ tableLayout: 'fixed', borderSpacing: 0 }}>
           {dayHeader}
           <tbody>

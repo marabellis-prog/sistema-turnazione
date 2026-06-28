@@ -28,9 +28,9 @@ export function AnteprimaCalendarioPage() {
   })
 
   return (
-    <div className="p-3 sm:p-4 max-w-6xl mx-auto space-y-4"
-      style={{ minHeight: 'calc(100dvh - 48px)' }}>
-      <h1 className="text-lg font-bold flex items-center gap-2" style={{ color: '#2b3c24' }}>
+    <div className="flex flex-col p-3 sm:p-4 gap-3"
+      style={{ height: 'calc(100dvh - 48px)' }}>
+      <h1 className="text-lg font-bold flex items-center gap-2 shrink-0" style={{ color: '#2b3c24' }}>
         <CalendarClock size={20} style={{ color: '#0284c7' }} />
         Anteprima calendario
       </h1>
@@ -45,7 +45,7 @@ export function AnteprimaCalendarioPage() {
         </div>
       ) : (
         <>
-          <div className="rounded-lg p-3 text-xs flex items-start gap-2"
+          <div className="rounded-lg p-3 text-xs flex items-start gap-2 shrink-0"
             style={{ background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412' }}>
             <Info size={15} className="mt-0.5 shrink-0" />
             <span>
@@ -54,8 +54,10 @@ export function AnteprimaCalendarioPage() {
               all'amministratore se va bene o se ci sono problemi.
             </span>
           </div>
-          <AnteprimaTurnazioneView turni={anteprima.snapshot?.turni ?? []} meta={anteprima.meta}
-            medici={medici} festivitaCustomSet={festivitaCustomSet} />
+          <div className="flex-1 min-h-0">
+            <AnteprimaTurnazioneView turni={anteprima.snapshot?.turni ?? []} meta={anteprima.meta}
+              medici={medici} festivitaCustomSet={festivitaCustomSet} fullHeight />
+          </div>
         </>
       )}
     </div>
