@@ -1,20 +1,19 @@
 /**
  * AnteprimaTurnazioneView
  *
- * Vista di una bozza di turnazione (snapshot). Per ogni turnista mostra DUE
- * righe nella tabella clinica:
+ * Vista di una bozza di turnazione (snapshot). Per ogni turnista DUE righe:
  *   - SOPRA: la NUOVA turnazione (colorata, editabile in admin). Sfondo
- *     ARANCIONE sui turni scambiati rispetto al basale (turno_clinico !=
- *     turno_clinico_base); ferie approvate in VERDE.
- *   - SOTTO: la VECCHIA turnazione continuata (bianco/nero, sola lettura).
- *     Bordo BLU solo sui turni DIVERSI rispetto alla riga sopra.
+ *     ARANCIONE sui turni scambiati vs basale (click = mostra l'originario);
+ *     ferie approvate in VERDE.
+ *   - SOTTO: la VECCHIA turnazione continuata, tutta su sfondo GRIGIO e con
+ *     etichetta "turno originario" sotto il nome. Bordo BLU sui turni diversi.
  *
- * In modalita' editabile (admin) le celle della riga superiore accettano il
- * drop dalla legenda (TC / TR / FLAG SUB-MED), aggiornando lo snapshot in
- * stato locale; il salvataggio e' gestito dalla pagina (bottone "Salva").
+ * La colonna da cui parte la nuova turnazione (stacco) e' evidenziata in ROSA.
+ * L'header (mese + giorno) e' sticky: resta fisso sullo scroll verticale.
+ * La tabella di ricerca NON viene mostrata.
  */
 
-import { useMemo, Fragment } from 'react'
+import { useMemo, useState, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { isFestivo } from '../lib/holidays'
@@ -28,16 +27,21 @@ const CELL_COLORS: Record<string, { bg: string; fg: string }> = {
   M:  { bg: '#dde8d5', fg: '#2e4a28' }, P: { bg: '#d5e0e8', fg: '#253a4a' },
   L:  { bg: '#ece5d5', fg: '#4a3a1a' }, REP: { bg: '#e8d5d5', fg: '#5a2a2a' },
   EM: { bg: '#dbe4e8', fg: '#36495a' }, EP: { bg: '#dbe4e8', fg: '#36495a' }, EL: { bg: '#dbe4e8', fg: '#36495a' },
-  RM: { bg: '#ddd8ea', fg: '#3a2858' }, RP: { bg: '#ead8e2', fg: '#582840' },
 }
 const PLACEMENT_BG: Record<'SUB'|'MED'|'NONE', string> = { SUB: '#fecaca', MED: '#bae6fd', NONE: 'transparent' }
 const SUPPORTO_BG = '#d4d4d4'
 const DAY_LETTERS = ['D', 'L', 'M', 'M', 'G', 'V', 'S']
 const MONTH_END_BORDER = '2px solid #1a1a1a'
 
-const FERIE_BG     = '#bbf7d0'   // verde ferie approvate
-const SCAMBIO_BG   = '#fed7aa'   // arancione: turno scambiato vs basale
-const DIVERSO_BLU  = 'inset 0 0 0 2px #2563eb'  // bordo blu: diverso vs vecchia
+const FERIE_BG      = '#bbf7d0'   // verde ferie approvate
+const SCAMBIO_BG    = '#fed7aa'   // arancione: turno scambiato vs basale
+const DIVERSO_BLU   = 'inset 0 0 0 2px #2563eb'  // bordo blu: diverso vs vecchia
+const OLD_ROW_BG    = '#ededeb'   // grigio riga vecchia
+const CUTOVER_BG      = '#fce7f3' // rosa colonna di stacco (celle piane)
+const CUTOVER_HEAD_BG = '#fbcfe8' // rosa header colonna di stacco
+const CUTOVER_BORDER  = '3px solid #db2777'
+
+const H_MONTH = 23   // altezza riga header MESE (px) → offset sticky riga giorni
 
 function dayLetter(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number)
@@ -68,22 +72,10 @@ function LabelClinico({ tc, sm, sp }: { tc: string; sm?: SlotPlacement; sp?: Slo
   )
 }
 
-/** TC in bianco/nero (riga vecchia, sola lettura). */
+/** TC in grigio/nero (riga vecchia, sola lettura). */
 function LabelVecchio({ tc }: { tc: string }) {
   if (!tc) return null
-  const isTwoChar = tc.length > 1
-  return <span style={{ fontSize: isTwoChar ? 9 : 11, fontWeight: 700, color: '#44403c' }}>{tc}</span>
-}
-
-function LabelRicerca({ tr }: { tr: string }) {
-  if (!tr) return null
-  return (
-    <div className="flex flex-col items-center leading-none gap-px">
-      {tr.split('+').map(p => (
-        <span key={p} style={{ fontSize: 9, fontWeight: 700, color: CELL_COLORS[p]?.fg ?? '#3a2858' }}>{p}</span>
-      ))}
-    </div>
-  )
+  return <span style={{ fontSize: tc.length > 1 ? 9 : 11, fontWeight: 700, color: '#44403c' }}>{tc}</span>
 }
 
 function buildColonne(turni: Turno[], festSet?: Set<string>): ColonnaCal[] {
@@ -113,7 +105,6 @@ function monthSpansFrom(colonne: ColonnaCal[]) {
   return out
 }
 
-/** true se `data` cade in un range di ferie approvate del medico. */
 function inFerie(ranges: Map<string, [string, string][]>, medicoId: string, data: string): boolean {
   const rs = ranges.get(medicoId)
   if (!rs) return false
@@ -134,6 +125,8 @@ interface Props {
 }
 
 export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSet, editable, onDropCell, fullHeight }: Props) {
+  const [info, setInfo] = useState<{ x: number; y: number; text: string } | null>(null)
+
   const byKey = useMemo(() => {
     const m = new Map<string, Turno>()
     for (const t of turni) m.set(`${t.medico_id}|${t.data}`, t)
@@ -190,44 +183,10 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
     return <div className="text-xs text-stone-500 italic p-4">Anteprima vuota o nessun medico attivo.</div>
   }
 
-  const dayHeader = (
-    <thead>
-      <tr>
-        <th rowSpan={2} style={{ width: 140, minWidth: 140, position: 'sticky', left: 0, zIndex: 2,
-          background: '#456b3a', color: '#fff', fontSize: 11, fontWeight: 700, padding: '6px 8px',
-          border: '1px solid #2b3c24', textAlign: 'left', verticalAlign: 'middle' }}>
-          Medico — Clinica
-        </th>
-        {monthSpans.map((m, i) => (
-          <th key={`${m.anno}-${m.mese}`} colSpan={m.span} style={{ background: '#f0ece4', color: '#3a3d30',
-            fontSize: 11, fontWeight: 700, padding: '4px 6px', border: '1px solid #c0b8a8',
-            borderRight: i < monthSpans.length - 1 ? MONTH_END_BORDER : '1px solid #c0b8a8',
-            textAlign: 'center', textTransform: 'uppercase' }}>
-            {MESI_IT[m.mese] ?? '?'} {m.anno}
-          </th>
-        ))}
-      </tr>
-      <tr>
-        {colonne.map(c => {
-          const red = c.isDomenica || c.isFestivo
-          const monthEnd = lastDaysOfMonth.has(c.data)
-          return (
-            <th key={c.data} style={{ width: 32, minWidth: 32, background: red ? '#fef3c7' : '#f0ece4',
-              color: red ? '#854d0e' : '#3a3d30', fontSize: 10, padding: '2px 0', border: '1px solid #c0b8a8',
-              borderRight: monthEnd ? MONTH_END_BORDER : '1px solid #c0b8a8', lineHeight: 1.1 }}>
-              <div style={{ fontWeight: 700 }}>{c.giorno}</div>
-              <div style={{ fontSize: 8, fontWeight: 400, opacity: 0.75 }}>{dayLetter(c.data)}</div>
-            </th>
-          )
-        })}
-      </tr>
-    </thead>
-  )
-
   return (
     <div className={fullHeight ? 'flex flex-col h-full min-h-0 gap-3' : 'space-y-3'}>
       {/* Metadati */}
-      <div className="rounded-lg border p-3 text-xs flex flex-wrap gap-x-5 gap-y-1"
+      <div className="rounded-lg border p-3 text-xs flex flex-wrap gap-x-5 gap-y-1 shrink-0"
         style={{ background: '#f0f7fb', borderColor: '#bfdde8', color: '#1f4a70' }}>
         <span><strong>Schema nuovo:</strong> {meta.schema_nuovo}</span>
         <span><strong>Stacco:</strong> {cutoverLabel} (primo lunedì)</span>
@@ -236,28 +195,63 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
       </div>
 
       {/* Legenda trascinabile (solo admin/editabile) */}
-      {editable && <LegendaCalendario variant="admin" />}
+      {editable && <div className="shrink-0"><LegendaCalendario variant="admin" /></div>}
 
-      {/* Legenda colori righe */}
-      <div className="text-[11px] text-stone-500 flex flex-wrap gap-x-4 gap-y-1">
-        <span><span style={{ background: SCAMBIO_BG, padding: '0 6px', borderRadius: 3 }}>arancione</span> = turno scambiato (riga nuova)</span>
-        <span><span style={{ boxShadow: DIVERSO_BLU, padding: '0 6px', borderRadius: 3 }}>blu</span> = diverso dalla vecchia (riga sotto, B/N)</span>
-        <span><span style={{ background: FERIE_BG, padding: '0 6px', borderRadius: 3 }}>verde</span> = ferie approvate</span>
+      {/* Legenda colori */}
+      <div className="text-[11px] text-stone-500 flex flex-wrap gap-x-4 gap-y-1 shrink-0">
+        <span><span style={{ background: SCAMBIO_BG, padding: '0 6px', borderRadius: 3 }}>arancione</span> = scambiato (clicca per l'originario)</span>
+        <span><span style={{ boxShadow: DIVERSO_BLU, padding: '0 6px', borderRadius: 3 }}>blu</span> = diverso dalla vecchia</span>
+        <span><span style={{ background: FERIE_BG, padding: '0 6px', borderRadius: 3 }}>verde</span> = ferie</span>
+        <span><span style={{ background: CUTOVER_HEAD_BG, padding: '0 6px', borderRadius: 3 }}>rosa</span> = inizio nuova turnazione</span>
       </div>
 
-      {/* Tabella clinica a doppia riga + ricerca */}
+      {/* Tabella clinica a doppia riga (header sticky) */}
       <div className={`overflow-auto rounded-lg border border-stone-300 bg-white${fullHeight ? ' flex-1 min-h-0' : ''}`}
         style={fullHeight ? undefined : { maxHeight: '64vh' }}>
         <table className="border-collapse" style={{ tableLayout: 'fixed', borderSpacing: 0 }}>
-          {dayHeader}
+          <thead>
+            <tr>
+              <th rowSpan={2} style={{ width: 150, minWidth: 150, position: 'sticky', left: 0, top: 0, zIndex: 5,
+                background: '#456b3a', color: '#fff', fontSize: 11, fontWeight: 700, padding: '6px 8px',
+                border: '1px solid #2b3c24', textAlign: 'left', verticalAlign: 'middle' }}>
+                Medico — Clinica
+              </th>
+              {monthSpans.map((m, i) => (
+                <th key={`${m.anno}-${m.mese}`} colSpan={m.span} style={{ position: 'sticky', top: 0, zIndex: 4,
+                  background: '#f0ece4', color: '#3a3d30', fontSize: 11, fontWeight: 700, padding: '4px 6px', height: H_MONTH,
+                  border: '1px solid #c0b8a8', borderRight: i < monthSpans.length - 1 ? MONTH_END_BORDER : '1px solid #c0b8a8',
+                  textAlign: 'center', textTransform: 'uppercase' }}>
+                  {MESI_IT[m.mese] ?? '?'} {m.anno}
+                </th>
+              ))}
+            </tr>
+            <tr>
+              {colonne.map(c => {
+                const red = c.isDomenica || c.isFestivo
+                const monthEnd = lastDaysOfMonth.has(c.data)
+                const isCut = c.data === meta.cutover
+                return (
+                  <th key={c.data} style={{ width: 32, minWidth: 32, position: 'sticky', top: H_MONTH, zIndex: 4,
+                    background: isCut ? CUTOVER_HEAD_BG : red ? '#fef3c7' : '#f0ece4',
+                    color: red ? '#854d0e' : '#3a3d30', fontSize: 10, padding: '2px 0',
+                    border: '1px solid #c0b8a8', borderLeft: isCut ? CUTOVER_BORDER : '1px solid #c0b8a8',
+                    borderRight: monthEnd ? MONTH_END_BORDER : '1px solid #c0b8a8', lineHeight: 1.1 }}>
+                    <div style={{ fontWeight: 700 }}>{c.giorno}</div>
+                    <div style={{ fontSize: 8, fontWeight: 400, opacity: 0.75 }}>{dayLetter(c.data)}</div>
+                  </th>
+                )
+              })}
+            </tr>
+          </thead>
           <tbody>
             {mediciOrd.map(m => (
               <Fragment key={m.id}>
                 {/* Riga NUOVA (editabile) */}
                 <tr>
-                  <td rowSpan={2} style={{ width: 140, minWidth: 140, position: 'sticky', left: 0, zIndex: 1,
-                    background: '#fff', fontSize: 11, padding: '4px 8px', border: '1px solid #d5ccb8',
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 500, color: '#3a3d30' }}>
+                  <td style={{ width: 150, minWidth: 150, position: 'sticky', left: 0, zIndex: 3, background: '#fff',
+                    fontSize: 11, padding: '4px 8px', borderTop: '1px solid #d5ccb8', borderLeft: '1px solid #d5ccb8',
+                    borderRight: '1px solid #d5ccb8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    fontWeight: 600, color: '#3a3d30' }}>
                     {m.nome}
                   </td>
                   {colonne.map(c => {
@@ -265,34 +259,46 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
                     const tc = t?.turno_clinico ?? ''
                     const red = c.isDomenica || c.isFestivo
                     const monthEnd = lastDaysOfMonth.has(c.data)
+                    const isCut = c.data === meta.cutover
                     const ferie = inFerie(ferieApproved, m.id, c.data)
                     const scambio = !!t && (t.turno_clinico ?? '') !== (t.turno_clinico_base ?? '')
-                    const bg = ferie ? FERIE_BG : scambio ? SCAMBIO_BG : red ? '#fef3c7' : '#fefefe'
+                    const base = t?.turno_clinico_base ?? ''
+                    const bg = ferie ? FERIE_BG : scambio ? SCAMBIO_BG : isCut ? CUTOVER_BG : red ? '#fef3c7' : '#fefefe'
                     return (
-                      <td key={c.data} {...dropHandlers(m.id, c.data)} style={{ width: 32, minWidth: 32, height: 26,
-                        background: bg, border: '1px solid #c0b8a8',
-                        borderRight: monthEnd ? MONTH_END_BORDER : '1px solid #c0b8a8',
-                        borderBottom: '1px dashed #d8d2c4',
-                        textAlign: 'center', verticalAlign: 'middle', padding: 0,
-                        cursor: editable ? 'copy' : undefined }}>
+                      <td key={c.data}
+                        {...dropHandlers(m.id, c.data)}
+                        onClick={scambio ? (e: React.MouseEvent) => setInfo({ x: e.clientX, y: e.clientY, text: `Originario: ${base || '(vuoto)'}` }) : undefined}
+                        style={{ width: 32, minWidth: 32, height: 26, background: bg,
+                          borderTop: '1px solid #c0b8a8', borderBottom: '1px dashed #cfc8ba',
+                          borderRight: monthEnd ? MONTH_END_BORDER : '1px solid #c0b8a8',
+                          borderLeft: isCut ? CUTOVER_BORDER : '1px solid #c0b8a8',
+                          textAlign: 'center', verticalAlign: 'middle', padding: 0,
+                          cursor: scambio ? 'help' : editable ? 'copy' : undefined }}>
                         <LabelClinico tc={tc} sm={t?.slot_mattina} sp={t?.slot_pomeriggio} />
                       </td>
                     )
                   })}
                 </tr>
-                {/* Riga VECCHIA (B/N, sola lettura) */}
+                {/* Riga VECCHIA (grigia, sola lettura) */}
                 <tr>
+                  <td style={{ width: 150, minWidth: 150, position: 'sticky', left: 0, zIndex: 3, background: OLD_ROW_BG,
+                    fontSize: 9, fontStyle: 'italic', padding: '1px 8px 3px', borderBottom: '1px solid #d5ccb8',
+                    borderLeft: '1px solid #d5ccb8', borderRight: '1px solid #d5ccb8',
+                    whiteSpace: 'nowrap', color: '#78716c' }}>
+                    turno originario
+                  </td>
                   {colonne.map(c => {
                     const t = byKey.get(`${m.id}|${c.data}`)
                     const vecchio = t?.turno_clinico_vecchio ?? ''
                     const nuovo = t?.turno_clinico ?? ''
-                    const red = c.isDomenica || c.isFestivo
                     const monthEnd = lastDaysOfMonth.has(c.data)
+                    const isCut = c.data === meta.cutover
                     const diverso = (vecchio ?? '') !== (nuovo ?? '')
                     return (
-                      <td key={c.data} style={{ width: 32, minWidth: 32, height: 22,
-                        background: red ? '#faf7ef' : '#fff', border: '1px solid #d8d2c4',
+                      <td key={c.data} style={{ width: 32, minWidth: 32, height: 20, background: OLD_ROW_BG,
+                        borderBottom: '1px solid #cfc8ba',
                         borderRight: monthEnd ? MONTH_END_BORDER : '1px solid #d8d2c4',
+                        borderLeft: isCut ? CUTOVER_BORDER : '1px solid #d8d2c4',
                         boxShadow: diverso ? DIVERSO_BLU : undefined,
                         textAlign: 'center', verticalAlign: 'middle', padding: 0 }}>
                         <LabelVecchio tc={vecchio} />
@@ -304,55 +310,19 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
             ))}
           </tbody>
         </table>
-
-        {/* Tabella ricerca (sola lettura) */}
-        <div style={{ height: 4 }} />
-        <table className="border-collapse" style={{ tableLayout: 'fixed', borderSpacing: 0 }}>
-          <thead>
-            <tr>
-              <th style={{ width: 140, minWidth: 140, position: 'sticky', left: 0, zIndex: 2, background: '#7a2233',
-                color: '#fff', fontSize: 11, fontWeight: 700, padding: '6px 8px', border: '1px solid #5a1a26', textAlign: 'left' }}>
-                Medico — Ricerca
-              </th>
-              {colonne.map(c => {
-                const red = c.isDomenica || c.isFestivo
-                const monthEnd = lastDaysOfMonth.has(c.data)
-                return (
-                  <th key={c.data} style={{ width: 32, minWidth: 32, background: red ? '#fef3c7' : '#f0ece4',
-                    color: red ? '#854d0e' : '#3a3d30', fontSize: 10, padding: '2px 0', border: '1px solid #c0b8a8',
-                    borderRight: monthEnd ? MONTH_END_BORDER : '1px solid #c0b8a8', lineHeight: 1.1 }}>
-                    <div style={{ fontWeight: 700 }}>{c.giorno}</div>
-                  </th>
-                )
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {mediciOrd.map(m => (
-              <tr key={`${m.id}-r`}>
-                <td style={{ width: 140, minWidth: 140, position: 'sticky', left: 0, zIndex: 1, background: '#fff',
-                  fontSize: 11, padding: '4px 8px', border: '1px solid #d5ccb8', whiteSpace: 'nowrap',
-                  overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 500, color: '#3a3d30' }}>{m.nome}</td>
-                {colonne.map(c => {
-                  const t = byKey.get(`${m.id}|${c.data}`)
-                  const tr = t?.turno_ricerca ?? ''
-                  const red = c.isDomenica || c.isFestivo
-                  const monthEnd = lastDaysOfMonth.has(c.data)
-                  const first = tr.split('+')[0]
-                  const bg = CELL_COLORS[first]?.bg ?? (red ? '#fef3c7' : '#fefefe')
-                  return (
-                    <td key={c.data} style={{ width: 32, minWidth: 32, height: 26, background: tr ? bg : (red ? '#fef3c7' : '#fefefe'),
-                      border: '1px solid #c0b8a8', borderRight: monthEnd ? MONTH_END_BORDER : '1px solid #c0b8a8',
-                      textAlign: 'center', verticalAlign: 'middle', padding: 0 }}>
-                      <LabelRicerca tr={tr} />
-                    </td>
-                  )
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
+
+      {/* Popover "turno originario" su click di una cella arancione */}
+      {info && (
+        <>
+          <div onClick={() => setInfo(null)} style={{ position: 'fixed', inset: 0, zIndex: 60 }} />
+          <div style={{ position: 'fixed', left: Math.min(info.x + 10, window.innerWidth - 160), top: info.y + 10, zIndex: 61,
+            background: '#1f2937', color: '#fff', fontSize: 12, fontWeight: 600, padding: '5px 10px',
+            borderRadius: 6, boxShadow: '0 2px 10px rgba(0,0,0,0.35)', pointerEvents: 'none' }}>
+            {info.text}
+          </div>
+        </>
+      )}
     </div>
   )
 }
