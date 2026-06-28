@@ -47,16 +47,17 @@ interface SlotRow {
   REP:  boolean
   SUB:  boolean
   MED:  boolean
+  SUP:  boolean
 }
 
 function emptySlot(slot: number, colonne: string[]): SlotRow {
   const vals: Record<string, number | null> = {}
   colonne.forEach(c => { vals[c] = null })
-  return { id: null, slot, vals, REP: false, SUB: false, MED: false }
+  return { id: null, slot, vals, REP: false, SUB: false, MED: false, SUP: false }
 }
 
 function isSlotVuoto(r: SlotRow) {
-  return Object.values(r.vals).every(v => v === null) && !r.REP && !r.SUB && !r.MED
+  return Object.values(r.vals).every(v => v === null) && !r.REP && !r.SUB && !r.MED && !r.SUP
 }
 
 /**
@@ -457,6 +458,7 @@ export function GestioneSchemaPage() {
         REP: r.is_reperibilita,
         SUB: r.is_sub ?? false,
         MED: r.is_med ?? false,
+        SUP: r.is_supporto ?? false,
       })
     })
     Object.values(g).forEach(rows => rows.sort((a,b) => a.slot - b.slot))
@@ -588,7 +590,10 @@ export function GestioneSchemaPage() {
     markUnsaved()
     setGriglia(prev => {
       const rows = [...(prev[giorno] ?? [])]
-      rows[idx] = { ...rows[idx], SUB: !rows[idx].SUB }
+      const cur = rows[idx]
+      const SUB = !cur.SUB
+      // SUB/MED escludono Supporto.
+      rows[idx] = { ...cur, SUB, SUP: SUB ? false : cur.SUP }
       return { ...prev, [giorno]: rows }
     })
   }
@@ -597,7 +602,21 @@ export function GestioneSchemaPage() {
     markUnsaved()
     setGriglia(prev => {
       const rows = [...(prev[giorno] ?? [])]
-      rows[idx] = { ...rows[idx], MED: !rows[idx].MED }
+      const cur = rows[idx]
+      const MED = !cur.MED
+      rows[idx] = { ...cur, MED, SUP: MED ? false : cur.SUP }
+      return { ...prev, [giorno]: rows }
+    })
+  }
+
+  function toggleSup(giorno: number, idx: number) {
+    markUnsaved()
+    setGriglia(prev => {
+      const rows = [...(prev[giorno] ?? [])]
+      const cur = rows[idx]
+      const SUP = !cur.SUP
+      // Supporto (jolly) esclusivo con SUB/MED.
+      rows[idx] = SUP ? { ...cur, SUP, SUB: false, MED: false } : { ...cur, SUP }
       return { ...prev, [giorno]: rows }
     })
   }
@@ -615,7 +634,7 @@ export function GestioneSchemaPage() {
       const g: Record<number, SlotRow[]> = {}
       Object.entries(prev).forEach(([d, rows]) => {
         g[+d] = rows.map(r => ({
-          ...r, REP: false,
+          ...r, REP: false, SUB: false, MED: false, SUP: false,
           vals: Object.fromEntries(Object.keys(r.vals).map(c => [c, null])),
         }))
       })
@@ -641,6 +660,7 @@ export function GestioneSchemaPage() {
             is_reperibilita:          r.REP,
             is_sub:                   r.SUB,
             is_med:                   r.MED,
+            is_supporto:              r.SUP,
           })
         })
       }
@@ -698,6 +718,7 @@ export function GestioneSchemaPage() {
         REP: r.is_reperibilita,
         SUB: r.is_sub ?? false,
         MED: r.is_med ?? false,
+        SUP: r.is_supporto ?? false,
       })
     })
     Object.values(g).forEach(rs => rs.sort((a, b) => a.slot - b.slot))
@@ -944,6 +965,7 @@ export function GestioneSchemaPage() {
                 <li><span className="font-semibold">Trascina</span> su una cella già occupata → <span className="font-semibold">scambia</span> i due valori</li>
                 <li><span className="font-semibold">Doppio clic</span> su una cella → svuota</li>
                 <li>Checkbox <span className="font-semibold text-red-600">REP</span> → marca lo slot come reperibilità</li>
+                <li>Checkbox <span className="font-semibold" style={{ color: '#6b7280' }}>SUP</span> → <span className="font-semibold">Supporto</span> (pallino grigio): lo slot lavora senza SUB/MED. Esclude SUB/MED.</li>
                 <li><span className="font-semibold">+ slot</span> nella cella giorno → aggiunge una riga per turni sovrapposti</li>
                 <li><span className="font-semibold">Prova Schema</span> → anteprima locale del ciclo completo senza salvare</li>
               </ul>
@@ -1013,6 +1035,14 @@ export function GestioneSchemaPage() {
               }}
                 title="Medicina: il turno clinico di questo slot sarà etichettato (med) nei calendari">
                 MED
+              </th>
+              <th style={{
+                background: '#2b3c24', color: '#cbd5e1', fontSize: 10, fontWeight: 700,
+                padding: '4px 2px', textAlign: 'center', width: 34,
+                border: '1px solid #1e40af', position: 'sticky', top: 0, zIndex: 10,
+              }}
+                title="Supporto (jolly grigio): lo slot lavora senza assegnazione SUB/MED">
+                SUP
               </th>
               <th style={{
                 background: '#2b3c24', width: 22,
@@ -1140,6 +1170,18 @@ export function GestioneSchemaPage() {
                         onChange={() => toggleMed(giorno, idx)}
                         style={{ accentColor: '#0ea5e9', width: 12, height: 12, cursor: 'pointer' }}
                         title="Medicina: aggiunge etichetta (med) azzurra al turno clinico" />
+                    </td>
+
+                    {/* SUP checkbox — Supporto (pallino grigio nei calendari) */}
+                    <td style={{
+                      width: 34, textAlign: 'center', verticalAlign: 'middle',
+                      borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb',
+                      background: isRep ? REP_BG : rowBg,
+                    }}>
+                      <input type="checkbox" checked={row.SUP}
+                        onChange={() => toggleSup(giorno, idx)}
+                        style={{ accentColor: '#6b7280', width: 12, height: 12, cursor: 'pointer' }}
+                        title="Supporto: jolly grigio, lavora senza assegnazione SUB/MED" />
                     </td>
 
                     {/* Elimina slot */}

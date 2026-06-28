@@ -135,6 +135,7 @@ export interface SchemaModello {
   is_reperibilita: boolean    // true = questo slot è la reperibilità
   is_sub: boolean             // true = il turno clinico di questo slot è in sub-intensiva
   is_med: boolean             // true = il turno clinico di questo slot è in medicina
+  is_supporto?: boolean       // true = slot di Supporto (jolly grigio, senza SUB/MED)
 }
 
 /** Dove fisicamente lavora il medico in una mezza giornata.
