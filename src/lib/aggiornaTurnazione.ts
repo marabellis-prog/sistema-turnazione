@@ -109,7 +109,7 @@ type SnapRow = Pick<Turno,
   'medico_id' | 'data' | 'turno_clinico' | 'turno_ricerca' | 'note' |
   'modificato_manualmente' | 'is_ferie' | 'slot_mattina' | 'slot_pomeriggio' |
   'is_sub' | 'is_med' | 'turno_clinico_base' | 'turno_ricerca_base' |
-  'turno_clinico_originario'>
+  'turno_clinico_originario' | 'turno_clinico_vecchio' | 'turno_ricerca_vecchio'>
 
 // ════════════════════════════════════════════════════════════════════
 // Crea la bozza (snapshot completo) e la salva in turnazione_anteprima
@@ -149,6 +149,17 @@ export async function creaBozzaAggiornamento(
   const oldBase = calcolaCalendarioCompleto(config, schemi, mediciAttivi)
   const obMap = new Map(oldBase.map(t => [`${t.medico_id}|${t.data}`, t]))
 
+  // ── Vecchia turnazione CONTINUATA (schema attuale) su TUTTO il range,
+  //    per la riga di confronto B/N in anteprima. Riferimento FISSO: schema
+  //    precedente come se non ci fosse mai stato lo stacco (anchor naturale =
+  //    A_old). Prima del cutover si usa la produzione (cambi inclusi), dopo
+  //    questa rotazione counterfattuale. ──────────────────────────────────
+  const cfgVecchiaEstesa: Configurazione = {
+    ...config, anno_fine: fineAnno, mese_fine: fineMese, giorno_fine: null,
+  }
+  const vecchiaEstesa = calcolaCalendarioCompleto(cfgVecchiaEstesa, schemi, mediciAttivi)
+  const veMap = new Map(vecchiaEstesa.map(t => [`${t.medico_id}|${t.data}`, t]))
+
   // ── Turni di produzione nel range completo ────────────────────────
   const prod = await fetchTurniRange(origStartISO, finalEndISO)
   const prodMap = new Map(prod.map(t => [`${t.medico_id}|${t.data}`, t]))
@@ -167,6 +178,14 @@ export async function creaBozzaAggiornamento(
       const key = `${m.id}|${dataISO}`
       const pr  = prodMap.get(key)
 
+      // Riga B/N "vecchia turnazione": prima del cutover = produzione (cambi
+      // inclusi), dal cutover = rotazione vecchia continuata (counterfattuale).
+      const ve = veMap.get(key)
+      const vecchioTc = (dataISO >= cutoverISO
+        ? (ve?.turno_clinico ?? '') : (pr?.turno_clinico ?? '')) as TurnoClinico
+      const vecchioTr = (dataISO >= cutoverISO
+        ? (ve?.turno_ricerca ?? '') : (pr?.turno_ricerca ?? '')) as TurnoRicerca
+
       if (inFinestraNuova) {
         const nb = nbMap.get(key)
         const nbTc = (nb?.turno_clinico ?? '') as TurnoClinico
@@ -184,6 +203,7 @@ export async function creaBozzaAggiornamento(
             modificato_manualmente: true,
             turno_clinico_base: nbTc, turno_ricerca_base: nbTr,
             turno_clinico_originario: originario,
+            turno_clinico_vecchio: vecchioTc, turno_ricerca_vecchio: vecchioTr,
           })
         } else {
           // Nuova rotazione pulita
@@ -197,6 +217,7 @@ export async function creaBozzaAggiornamento(
             modificato_manualmente: false,
             turno_clinico_base: nbTc, turno_ricerca_base: nbTr,
             turno_clinico_originario: null,
+            turno_clinico_vecchio: vecchioTc, turno_ricerca_vecchio: vecchioTr,
           })
         }
       } else if (pr) {
@@ -211,6 +232,7 @@ export async function creaBozzaAggiornamento(
           turno_clinico_base: pr.turno_clinico_base ?? null,
           turno_ricerca_base: pr.turno_ricerca_base ?? null,
           turno_clinico_originario: pr.turno_clinico_originario ?? null,
+          turno_clinico_vecchio: vecchioTc, turno_ricerca_vecchio: vecchioTr,
         })
       }
       // (else: nessuna riga produzione fuori finestra → niente, non dovrebbe capitare)
@@ -297,6 +319,23 @@ export async function pubblicaBozza(anteprima: TurnazioneAnteprima, configId: st
   if (bkErr) throw bkErr
 
   return inserted
+}
+
+/** Salva nello snapshot della bozza i cambi preliminari fatti in anteprima
+ *  (senza pubblicare). Riscrive `snapshot.turni` e aggiorna `meta.n_cambi`
+ *  = celle scambiate rispetto al basale (turno_clinico != turno_clinico_base).
+ *  La riga di confronto "vecchia" (turno_clinico_vecchio) resta invariata. */
+export async function salvaModificheBozza(
+  anteprimaId: string,
+  turni: Turno[],
+  meta: TurnazioneAnteprima['meta'],
+): Promise<void> {
+  const nCambi = turni.filter(t =>
+    (t.turno_clinico ?? '') !== (t.turno_clinico_base ?? '')).length
+  const { error } = await supabase.from('turnazione_anteprima')
+    .update({ snapshot: { turni }, meta: { ...meta, n_cambi: nCambi } })
+    .eq('id', anteprimaId)
+  if (error) throw error
 }
 
 /** Scarta la bozza (solo DELETE). */

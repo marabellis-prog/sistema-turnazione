@@ -162,6 +162,12 @@ export interface Turno {
    *  PRIMA dell'aggiornamento (il vecchio calendario sostituito). null
    *  altrimenti → marcatore del bordo/righe ROSSE in Modifica Turni. */
   turno_clinico_originario?: TurnoClinico | null
+  /** Solo negli snapshot di "Anteprima turnazione": i turni della VECCHIA
+   *  turnazione (schema precedente CONTINUATO) per la riga di confronto B/N.
+   *  Riferimento FISSO calcolato alla creazione della bozza (non cambia con
+   *  gli scambi fatti in anteprima). Bordo blu dove differisce dall'attuale. */
+  turno_clinico_vecchio?: TurnoClinico | null
+  turno_ricerca_vecchio?: TurnoRicerca | null
   created_at: string
   updated_at: string
 }
