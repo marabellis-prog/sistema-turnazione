@@ -7,6 +7,27 @@ export interface Medico {
   is_reperibilita: boolean    // true = il suo numero è il "REP" nello schema
   attivo: boolean
   created_at: string
+  /** Multi-reparto: il turnista appartiene a un reparto. */
+  reparto_id?: string
+  /** Link all'utente globale (utenti_autorizzati) se il turnista ha accesso. */
+  utente_id?: string | null
+}
+
+// ─── Multi-reparto ──────────────────────────────────────────────────
+
+/** Un Reparto = mondo isolato con i suoi turni e turnisti. */
+export interface Reparto {
+  id:         string
+  nome:       string
+  attivo:     boolean
+  created_at: string
+}
+
+/** Un utente (globale) responsabile di un reparto. */
+export interface RepartoResponsabile {
+  reparto_id: string
+  utente_id:  string
+  created_at: string
 }
 
 export interface Configurazione {
