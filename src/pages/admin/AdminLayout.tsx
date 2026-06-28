@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
-import { Users, Calendar, UserCheck, Zap, Table2, AlertCircle, ArrowRightLeft, Settings, Archive, CalendarClock, ChevronRight, ChevronDown } from 'lucide-react'
+import { Users, Calendar, Zap, Table2, AlertCircle, ArrowRightLeft, Settings, Archive, CalendarClock, ChevronRight, ChevronDown, SlidersHorizontal } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
+import { useReparto } from '../../contexts/RepartoContext'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
 import { useCambiTurnoRealtime } from '../../hooks/useCambiTurnoRealtime'
 import { useAutoBackup } from '../../hooks/useBackupManager'
@@ -10,15 +11,15 @@ import { supabase } from '../../lib/supabase'
 import type { Configurazione } from '../../types'
 
 const links = [
+  { to: '/admin/centro-controllo', label: 'Centro di controllo', Icon: SlidersHorizontal },
+  { to: '/admin/medici',  label: 'Turnisti',          Icon: Users },
   { to: '/admin/schema',  label: 'Disegna Schema',    Icon: Table2 },
   { to: '/admin/genera',  label: 'Genera Calendario', Icon: Zap },
-  { to: '/admin/anteprima-turnazione', label: 'Anteprima turnazione', Icon: CalendarClock },
   { to: '/admin/turni',   label: 'Modifica Turni',    Icon: Calendar },
+  { to: '/admin/anteprima-turnazione', label: 'Anteprima turni', Icon: CalendarClock },
+  { to: '/admin/config',  label: 'Regole turni',      Icon: Settings },
   { to: '/admin/ferie',   label: 'Gestione Ferie',    Icon: Calendar },
   { to: '/admin/cambi',   label: 'Cambi Turno',       Icon: ArrowRightLeft },
-  { to: '/admin/medici',  label: 'Medici/Turnisti',   Icon: Users },
-  { to: '/admin/utenti',  label: 'Utenti',            Icon: UserCheck },
-  { to: '/admin/config',  label: 'Impostazioni',      Icon: Settings },
   { to: '/admin/backup',  label: 'Backup/Ripristino', Icon: Archive },
 ]
 
@@ -26,6 +27,7 @@ export function AdminLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const { navGuard } = usePendingActions()
+  const { reparti, repartoAttivo, setRepartoAttivo } = useReparto()
   const [schemaStoricoOpen, setSchemaStoricoOpen] = useState(false)
 
   // Realtime sulle ferie + cambi turno: garantisce che i count dei badge
@@ -130,10 +132,27 @@ export function AdminLayout() {
       {/* Sidebar */}
       <aside className="w-48 shrink-0 flex flex-col py-4 overflow-y-auto print:hidden"
         style={{ background: '#1c2818', color: '#c0d0b0' }}>
-        <p className="px-4 text-[10px] uppercase tracking-widest mb-3 font-semibold"
+        <p className="px-4 text-[10px] uppercase tracking-widest mb-2 font-semibold"
           style={{ color: '#577a45' }}>
           Pannello Admin
         </p>
+
+        {/* Selettore reparto attivo: tutte le funzioni per-reparto operano su
+            questo reparto. */}
+        <div className="px-3 mb-3">
+          <label className="block text-[9px] uppercase tracking-widest mb-1" style={{ color: '#577a45' }}>
+            Reparto attivo
+          </label>
+          <select value={repartoAttivo} onChange={e => setRepartoAttivo(e.target.value)}
+            className="w-full text-xs rounded px-2 py-1.5 font-bold cursor-pointer"
+            style={{ background: '#2b3c24', color: '#e8f0e0', border: '1px solid #3a4a30' }}>
+            {reparti.length === 0 && <option>—</option>}
+            {reparti.map(r => (
+              <option key={r.id} value={r.id}>{r.nome}{r.attivo ? '' : ' (off)'}</option>
+            ))}
+          </select>
+        </div>
+
         {links.map(({ to, label, Icon }) => {
           const isActive = location.pathname.startsWith(to)
           return (
