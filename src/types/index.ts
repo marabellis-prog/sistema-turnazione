@@ -30,6 +30,35 @@ export interface RepartoResponsabile {
   created_at: string
 }
 
+/** Tipo di turno configurabile per reparto (M, P, L, REP, o custom es. SWING). */
+export interface TipoTurno {
+  id:               string
+  reparto_id:       string
+  sigla:            string
+  nome:             string
+  ora_inizio:       string | null
+  ora_fine:         string | null
+  peso:             number       // quanti "turni" vale (L=2, REP=0)
+  copre_mattina:    boolean
+  copre_pomeriggio: boolean
+  is_reperibilita:  boolean
+  colore_bg:        string
+  colore_fg:        string
+  ordine:           number
+  created_at:       string
+}
+
+/** Proprieta' del turno (SUB / MED / SUP) con colore, per reparto. */
+export interface ProprietaTurno {
+  id:         string
+  reparto_id: string
+  sigla:      string
+  nome:       string
+  colore_bg:  string
+  ordine:     number
+  created_at: string
+}
+
 export interface Configurazione {
   id: string
   anno_inizio: number

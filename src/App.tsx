@@ -17,6 +17,7 @@ import { GestioneCambiPage }   from './pages/admin/GestioneCambiPage'
 import { ModificaTurniPage }   from './pages/admin/ModificaTurniPage'
 import { GestioneUtentiPage }   from './pages/admin/GestioneUtentiPage'
 import { CentroControlloPage }  from './pages/admin/CentroControlloPage'
+import { TipiTurnoPage }        from './pages/admin/TipiTurnoPage'
 import { ConfigPage }           from './pages/admin/ConfigPage'
 import { GestioneSchemaPage }   from './pages/admin/GestioneSchemaPage'
 import { BackupRipristinoPage } from './pages/admin/BackupRipristinoPage'
@@ -171,6 +172,7 @@ function AppRoutes() {
           <Route path="cambi"   element={<GestioneCambiPage />} />
           <Route path="utenti"  element={<GestioneUtentiPage />} />
           <Route path="centro-controllo" element={<CentroControlloPage />} />
+          <Route path="tipi-turno" element={<TipiTurnoPage />} />
           <Route path="config"  element={<ConfigPage />} />
           <Route path="schema"  element={<GestioneSchemaPage />} />
           <Route path="backup"  element={<BackupRipristinoPage />} />
