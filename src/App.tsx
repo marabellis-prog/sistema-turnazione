@@ -22,6 +22,15 @@ import { BackupRipristinoPage } from './pages/admin/BackupRipristinoPage'
 import { AnteprimaTurnazionePage } from './pages/admin/AnteprimaTurnazionePage'
 import { useAuth }                from './hooks/useAuth'
 import { PendingActionsProvider } from './contexts/PendingActionsContext'
+import { ManutenzionePage }       from './pages/ManutenzionePage'
+
+// ── MODALITÀ MANUTENZIONE ────────────────────────────────────────────
+// Durante il refactor "rivoluzione" SOLO l'admin permanente puo' operare.
+// Ogni altro utente loggato vede SOLO il calendario statico (read-only):
+// niente scritture sul DB → impossibile danneggiare i dati. Riportare a
+// false quando il lavoro e' finito.
+const MANUTENZIONE   = true
+const ADMIN_PERPETUO = 'marabelli.s@gmail.com'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -69,6 +78,13 @@ function AppRoutes() {
       }
     }
   }, [location.pathname])
+
+  // ── Gate manutenzione: tutti tranne l'admin permanente vedono SOLO il
+  //    calendario statico read-only (nessuna funzione → nessuna scrittura).
+  //    L'admin permanente (io) bypassa e continua a lavorare normalmente.
+  if (MANUTENZIONE && user && user.email?.toLowerCase() !== ADMIN_PERPETUO) {
+    return <ManutenzionePage onSignOut={signOut} />
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
