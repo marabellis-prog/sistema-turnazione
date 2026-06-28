@@ -1,11 +1,13 @@
+import { useState } from 'react'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
-import { Users, Calendar, UserCheck, Zap, Table2, AlertCircle, ArrowRightLeft, Settings, Archive, CalendarClock } from 'lucide-react'
+import { Users, Calendar, UserCheck, Zap, Table2, AlertCircle, ArrowRightLeft, Settings, Archive, CalendarClock, ChevronRight, ChevronDown } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
 import { useCambiTurnoRealtime } from '../../hooks/useCambiTurnoRealtime'
 import { useAutoBackup } from '../../hooks/useBackupManager'
 import { supabase } from '../../lib/supabase'
+import type { Configurazione } from '../../types'
 
 const links = [
   { to: '/admin/schema',  label: 'Disegna Schema',    Icon: Table2 },
@@ -24,6 +26,7 @@ export function AdminLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const { navGuard } = usePendingActions()
+  const [schemaStoricoOpen, setSchemaStoricoOpen] = useState(false)
 
   // Realtime sulle ferie + cambi turno: garantisce che i count dei badge
   // si aggiornino istantaneamente qualunque sia la sotto-pagina admin
@@ -70,6 +73,23 @@ export function AdminLayout() {
     refetchInterval:             30_000,
     refetchIntervalInBackground: false,
   })
+
+  // Config: schema attivo + cronologia switch (per la sezione in fondo).
+  const { data: config } = useQuery<Configurazione | null>({
+    queryKey: ['configurazione'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('configurazione')
+        .select('*').order('updated_at', { ascending: false }).limit(1).maybeSingle()
+      if (error) throw error
+      return data
+    },
+  })
+  const schemaStorico   = config?.schema_storico ?? []
+  const schemaAggiornato = schemaStorico.length >= 2   // >= 1 switch oltre la generazione
+  const fmtData = (iso: string) => {
+    const [y, m, d] = iso.split('-')
+    return d && m && y ? `${d}/${m}/${y}` : iso
+  }
 
   function handleNav(to: string) {
     if (location.pathname === to) return   // già sulla pagina
@@ -132,6 +152,49 @@ export function AdminLayout() {
             </button>
           )
         })}
+
+        {/* ── Schema attivo / Schemi aggiornati ─────────────────────────
+            Riga separatrice dopo l'ultima voce + stato schema. Se c'e' stato
+            almeno un Aggiorna turnazione approvato (>=2 epoche) mostra
+            "Schemi aggiornati" con freccia espandibile e l'elenco cronologico
+            (schema → giorno dello switch). */}
+        <div className="mx-3 mt-3 pt-3 px-1" style={{ borderTop: '1px solid #3a4a30' }}>
+          {!schemaAggiornato ? (
+            <>
+              <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: '#577a45' }}>
+                Schema Attivo:
+              </p>
+              <p className="text-sm font-bold mt-0.5" style={{ color: '#e8f0e0' }}>
+                {config?.schema_attivo != null ? `Schema ${config.schema_attivo}` : '—'}
+              </p>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setSchemaStoricoOpen(o => !o)}
+                className="flex items-center gap-1 text-left w-full"
+                title="Mostra/nascondi la cronologia degli schemi"
+              >
+                {schemaStoricoOpen
+                  ? <ChevronDown size={13} style={{ color: '#9ab488' }} />
+                  : <ChevronRight size={13} style={{ color: '#9ab488' }} />}
+                <span className="text-[11px] uppercase tracking-widest font-semibold" style={{ color: '#9ab488' }}>
+                  Schemi aggiornati
+                </span>
+              </button>
+              {schemaStoricoOpen && (
+                <ol className="mt-1.5 ml-1.5 space-y-1">
+                  {schemaStorico.map((e, i) => (
+                    <li key={i} className="text-[11px] leading-tight" style={{ color: '#c0d0b0' }}>
+                      <span className="font-bold">Schema {e.schema}</span>
+                      <span style={{ color: '#9ab488' }}> — dal {fmtData(e.dal)}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </>
+          )}
+        </div>
 
         {/* Badge pending — sotto la lista link, una riga ciascuno (se presenti).
             Arancione = chiama attenzione senza essere allarmante come il rosso

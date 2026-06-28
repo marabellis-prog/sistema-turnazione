@@ -302,6 +302,9 @@ export function GeneraCalendarioPage() {
         anno_fine:   annoFine,   mese_fine:   meseFine,
         giorno_fine: giornoFine,
         schema_attivo: schemaNum,
+        // Reset cronologia schemi: una generazione completa riparte pulita,
+        // un solo elemento (schema corrente dalla data di inizio).
+        schema_storico: [{ schema: schemaNum, dal: dataInizioStr }],
         // n. medici attivi della generazione (controllo consistenza
         // per un futuro "Aggiorna turnazione").
         n_medici_base: medici.length,

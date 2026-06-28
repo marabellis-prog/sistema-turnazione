@@ -23,6 +23,10 @@ export interface Configurazione {
   /** Giorno del mese_fine = fine esatta del calendario. null/undefined =
    *  ultimo giorno del mese_fine (comportamento storico). */
   giorno_fine?: number | null
+  /** Cronologia degli schemi (per "Schemi aggiornati" nella sidebar admin):
+   *  una generazione completa = 1 elemento, ogni Aggiorna turnazione approvato
+   *  appende {schema_nuovo, cutover}. Ordine cronologico. */
+  schema_storico?: SchemaEpoca[]
   schema_attivo: number       // numero schema (1, 2, ...)
   max_ferie_concomitanti: number   // quanti medici al massimo possono essere in ferie nello stesso giorno
   /** Flag globale: quando true, in Modifica Turni il cambio TC ricalcola
@@ -76,6 +80,12 @@ export interface SogliaEpoca {
   valido_dal:  string | null   // ISO o null = dall'inizio
   valido_fino: string          // ISO esclusivo
   soglie:      SoglieSlot
+}
+
+/** Una "epoca" di schema: lo schema N valido a partire dal giorno `dal`. */
+export interface SchemaEpoca {
+  schema: number
+  dal:    string   // ISO "YYYY-MM-DD"
 }
 
 // ─── Backup turni ───────────────────────────────────────────────────

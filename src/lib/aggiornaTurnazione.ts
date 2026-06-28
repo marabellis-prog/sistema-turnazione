@@ -21,7 +21,7 @@ import { supabase } from './supabase'
 import { calcolaCalendarioCompleto, primoLunediDelPeriodo } from './algorithm'
 import type {
   Configurazione, Medico, SchemaModello, Turno, TurnoClinico, TurnoRicerca,
-  SlotPlacement, TurnazioneAnteprima,
+  SlotPlacement, TurnazioneAnteprima, SchemaEpoca,
 } from '../types'
 
 // ── Helper date ──────────────────────────────────────────────────────
@@ -276,8 +276,18 @@ export async function pubblicaBozza(anteprima: TurnazioneAnteprima, configId: st
   }
 
   // 2) Aggiorna configurazione (periodo/schema/n_medici_base) + updated_at.
+  //    Appende lo switch alla cronologia schemi (sidebar "Schemi aggiornati"):
+  //    legge lo storico corrente e aggiunge {schema_nuovo, cutover}.
+  const { data: cfgRow } = await supabase.from('configurazione')
+    .select('schema_storico').eq('id', configId).maybeSingle()
+  const storicoPrec = (Array.isArray(cfgRow?.schema_storico)
+    ? cfgRow!.schema_storico : []) as SchemaEpoca[]
+  const schema_storico: SchemaEpoca[] = [
+    ...storicoPrec,
+    { schema: anteprima.meta.schema_nuovo, dal: anteprima.meta.cutover },
+  ]
   const { error: cfgErr } = await supabase.from('configurazione')
-    .update({ ...anteprima.meta.config_payload, updated_at: new Date().toISOString() })
+    .update({ ...anteprima.meta.config_payload, schema_storico, updated_at: new Date().toISOString() })
     .eq('id', configId)
   if (cfgErr) throw cfgErr
 
