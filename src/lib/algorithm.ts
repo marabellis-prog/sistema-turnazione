@@ -176,22 +176,23 @@ export function calcolaCalendarioCompleto(
   const numMedici = mediciAttivi.length
   const schemaFiltrato = schemi.filter(s => s.schema_num === config.schema_attivo)
 
-  const dataInizio = new Date(config.anno_inizio, config.mese_inizio - 1, 1)
+  // Inizio esatto = (mese_inizio, giorno_inizio). Default giorno_inizio=1 → 1°.
+  const dataInizio = new Date(config.anno_inizio, config.mese_inizio - 1, config.giorno_inizio ?? 1)
   dataInizio.setHours(0, 0, 0, 0)
 
+  // Fine esatta = (mese_fine, giorno_fine); giorno_fine null → ultimo giorno
+  // del mese (comportamento storico).
   const dataFine = new Date(config.anno_fine, config.mese_fine - 1, 1)
-  dataFine.setMonth(dataFine.getMonth() + 1, 0)
+  if (config.giorno_fine != null) dataFine.setDate(config.giorno_fine)
+  else dataFine.setMonth(dataFine.getMonth() + 1, 0)
   dataFine.setHours(0, 0, 0, 0)
 
-  // ── Punto di riferimento rotazione: primo lunedì >= giorno_inizio ──
-  // Il calendario parte dal 1° del mese (dataInizio), ma la rotazione
-  // (sett=0) è ancorata al primo lunedì >= (mese_inizio, giorno_inizio):
-  // i giorni precedenti ricevono sett<0 e continuano il ciclo precedente.
+  // ── Anchor rotazione: primo lunedì >= data inizio ──────────────────
+  // Il calendario copre [data_inizio, data_fine]. I giorni tra l'inizio e il
+  // primo lunedì ricevono sett<0 e continuano il ciclo precedente (coda).
   // Default giorno_inizio=1 → primo lunedì del mese (comportamento storico).
   // anchorOverride (Aggiorna turnazione) ha la precedenza: continuità di fase.
-  const baseAncora = new Date(config.anno_inizio, config.mese_inizio - 1, config.giorno_inizio ?? 1)
-  baseAncora.setHours(0, 0, 0, 0)
-  const dataRifRotazione = anchorOverride ?? primoLunediDelPeriodo(baseAncora)
+  const dataRifRotazione = anchorOverride ?? primoLunediDelPeriodo(dataInizio)
 
   const risultati: TurnoGenerato[] = []
 
@@ -579,8 +580,11 @@ export function generaColonne(
 ): ColonnaCal[] {
   const colonne: ColonnaCal[] = []
 
-  const corrente = new Date(config.anno_inizio, config.mese_inizio - 1, 1)
-  const fine = new Date(config.anno_fine, config.mese_fine, 0) // ultimo giorno del mese fine
+  // Range esatto [inizio, fine] della configurazione.
+  const corrente = new Date(config.anno_inizio, config.mese_inizio - 1, config.giorno_inizio ?? 1)
+  const fine = new Date(config.anno_fine, config.mese_fine - 1, 1)
+  if (config.giorno_fine != null) fine.setDate(config.giorno_fine)
+  else fine.setMonth(fine.getMonth() + 1, 0) // ultimo giorno del mese fine (legacy)
 
   while (corrente <= fine) {
     const festivo = isFestivo(corrente, festivitaCustomSet)

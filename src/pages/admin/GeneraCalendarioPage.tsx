@@ -20,7 +20,6 @@ const PASTEL: { bg: string; fg: string }[] = [
   { bg: '#ccfbf1', fg: '#134e4a' }, { bg: '#e0e7ff', fg: '#3730a3' },
 ]
 const GIORNI_S = ['','Lun','Mar','Mer','Gio','Ven','Sab','Dom']
-const ANNI     = [2025, 2026, 2027, 2028]
 
 // ── Anteprima schema: una mini-tabella per ogni giorno, layout multi-column.
 // Quando l'altezza supera, i giorni successivi vanno automaticamente nella
@@ -197,15 +196,25 @@ export function GeneraCalendarioPage() {
 
   // Parametri locali (inizializzati da configurazione DB)
   const [schemaNum,   setSchemaNum]   = useState(1)
-  const [meseInizio,  setMeseInizio]  = useState(5)
-  const [annoInizio,  setAnnoInizio]  = useState(2026)
-  const [giornoInizio, setGiornoInizio] = useState(1)
-  const [meseFine,    setMeseFine]    = useState(10)
-  const [annoFine,    setAnnoFine]    = useState(2026)
+  // Periodo via due date picker (sorgente unica); gli interi anno/mese/giorno
+  // di inizio e fine sono derivati sotto da queste due stringhe ISO.
+  const [dataInizioStr, setDataInizioStr] = useState('2026-05-01')
+  const [dataFineStr,   setDataFineStr]   = useState('2026-10-31')
   const [conferma,    setConferma]    = useState(false)
   const [stato,       setStato]       = useState<'idle'|'loading'|'ok'|'error'>('idle')
   const [messaggio,   setMessaggio]   = useState('')
   const [showAggiorna, setShowAggiorna] = useState(false)
+
+  // Interi derivati dalle due date (range esatto [inizio, fine]).
+  const [annoInizio, meseInizio, giornoInizio] = useMemo<[number, number, number]>(() => {
+    const [y, m, d] = dataInizioStr.split('-').map(Number)
+    return (y && m && d) ? [y, m, d] : [2026, 5, 1]
+  }, [dataInizioStr])
+  const [annoFine, meseFine, giornoFine] = useMemo<[number, number, number]>(() => {
+    const [y, m, d] = dataFineStr.split('-').map(Number)
+    return (y && m && d) ? [y, m, d] : [2026, 10, 31]
+  }, [dataFineStr])
+  const rangeValido = !!dataInizioStr && !!dataFineStr && dataFineStr >= dataInizioStr
 
   // ── Queries ──────────────────────────────────────────────────
   const { data: config } = useQuery<Configurazione | null>({
@@ -241,11 +250,12 @@ export function GeneraCalendarioPage() {
   useEffect(() => {
     if (!config) return
     setSchemaNum(config.schema_attivo)
-    setMeseInizio(config.mese_inizio)
-    setAnnoInizio(config.anno_inizio)
-    setGiornoInizio(config.giorno_inizio ?? 1)
-    setMeseFine(config.mese_fine)
-    setAnnoFine(config.anno_fine)
+    const p2 = (n: number) => String(n).padStart(2, '0')
+    const gi = config.giorno_inizio ?? 1
+    setDataInizioStr(`${config.anno_inizio}-${p2(config.mese_inizio)}-${p2(gi)}`)
+    // giorno_fine null → ultimo giorno del mese di fine (legacy)
+    const gf = config.giorno_fine ?? new Date(config.anno_fine, config.mese_fine, 0).getDate()
+    setDataFineStr(`${config.anno_fine}-${p2(config.mese_fine)}-${p2(gf)}`)
   }, [config])
 
   // ── Riepilogo dinamico ───────────────────────────────────────
@@ -255,29 +265,20 @@ export function GeneraCalendarioPage() {
   )
 
   const stimaTurni = useMemo(() => {
-    const start = new Date(annoInizio, meseInizio - 1, 1)
-    const end   = new Date(annoFine, meseFine, 0)
+    const start = new Date(annoInizio, meseInizio - 1, giornoInizio)
+    const end   = new Date(annoFine, meseFine - 1, giornoFine)
     const giorni = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1
-    return giorni * medici.length
-  }, [annoInizio, meseInizio, annoFine, meseFine, medici.length])
+    return Math.max(0, giorni) * medici.length
+  }, [annoInizio, meseInizio, giornoInizio, annoFine, meseFine, giornoFine, medici.length])
 
-  const periodoLabel = `${MESI_IT[meseInizio]} ${annoInizio} → ${MESI_IT[meseFine]} ${annoFine}`
+  const periodoLabel = `${giornoInizio} ${MESI_IT[meseInizio]} ${annoInizio} → ${giornoFine} ${MESI_IT[meseFine]} ${annoFine}`
 
-  // ── Giorno di inizio rotazione ───────────────────────────────
-  // Numero di giorni del mese di inizio (per le opzioni del selettore).
-  const giorniMeseInizio = new Date(annoInizio, meseInizio, 0).getDate()
-  // Se cambiando mese il giorno selezionato eccede, riportalo nel range.
-  useEffect(() => {
-    if (giornoInizio > giorniMeseInizio) setGiornoInizio(giorniMeseInizio)
-  }, [giorniMeseInizio, giornoInizio])
-  // Primo lunedì >= giorno scelto = "settimana 1" della rotazione (hint UI).
-  const primoLunediRotazione = useMemo(() => {
-    const g = Math.min(Math.max(1, giornoInizio), giorniMeseInizio)
-    return primoLunediDelPeriodo(new Date(annoInizio, meseInizio - 1, g))
-  }, [annoInizio, meseInizio, giornoInizio, giorniMeseInizio])
-  const primoLunediLabel = primoLunediRotazione.toLocaleDateString('it-IT', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  })
+  // Primo lunedì >= data inizio = "settimana 1" della rotazione (hint UI).
+  const primoLunediLabel = useMemo(() => {
+    if (!rangeValido) return '—'
+    return primoLunediDelPeriodo(new Date(annoInizio, meseInizio - 1, giornoInizio))
+      .toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  }, [annoInizio, meseInizio, giornoInizio, rangeValido])
 
   // ── Genera ──────────────────────────────────────────────────
   async function genera() {
@@ -299,6 +300,7 @@ export function GeneraCalendarioPage() {
         anno_inizio: annoInizio, mese_inizio: meseInizio,
         giorno_inizio: giornoInizio,
         anno_fine:   annoFine,   mese_fine:   meseFine,
+        giorno_fine: giornoFine,
         schema_attivo: schemaNum,
         // n. medici attivi della generazione (controllo consistenza
         // per un futuro "Aggiorna turnazione").
@@ -319,6 +321,7 @@ export function GeneraCalendarioPage() {
         anno_inizio: annoInizio, mese_inizio: meseInizio,
         giorno_inizio: giornoInizio,
         anno_fine:   annoFine,   mese_fine:   meseFine,
+        giorno_fine: giornoFine,
         schema_attivo: schemaNum,
         max_ferie_concomitanti: config?.max_ferie_concomitanti ?? 2,
         autocalc_sub_med: config?.autocalc_sub_med ?? true,
@@ -353,12 +356,10 @@ export function GeneraCalendarioPage() {
       // Cancella turni esistenti per il periodo
       setMessaggio('Cancellazione turni precedenti...')
       const medicoIds  = medici.map(m => m.id)
-      const dataInizio = `${annoInizio}-${String(meseInizio).padStart(2,'0')}-01`
-      // ⚠️ NON usare toISOString(): converte in UTC e con fuso CEST/CET
-      // mezzanotte locale diventa il giorno prima → la cancellazione
-      // salterebbe l'ultimo giorno del mese di fine.
-      const lastDay  = new Date(annoFine, meseFine, 0).getDate()
-      const dataFine = `${annoFine}-${String(meseFine).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`
+      // Range esatto = le due date scelte (gia' in formato 'YYYY-MM-DD',
+      // niente toISOString che convertirebbe in UTC sballando i bordi).
+      const dataInizio = dataInizioStr
+      const dataFine   = dataFineStr
 
       const { error: delErr } = await supabase.from('turni')
         .delete()
@@ -458,46 +459,30 @@ export function GeneraCalendarioPage() {
           <h3 className="text-sm font-semibold text-stone-700">Periodo</h3>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label text-xs">Mese inizio</label>
-              <select value={meseInizio} onChange={e => setMeseInizio(+e.target.value)} className="input text-sm">
-                {MESI_IT.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
-              </select>
+              <label className="label text-xs">Data inizio</label>
+              <input type="date" value={dataInizioStr}
+                onChange={e => setDataInizioStr(e.target.value)}
+                className="input text-sm" />
             </div>
             <div>
-              <label className="label text-xs">Anno inizio</label>
-              <select value={annoInizio} onChange={e => setAnnoInizio(+e.target.value)} className="input text-sm">
-                {ANNI.map(a => <option key={a} value={a}>{a}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label text-xs">Mese fine</label>
-              <select value={meseFine} onChange={e => setMeseFine(+e.target.value)} className="input text-sm">
-                {MESI_IT.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label text-xs">Anno fine</label>
-              <select value={annoFine} onChange={e => setAnnoFine(+e.target.value)} className="input text-sm">
-                {ANNI.map(a => <option key={a} value={a}>{a}</option>)}
-              </select>
+              <label className="label text-xs">Data fine</label>
+              <input type="date" value={dataFineStr} min={dataInizioStr}
+                onChange={e => setDataFineStr(e.target.value)}
+                className="input text-sm" />
             </div>
           </div>
 
-          {/* Giorno di inizio rotazione: sett=0 = primo lunedì >= giorno */}
-          <div>
-            <label className="label text-xs">Giorno inizio rotazione</label>
-            <select value={giornoInizio} onChange={e => setGiornoInizio(+e.target.value)} className="input text-sm">
-              {Array.from({ length: giorniMeseInizio }, (_, i) => i + 1).map(g => (
-                <option key={g} value={g}>{g}</option>
-              ))}
-            </select>
-            <p className="text-[11px] text-stone-500 mt-1 leading-snug">
-              La rotazione (settimana 1) parte dal <strong>primo lunedì ≥ questo giorno</strong>:{' '}
-              <strong className="text-olive-600">{primoLunediLabel}</strong>.<br />
-              Il calendario parte comunque dal 1° del mese; i giorni precedenti
-              continuano il ciclo teorico precedente (come oggi).
+          {!rangeValido && (
+            <p className="text-[11px] text-red-600 font-medium">
+              La data di fine deve essere uguale o successiva alla data di inizio.
             </p>
-          </div>
+          )}
+          <p className="text-[11px] text-stone-500 leading-snug">
+            La rotazione (settimana 1) parte dal <strong>primo lunedì ≥ data inizio</strong>:{' '}
+            <strong className="text-olive-600">{primoLunediLabel}</strong>.<br />
+            I giorni tra la data di inizio e quel lunedì continuano il ciclo
+            teorico precedente (coda del ciclo).
+          </p>
         </div>
 
         {/* ── Riepilogo dinamico ── */}
@@ -560,7 +545,7 @@ export function GeneraCalendarioPage() {
 
             <button
               onClick={genera}
-              disabled={!conferma || medici.length === 0 || slotSchema === 0}
+              disabled={!conferma || medici.length === 0 || slotSchema === 0 || !rangeValido}
               className="btn-primary w-full justify-center py-2.5"
             >
               <Zap size={16} />
@@ -571,7 +556,7 @@ export function GeneraCalendarioPage() {
                 attuale col nuovo schema, crea un'anteprima da approvare. */}
             <button
               onClick={() => setShowAggiorna(true)}
-              disabled={!conferma || medici.length === 0 || slotSchema === 0 || !config}
+              disabled={!conferma || medici.length === 0 || slotSchema === 0 || !config || !rangeValido}
               className="w-full justify-center py-2.5 rounded-lg font-medium text-white shadow inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               style={{ background: '#0284c7' }}
             >

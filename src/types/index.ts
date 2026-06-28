@@ -15,12 +15,14 @@ export interface Configurazione {
   mese_inizio: number         // 1..12
   anno_fine: number
   mese_fine: number           // 1..12
-  /** Giorno del mese_inizio da cui ancorare la rotazione: la settimana 1
-   *  (sett=0) e' il primo lunedi' >= (anno_inizio, mese_inizio, giorno_inizio).
-   *  Il calendario parte comunque dal 1° del mese; i giorni precedenti al
-   *  primo lunedi' restano coda del ciclo precedente. Default 1 = primo
-   *  lunedi' del mese (comportamento storico). */
+  /** Giorno del mese_inizio = inizio esatto del calendario; la rotazione
+   *  (settimana 1, sett=0) e' il primo lunedi' >= (anno_inizio, mese_inizio,
+   *  giorno_inizio). I giorni tra l'inizio e quel lunedi' restano coda del
+   *  ciclo precedente. Default 1 = 1° del mese (comportamento storico). */
   giorno_inizio?: number
+  /** Giorno del mese_fine = fine esatta del calendario. null/undefined =
+   *  ultimo giorno del mese_fine (comportamento storico). */
+  giorno_fine?: number | null
   schema_attivo: number       // numero schema (1, 2, ...)
   max_ferie_concomitanti: number   // quanti medici al massimo possono essere in ferie nello stesso giorno
   /** Flag globale: quando true, in Modifica Turni il cambio TC ricalcola
