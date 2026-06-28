@@ -120,11 +120,11 @@ export function AnteprimaTurnazionePage() {
   }
 
   return (
-    <div className="max-w-6xl space-y-4">
+    <div className="flex flex-col gap-3 h-full">
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
         onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
 
-      <div className="flex items-center justify-between flex-wrap gap-2">
+      <div className="flex items-center justify-between flex-wrap gap-2 shrink-0">
         <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
           <CalendarClock size={20} style={{ color: '#0284c7' }} />
           Anteprima turnazione
@@ -172,8 +172,10 @@ export function AnteprimaTurnazionePage() {
           </Link>.
         </div>
       ) : (
-        <AnteprimaTurnazioneView turni={turniLocal} meta={anteprima.meta} medici={medici}
-          festivitaCustomSet={festivitaCustomSet} editable onDropCell={handleDropCell} />
+        <div className="flex-1 min-h-0">
+          <AnteprimaTurnazioneView turni={turniLocal} meta={anteprima.meta} medici={medici}
+            festivitaCustomSet={festivitaCustomSet} editable onDropCell={handleDropCell} fullHeight />
+        </div>
       )}
     </div>
   )
