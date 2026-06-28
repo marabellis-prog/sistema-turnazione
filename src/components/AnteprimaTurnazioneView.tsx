@@ -18,9 +18,10 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { isFestivo } from '../lib/holidays'
 import { MESI_IT } from '../lib/algorithm'
+import { soglieForDay } from '../lib/soglieImpostazioni'
 import { LegendaCalendario, DRAG_MIME } from './LegendaCalendario'
 import type {
-  Medico, Turno, ColonnaCal, SlotPlacement, TurnazioneAnteprima, Ferie,
+  Medico, Turno, ColonnaCal, SlotPlacement, TurnazioneAnteprima, Ferie, Configurazione,
 } from '../types'
 
 const CELL_COLORS: Record<string, { bg: string; fg: string }> = {
@@ -76,6 +77,23 @@ function LabelClinico({ tc, sm, sp }: { tc: string; sm?: SlotPlacement; sp?: Slo
 function LabelVecchio({ tc }: { tc: string }) {
   if (!tc) return null
   return <span style={{ fontSize: tc.length > 1 ? 9 : 11, fontWeight: 700, color: '#44403c' }}>{tc}</span>
+}
+
+/** Cella di riepilogo "attuale/atteso" con barra di copertura.
+ *  e===0 = nessuna soglia impostata → mostra solo il numero. */
+function StatCell({ a, e }: { a: number; e: number }) {
+  const color = e === 0 ? '#9ca3af' : a === e ? '#16a34a' : a < e ? '#dc2626' : '#d97706'
+  const pct = e > 0 ? Math.min(100, Math.round((a / e) * 100)) : 0
+  return (
+    <div style={{ fontSize: 9, lineHeight: 1.1, padding: '1px' }}>
+      <div style={{ fontWeight: 800, color }}>{e > 0 ? `${a}/${e}` : a}</div>
+      {e > 0 && (
+        <div style={{ height: 3, background: '#e5e7eb', borderRadius: 2, marginTop: 1 }}>
+          <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2 }} />
+        </div>
+      )}
+    </div>
+  )
 }
 
 function buildColonne(turni: Turno[], festSet?: Set<string>): ColonnaCal[] {
@@ -162,6 +180,56 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
     return map
   }, [ferieDB])
 
+  // Config (soglie) per il footer di riepilogo "attuale/atteso".
+  const { data: config } = useQuery<Configurazione | null>({
+    queryKey: ['configurazione'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('configurazione').select('*')
+        .order('updated_at', { ascending: false }).limit(1).maybeSingle()
+      if (error) throw error
+      return data
+    },
+  })
+
+  // Riepilogo per colonna: SUB/MED/Supporto attuali (esclude ferie) vs attesi
+  // (soglie del giorno: feriale/sabato/festivo). Totale = somma dei tre.
+  const colStats = useMemo(() => {
+    const map = new Map<string, {
+      total: number
+      sub: { a: number; e: number }; med: { a: number; e: number }; sup: { a: number; e: number }
+    }>()
+    for (const c of colonne) {
+      let subA = 0, medA = 0, supA = 0
+      for (const m of mediciOrd) {
+        if (inFerie(ferieApproved, m.id, c.data)) continue
+        const t = byKey.get(`${m.id}|${c.data}`)
+        if (!t) continue
+        const tc = t.turno_clinico ?? ''
+        const attivaM = tc === 'M' || tc === 'L' || tc === 'EM' || tc === 'EL'
+        const attivaP = tc === 'P' || tc === 'L' || tc === 'EP' || tc === 'EL'
+        const sm = t.slot_mattina ?? null, sp = t.slot_pomeriggio ?? null
+        if (sm === 'SUB') subA++
+        else if (sm === 'MED') medA++
+        else if (attivaM) supA++
+        if (sp === 'SUB') subA++
+        else if (sp === 'MED') medA++
+        else if (attivaP) supA++
+      }
+      const s = soglieForDay(config, c.data)
+      const isFest = c.isDomenica || c.isFestivo
+      const isSab = !isFest && new Date(c.data + 'T00:00:00').getDay() === 6
+      const pick = (fer: number, sab: number, fes: number) => isFest ? fes : isSab ? sab : fer
+      const subE = pick(s.sub_mattina_feriale, s.sub_mattina_sabato, s.sub_mattina_festivo)
+                 + pick(s.sub_pomeriggio_feriale, s.sub_pomeriggio_sabato, s.sub_pomeriggio_festivo)
+      const medE = pick(s.med_mattina_feriale, s.med_mattina_sabato, s.med_mattina_festivo)
+                 + pick(s.med_pomeriggio_feriale, s.med_pomeriggio_sabato, s.med_pomeriggio_festivo)
+      const supE = pick(s.sup_mattina_feriale, s.sup_mattina_sabato, s.sup_mattina_festivo)
+                 + pick(s.sup_pomeriggio_feriale, s.sup_pomeriggio_sabato, s.sup_pomeriggio_festivo)
+      map.set(c.data, { total: subA + medA + supA, sub: { a: subA, e: subE }, med: { a: medA, e: medE }, sup: { a: supA, e: supE } })
+    }
+    return map
+  }, [colonne, mediciOrd, byKey, ferieApproved, config])
+
   const cutoverLabel = (() => {
     const [y, m, d] = meta.cutover.split('-').map(Number)
     return `${d} ${MESI_IT[m]} ${y}`
@@ -178,6 +246,19 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
       if (payload) onDropCell(medicoId, data, payload)
     },
   } : {}
+
+  const footLabelStyle: React.CSSProperties = {
+    width: 150, minWidth: 150, position: 'sticky', left: 0, zIndex: 3, background: '#f1f5f9',
+    fontSize: 10, fontWeight: 700, color: '#334155', padding: '2px 8px', border: '1px solid #cbd5e1', whiteSpace: 'nowrap',
+  }
+  const footCellStyle: React.CSSProperties = {
+    width: 32, minWidth: 32, background: '#f8fafc', textAlign: 'center', verticalAlign: 'middle', padding: 0, border: '1px solid #d8d2c4',
+  }
+  const RIEP_ROWS = [
+    ['SUB', '#fecaca', '#dc2626', 'sub'],
+    ['MED', '#bae6fd', '#0284c7', 'med'],
+    ['Supporto', '#d4d4d4', '#6b7280', 'sup'],
+  ] as const
 
   if (colonne.length === 0 || mediciOrd.length === 0) {
     return <div className="text-xs text-stone-500 italic p-4">Anteprima vuota o nessun medico attivo.</div>
@@ -309,6 +390,47 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
               </Fragment>
             ))}
           </tbody>
+          <tfoot>
+            <tr>
+              <td style={{ ...footLabelStyle, background: '#e2e8f0', borderTop: '2px solid #94a3b8' }}>Totale turni</td>
+              {colonne.map(c => {
+                const st = colStats.get(c.data)
+                const isCut = c.data === meta.cutover
+                const monthEnd = lastDaysOfMonth.has(c.data)
+                return (
+                  <td key={c.data} style={{ ...footCellStyle, background: '#eef2f7', borderTop: '2px solid #94a3b8',
+                    borderLeft: isCut ? CUTOVER_BORDER : '1px solid #d8d2c4',
+                    borderRight: monthEnd ? MONTH_END_BORDER : '1px solid #d8d2c4',
+                    fontWeight: 800, fontSize: 11, color: '#1f2937' }}>
+                    {st?.total ?? 0}
+                  </td>
+                )
+              })}
+            </tr>
+            {RIEP_ROWS.map(([label, dot, dotBorder, key]) => (
+              <tr key={label}>
+                <td style={footLabelStyle}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ width: 9, height: 9, borderRadius: '50%', background: dot, border: `1px solid ${dotBorder}`, display: 'inline-block' }} />
+                    {label}
+                  </span>
+                </td>
+                {colonne.map(c => {
+                  const st = colStats.get(c.data)
+                  const v = st ? st[key] : { a: 0, e: 0 }
+                  const isCut = c.data === meta.cutover
+                  const monthEnd = lastDaysOfMonth.has(c.data)
+                  return (
+                    <td key={c.data} style={{ ...footCellStyle,
+                      borderLeft: isCut ? CUTOVER_BORDER : '1px solid #d8d2c4',
+                      borderRight: monthEnd ? MONTH_END_BORDER : '1px solid #d8d2c4' }}>
+                      <StatCell a={v.a} e={v.e} />
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tfoot>
         </table>
       </div>
 
