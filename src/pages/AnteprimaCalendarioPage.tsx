@@ -54,7 +54,8 @@ export function AnteprimaCalendarioPage() {
               all'amministratore se va bene o se ci sono problemi.
             </span>
           </div>
-          <AnteprimaTurnazioneView anteprima={anteprima} medici={medici} festivitaCustomSet={festivitaCustomSet} />
+          <AnteprimaTurnazioneView turni={anteprima.snapshot?.turni ?? []} meta={anteprima.meta}
+            medici={medici} festivitaCustomSet={festivitaCustomSet} />
         </>
       )}
     </div>

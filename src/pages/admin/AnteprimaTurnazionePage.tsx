@@ -6,9 +6,9 @@
  * **Scartare** la bozza.
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarClock, CheckCircle, Trash2, Loader2, AlertTriangle } from 'lucide-react'
+import { CalendarClock, CheckCircle, Trash2, Loader2, AlertTriangle, Save } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
@@ -17,18 +17,48 @@ import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { useTurnazioneAnteprima } from '../../hooks/useTurnazioneAnteprima'
 import { useFestivitaCustom } from '../../hooks/useFestivitaCustom'
 import { AnteprimaTurnazioneView } from '../../components/AnteprimaTurnazioneView'
-import { pubblicaBozza, scartaBozza } from '../../lib/aggiornaTurnazione'
-import type { Configurazione, Medico } from '../../types'
+import { pubblicaBozza, scartaBozza, salvaModificheBozza } from '../../lib/aggiornaTurnazione'
+import { applicaDropCella } from '../../lib/anteprimaEditing'
+import type { Configurazione, Medico, Turno } from '../../types'
 
 export function AnteprimaTurnazionePage() {
   const qc = useQueryClient()
   const { confirm, confirmState } = useConfirm()
   const { clearAll } = usePendingActions()
   const { set: festivitaCustomSet } = useFestivitaCustom()
-  const [busy, setBusy] = useState<null | 'approva' | 'scarta'>(null)
+  const [busy, setBusy] = useState<null | 'approva' | 'scarta' | 'salva'>(null)
   const [err, setErr]   = useState<string | null>(null)
+  const [turniLocal, setTurniLocal] = useState<Turno[]>([])
+  const [dirty, setDirty] = useState(false)
 
   const { data: anteprima, isLoading } = useTurnazioneAnteprima()
+
+  // Carica i turni editabili dallo snapshot quando cambia la bozza.
+  useEffect(() => {
+    setTurniLocal(anteprima?.snapshot?.turni ?? [])
+    setDirty(false)
+  }, [anteprima?.id])
+
+  // Drop dalla legenda su una cella della riga "nuova" → modifica locale.
+  function handleDropCell(medicoId: string, data: string, payload: string) {
+    setTurniLocal(prev => prev.map(t =>
+      (t.medico_id === medicoId && t.data === data) ? applicaDropCella(t, payload) : t))
+    setDirty(true)
+  }
+
+  async function handleSalva() {
+    if (!anteprima) return
+    setBusy('salva'); setErr(null)
+    try {
+      await salvaModificheBozza(anteprima.id, turniLocal, anteprima.meta)
+      setDirty(false)
+      qc.invalidateQueries({ queryKey: ['turnazione-anteprima'] })
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
 
   const { data: medici = [] } = useQuery<Medico[]>({
     queryKey: ['medici'],
@@ -50,6 +80,7 @@ export function AnteprimaTurnazionePage() {
 
   async function handleApprova() {
     if (!anteprima || !config) return
+    if (dirty) { setErr('Hai modifiche non salvate: premi prima Salva.'); return }
     const ok = await confirm({
       title:        'Pubblica la turnazione',
       message:      'La bozza diventerà il calendario in produzione (sostituisce quello attuale). Procedere?',
@@ -100,6 +131,13 @@ export function AnteprimaTurnazionePage() {
         </h2>
         {anteprima && (
           <div className="flex items-center gap-2">
+            <button onClick={handleSalva} disabled={busy !== null || !dirty}
+              className="py-1.5 px-3 text-xs rounded-lg font-semibold text-white shadow-sm inline-flex items-center gap-1 disabled:opacity-50"
+              style={{ background: dirty ? '#16a34a' : '#9ca3af' }}
+              title="Salva i cambi preliminari nella bozza (aggiorna l'anteprima per tutti)">
+              {busy === 'salva' ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+              Salva
+            </button>
             <button onClick={handleScarta} disabled={busy !== null}
               className="btn-secondary py-1.5 px-3 text-xs gap-1">
               {busy === 'scarta' ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
@@ -107,7 +145,7 @@ export function AnteprimaTurnazionePage() {
             </button>
             <button onClick={handleApprova} disabled={busy !== null}
               className="py-1.5 px-3 text-xs rounded-lg font-semibold text-white shadow-sm inline-flex items-center gap-1 disabled:opacity-50"
-              style={{ background: '#166534' }}>
+              style={{ background: '#0284c7' }}>
               {busy === 'approva' ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
               Approva e pubblica
             </button>
@@ -134,7 +172,8 @@ export function AnteprimaTurnazionePage() {
           </Link>.
         </div>
       ) : (
-        <AnteprimaTurnazioneView anteprima={anteprima} medici={medici} festivitaCustomSet={festivitaCustomSet} />
+        <AnteprimaTurnazioneView turni={turniLocal} meta={anteprima.meta} medici={medici}
+          festivitaCustomSet={festivitaCustomSet} editable onDropCell={handleDropCell} />
       )}
     </div>
   )
