@@ -13,6 +13,8 @@ const SOGLIE_KEYS: (keyof SoglieSlot)[] = [
   'sub_mattina_feriale', 'sub_mattina_festivo', 'sub_pomeriggio_feriale', 'sub_pomeriggio_festivo',
   'med_mattina_feriale', 'med_mattina_festivo', 'med_pomeriggio_feriale', 'med_pomeriggio_festivo',
   'sup_mattina_feriale', 'sup_mattina_festivo', 'sup_pomeriggio_feriale', 'sup_pomeriggio_festivo',
+  'sub_mattina_sabato', 'sub_pomeriggio_sabato', 'med_mattina_sabato',
+  'med_pomeriggio_sabato', 'sup_mattina_sabato', 'sup_pomeriggio_sabato',
 ]
 
 /** Estrae le 12 soglie correnti dalle colonne config. */

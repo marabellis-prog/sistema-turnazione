@@ -52,6 +52,13 @@ export interface Configurazione {
   sup_mattina_festivo:    number
   sup_pomeriggio_feriale: number
   sup_pomeriggio_festivo: number
+  /** Soglie del SABATO (colonna a se' tra feriale e festivo). */
+  sub_mattina_sabato:    number
+  sub_pomeriggio_sabato: number
+  med_mattina_sabato:    number
+  med_pomeriggio_sabato: number
+  sup_mattina_sabato:    number
+  sup_pomeriggio_sabato: number
   /** Data (ISO) da cui valgono le soglie correnti; null = sempre. */
   impostazioni_valido_dal?: string | null
   /** Epoche passate delle soglie (per il check su periodi con composizioni
@@ -73,6 +80,8 @@ export type SoglieSlot = Pick<Configurazione,
   | 'sub_mattina_feriale' | 'sub_mattina_festivo' | 'sub_pomeriggio_feriale' | 'sub_pomeriggio_festivo'
   | 'med_mattina_feriale' | 'med_mattina_festivo' | 'med_pomeriggio_feriale' | 'med_pomeriggio_festivo'
   | 'sup_mattina_feriale' | 'sup_mattina_festivo' | 'sup_pomeriggio_feriale' | 'sup_pomeriggio_festivo'
+  | 'sub_mattina_sabato' | 'sub_pomeriggio_sabato' | 'med_mattina_sabato'
+  | 'med_pomeriggio_sabato' | 'sup_mattina_sabato' | 'sup_pomeriggio_sabato'
 >
 
 /** Epoca passata delle soglie: valide per i giorni in [valido_dal, valido_fino). */

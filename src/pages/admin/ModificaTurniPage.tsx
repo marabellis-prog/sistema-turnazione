@@ -1463,14 +1463,17 @@ export function ModificaTurniPage() {
       // da una data in poi senza far scattare errori sulla vecchia parte).
       const s = soglieForDay(config, col.data)
       const isFestivo = col.isDomenica || col.isFestivo
-      const pick = (fer: number, fes: number) => (isFestivo ? fes : fer)
+      // Sabato = giorno 6 e NON festivo (un sabato festivo conta come festivo).
+      const isSabato = !isFestivo && new Date(col.data + 'T00:00:00').getDay() === 6
+      const pick = (fer: number, sab: number, fes: number) =>
+        isFestivo ? fes : isSabato ? sab : fer
       const checks: Array<{ atteso: number; act: number; label: string }> = [
-        { atteso: pick(s.sub_mattina_feriale,    s.sub_mattina_festivo),    act: countSubM, label: 'SUB mattina'        },
-        { atteso: pick(s.sub_pomeriggio_feriale, s.sub_pomeriggio_festivo), act: countSubP, label: 'SUB pomeriggio'     },
-        { atteso: pick(s.med_mattina_feriale,    s.med_mattina_festivo),    act: countMedM, label: 'MED mattina'        },
-        { atteso: pick(s.med_pomeriggio_feriale, s.med_pomeriggio_festivo), act: countMedP, label: 'MED pomeriggio'     },
-        { atteso: pick(s.sup_mattina_feriale,    s.sup_mattina_festivo),    act: countSupM, label: 'Supporto mattina'   },
-        { atteso: pick(s.sup_pomeriggio_feriale, s.sup_pomeriggio_festivo), act: countSupP, label: 'Supporto pomeriggio'},
+        { atteso: pick(s.sub_mattina_feriale,    s.sub_mattina_sabato,    s.sub_mattina_festivo),    act: countSubM, label: 'SUB mattina'        },
+        { atteso: pick(s.sub_pomeriggio_feriale, s.sub_pomeriggio_sabato, s.sub_pomeriggio_festivo), act: countSubP, label: 'SUB pomeriggio'     },
+        { atteso: pick(s.med_mattina_feriale,    s.med_mattina_sabato,    s.med_mattina_festivo),    act: countMedM, label: 'MED mattina'        },
+        { atteso: pick(s.med_pomeriggio_feriale, s.med_pomeriggio_sabato, s.med_pomeriggio_festivo), act: countMedP, label: 'MED pomeriggio'     },
+        { atteso: pick(s.sup_mattina_feriale,    s.sup_mattina_sabato,    s.sup_mattina_festivo),    act: countSupM, label: 'Supporto mattina'   },
+        { atteso: pick(s.sup_pomeriggio_feriale, s.sup_pomeriggio_sabato, s.sup_pomeriggio_festivo), act: countSupP, label: 'Supporto pomeriggio'},
       ]
       for (const c of checks) {
         if (c.atteso > 0 && c.act !== c.atteso) {
