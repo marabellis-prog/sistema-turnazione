@@ -15,3 +15,9 @@ credentials*.json
 
 # MCP project-level config — contiene PAT Supabase, va escluso
 .mcp.json
+
+# Export di backup del DB (contengono dati personali: nomi, ferie, email).
+# Il repo e' PUBBLICO → non devono MAI essere committati. Salvati fuori dal
+# repo (vedi scripts/export-backup.mjs).
+backups/
+*.backup.json
