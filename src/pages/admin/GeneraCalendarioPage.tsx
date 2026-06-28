@@ -199,6 +199,7 @@ export function GeneraCalendarioPage() {
   const [schemaNum,   setSchemaNum]   = useState(1)
   const [meseInizio,  setMeseInizio]  = useState(5)
   const [annoInizio,  setAnnoInizio]  = useState(2026)
+  const [giornoInizio, setGiornoInizio] = useState(1)
   const [meseFine,    setMeseFine]    = useState(10)
   const [annoFine,    setAnnoFine]    = useState(2026)
   const [conferma,    setConferma]    = useState(false)
@@ -242,6 +243,7 @@ export function GeneraCalendarioPage() {
     setSchemaNum(config.schema_attivo)
     setMeseInizio(config.mese_inizio)
     setAnnoInizio(config.anno_inizio)
+    setGiornoInizio(config.giorno_inizio ?? 1)
     setMeseFine(config.mese_fine)
     setAnnoFine(config.anno_fine)
   }, [config])
@@ -261,6 +263,22 @@ export function GeneraCalendarioPage() {
 
   const periodoLabel = `${MESI_IT[meseInizio]} ${annoInizio} → ${MESI_IT[meseFine]} ${annoFine}`
 
+  // ── Giorno di inizio rotazione ───────────────────────────────
+  // Numero di giorni del mese di inizio (per le opzioni del selettore).
+  const giorniMeseInizio = new Date(annoInizio, meseInizio, 0).getDate()
+  // Se cambiando mese il giorno selezionato eccede, riportalo nel range.
+  useEffect(() => {
+    if (giornoInizio > giorniMeseInizio) setGiornoInizio(giorniMeseInizio)
+  }, [giorniMeseInizio, giornoInizio])
+  // Primo lunedì >= giorno scelto = "settimana 1" della rotazione (hint UI).
+  const primoLunediRotazione = useMemo(() => {
+    const g = Math.min(Math.max(1, giornoInizio), giorniMeseInizio)
+    return primoLunediDelPeriodo(new Date(annoInizio, meseInizio - 1, g))
+  }, [annoInizio, meseInizio, giornoInizio, giorniMeseInizio])
+  const primoLunediLabel = primoLunediRotazione.toLocaleDateString('it-IT', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  })
+
   // ── Genera ──────────────────────────────────────────────────
   async function genera() {
     // Conferma rafforzata
@@ -279,6 +297,7 @@ export function GeneraCalendarioPage() {
       setMessaggio('Aggiornamento configurazione...')
       const configPayload = {
         anno_inizio: annoInizio, mese_inizio: meseInizio,
+        giorno_inizio: giornoInizio,
         anno_fine:   annoFine,   mese_fine:   meseFine,
         schema_attivo: schemaNum,
         // n. medici attivi della generazione (controllo consistenza
@@ -298,6 +317,7 @@ export function GeneraCalendarioPage() {
       const cfgObj = {
         id: config?.id ?? '',
         anno_inizio: annoInizio, mese_inizio: meseInizio,
+        giorno_inizio: giornoInizio,
         anno_fine:   annoFine,   mese_fine:   meseFine,
         schema_attivo: schemaNum,
         max_ferie_concomitanti: config?.max_ferie_concomitanti ?? 2,
@@ -461,6 +481,22 @@ export function GeneraCalendarioPage() {
                 {ANNI.map(a => <option key={a} value={a}>{a}</option>)}
               </select>
             </div>
+          </div>
+
+          {/* Giorno di inizio rotazione: sett=0 = primo lunedì >= giorno */}
+          <div>
+            <label className="label text-xs">Giorno inizio rotazione</label>
+            <select value={giornoInizio} onChange={e => setGiornoInizio(+e.target.value)} className="input text-sm">
+              {Array.from({ length: giorniMeseInizio }, (_, i) => i + 1).map(g => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
+            <p className="text-[11px] text-stone-500 mt-1 leading-snug">
+              La rotazione (settimana 1) parte dal <strong>primo lunedì ≥ questo giorno</strong>:{' '}
+              <strong className="text-olive-600">{primoLunediLabel}</strong>.<br />
+              Il calendario parte comunque dal 1° del mese; i giorni precedenti
+              continuano il ciclo teorico precedente (come oggi).
+            </p>
           </div>
         </div>
 

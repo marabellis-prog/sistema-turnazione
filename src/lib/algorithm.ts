@@ -183,11 +183,15 @@ export function calcolaCalendarioCompleto(
   dataFine.setMonth(dataFine.getMonth() + 1, 0)
   dataFine.setHours(0, 0, 0, 0)
 
-  // ── Punto di riferimento rotazione: primo lunedì del periodo ──────
-  // I giorni prima (es. Ven-Dom se il mese inizia venerdì) ricevono
-  // sett=-1 e sono calcolati come fine del ciclo precedente.
-  // Con anchorOverride si usa un anchor esterno (continuità di fase).
-  const dataRifRotazione = anchorOverride ?? primoLunediDelPeriodo(dataInizio)
+  // ── Punto di riferimento rotazione: primo lunedì >= giorno_inizio ──
+  // Il calendario parte dal 1° del mese (dataInizio), ma la rotazione
+  // (sett=0) è ancorata al primo lunedì >= (mese_inizio, giorno_inizio):
+  // i giorni precedenti ricevono sett<0 e continuano il ciclo precedente.
+  // Default giorno_inizio=1 → primo lunedì del mese (comportamento storico).
+  // anchorOverride (Aggiorna turnazione) ha la precedenza: continuità di fase.
+  const baseAncora = new Date(config.anno_inizio, config.mese_inizio - 1, config.giorno_inizio ?? 1)
+  baseAncora.setHours(0, 0, 0, 0)
+  const dataRifRotazione = anchorOverride ?? primoLunediDelPeriodo(baseAncora)
 
   const risultati: TurnoGenerato[] = []
 
@@ -515,9 +519,10 @@ export function eseguiRicalcoloGiorno(params: {
 
   // flagsOriginali: placement teorico del giorno (dallo schema)
   const flagsOriginali = new Map<string, { slot_mattina: SlotPlacement; slot_pomeriggio: SlotPlacement }>()
-  const dataInizioPeriodo = new Date(config.anno_inizio, config.mese_inizio - 1, 1)
-  dataInizioPeriodo.setHours(0, 0, 0, 0)
-  const dataRifRotazione = primoLunediDelPeriodo(dataInizioPeriodo)
+  // Stesso anchor della generazione: primo lunedì >= giorno_inizio.
+  const baseAncora = new Date(config.anno_inizio, config.mese_inizio - 1, config.giorno_inizio ?? 1)
+  baseAncora.setHours(0, 0, 0, 0)
+  const dataRifRotazione = primoLunediDelPeriodo(baseAncora)
   for (let i = 0; i < numMedici; i++) {
     const teorico = calcolaTurnoTeorico(i, dataObj, dataRifRotazione, numMedici, schemiGiorno)
     flagsOriginali.set(mediciAttivi[i].id, {
