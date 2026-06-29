@@ -193,6 +193,18 @@ export function SettimanalePage() {
     },
   })
 
+  // Medici RITIRATI (dopo subentro): per mostrare i loro turni STORICI nelle
+  // celle, marcati "(rit.)", senza toccare la rotazione attiva.
+  const { data: mediciRitirati = [] } = useQuery<Medico[]>({
+    queryKey: ['medici-ritirati', repartoVista],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('medici').select('*').eq('reparto_id', repartoVista).eq('attivo', false).order('nome')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+
   // Bordi del periodo del calendario — usati per limitare la navigazione
   // e per marcare visivamente le celle fuori intervallo.
   const periodo = useMemo(() => {
@@ -302,8 +314,17 @@ export function SettimanalePage() {
   }
 
   function nomeBreve(m: Medico): string {
-    return nomeBreveLib(m.cognome, m.nome_proprio, m.nome)
+    const base = nomeBreveLib(m.cognome, m.nome_proprio, m.nome)
+    return m.attivo === false ? `${base} (rit.)` : base
   }
+
+  // Medici "visibili" = attivi (rotazione) + ritirati con almeno un turno nel
+  // periodo caricato → lo storico dei ritirati resta visibile, marcato (rit.).
+  const mediciVisibili = useMemo(() => {
+    const conTurni = new Set(turni.map(t => t.medico_id))
+    const ritiratiVis = mediciRitirati.filter(m => conTurni.has(m.id))
+    return [...medici, ...ritiratiVis]
+  }, [medici, mediciRitirati, turni])
 
   // ── Build display data per ogni giorno ─────────────────────────────
   // Le colonne SUB / MED non sono più "mattina/pomeriggio" ma "settore":
@@ -331,8 +352,9 @@ export function SettimanalePage() {
 
       if (inPeriod) {
         // I medici sono già ordinati per numero_ordine dalla query →
-        // l'output finale ha ordine consistente fra giorni diversi.
-        for (const medico of medici) {
+        // l'output finale ha ordine consistente fra giorni diversi. Include
+        // i ritirati con turni nel periodo (in coda), marcati (rit.).
+        for (const medico of mediciVisibili) {
           const t = turniByKey.get(`${medico.id}|${dataISO}`)
           if (!t) continue
           const tc = t.turno_clinico ?? ''
@@ -399,7 +421,7 @@ export function SettimanalePage() {
       }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [giorni, medici, turniByKey, ferieRanges, periodo])
+  }, [giorni, mediciVisibili, turniByKey, ferieRanges, periodo])
 
   // ── Navigazione: bordi del periodo ─────────────────────────────────
   // Il pulsante è abilitato se la nuova vista (post-click) si sovrappone

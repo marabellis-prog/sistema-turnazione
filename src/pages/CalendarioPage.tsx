@@ -245,6 +245,23 @@ export function CalendarioPage() {
     return medici.find(m => m.nome.toUpperCase().trim() === myName)
   }, [user?.nome, medici])
 
+  // Sono OSPITE di questo reparto? (medico fuori rotazione → sola
+  // visualizzazione: niente ferie/cambi). Match per utente_id, robusto.
+  const { data: sonoOspite = false } = useQuery<boolean>({
+    queryKey: ['sono-ospite', repartoVista, user?.id],
+    queryFn: async () => {
+      if (!user?.id) return false
+      const { data, error } = await supabase.from('medici')
+        .select('ruolo_reparto')
+        .eq('reparto_id', repartoVista).eq('utente_id', user.id).eq('attivo', true)
+        .maybeSingle()
+      if (error) throw error
+      return data?.ruolo_reparto === 'ospite'
+    },
+    enabled: !!user?.id,
+    staleTime: 60_000,
+  })
+
   // Sub-set delle ferie del medico associato all'utente (per il modal "self")
   // ⚠️ DEVE stare qui sopra — prima di qualsiasi early-return (loadDone, config)
   // — altrimenti React lancia "rendered fewer hooks than expected" → schermo bianco.
@@ -855,6 +872,14 @@ export function CalendarioPage() {
             <Info size={16} />
             <span className="hidden lg:inline ml-1">Legenda</span>
           </button>
+          {/* Ospite di questo reparto → sola visualizzazione (niente azioni). */}
+          {sonoOspite && (
+            <span className="flex items-center gap-1.5 px-3 py-2.5 lg:py-1.5 rounded-lg text-xs font-medium"
+              style={{ background: '#e0e8f0', color: '#3a4a6a', border: '1px solid #b8c4dc' }}
+              title="Sei ospite di questo reparto: puoi solo consultare il calendario, non richiedere ferie o cambi">
+              <Info size={15} /> <span className="hidden sm:inline">Ospite · sola visualizzazione</span>
+            </span>
+          )}
           {/* Riepilogo turni — visibile SOLO ai medici turnisti loggati. */}
           {mioMedico && (
             <button onClick={() => setShowRiepilogo(true)}

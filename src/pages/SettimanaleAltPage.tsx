@@ -143,6 +143,17 @@ export function SettimanaleAltPage() {
     },
   })
 
+  // Ritirati (subentro): turni STORICI visibili, marcati "(rit.)".
+  const { data: mediciRitirati = [] } = useQuery<Medico[]>({
+    queryKey: ['medici-ritirati', repartoVista],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('medici').select('*').eq('reparto_id', repartoVista).eq('attivo', false).order('nome')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+
   const periodo = useMemo(() => {
     if (!config) return null
     const min = new Date(config.anno_inizio, config.mese_inizio - 1, 1)
@@ -227,8 +238,15 @@ export function SettimanaleAltPage() {
   }
 
   function nomeBreve(m: Medico): string {
-    return nomeBreveLib(m.cognome, m.nome_proprio, m.nome)
+    const base = nomeBreveLib(m.cognome, m.nome_proprio, m.nome)
+    return m.attivo === false ? `${base} (rit.)` : base
   }
+
+  // Attivi (rotazione) + ritirati con turni nel periodo → storico visibile.
+  const mediciVisibili = useMemo(() => {
+    const conTurni = new Set(turni.map(t => t.medico_id))
+    return [...medici, ...mediciRitirati.filter(m => conTurni.has(m.id))]
+  }, [medici, mediciRitirati, turni])
 
   // ── Build display per giorno ──────────────────────────────────────
   const giorniDisplay = useMemo<DayDisplay[]>(() => {
@@ -246,7 +264,7 @@ export function SettimanaleAltPage() {
 
       if (inPeriod) {
         // medici è già ordinato per numero_ordine — push in ordine.
-        for (const medico of medici) {
+        for (const medico of mediciVisibili) {
           const t = turniByKey.get(`${medico.id}|${dataISO}`)
           if (!t) continue
           const tc = t.turno_clinico ?? ''
@@ -277,7 +295,7 @@ export function SettimanaleAltPage() {
       }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [giorni, medici, turniByKey, ferieRanges, periodo])
+  }, [giorni, mediciVisibili, turniByKey, ferieRanges, periodo])
 
   // ── Navigation ────────────────────────────────────────────────────
   const canGoPrev = useMemo(() => {
