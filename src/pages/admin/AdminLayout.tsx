@@ -10,15 +10,17 @@ import { useAutoBackup } from '../../hooks/useBackupManager'
 import { supabase } from '../../lib/supabase'
 import type { Configurazione } from '../../types'
 
+// Ordine = sequenza logica di creazione di una turnazione da zero:
+// Turnisti → Tipi di turno → Regole → Schema → Genera → Anteprima → Modifica…
 const links = [
   { to: '/admin/centro-controllo', label: 'Centro di controllo', Icon: SlidersHorizontal },
   { to: '/admin/medici',  label: 'Turnisti',          Icon: Users },
   { to: '/admin/tipi-turno', label: 'Tipi di turno',  Icon: Tag },
+  { to: '/admin/config',  label: 'Regole turni',      Icon: Settings },
   { to: '/admin/schema',  label: 'Disegna Schema',    Icon: Table2 },
   { to: '/admin/genera',  label: 'Genera Calendario', Icon: Zap },
-  { to: '/admin/turni',   label: 'Modifica Turni',    Icon: Calendar },
   { to: '/admin/anteprima-turnazione', label: 'Anteprima turni', Icon: CalendarClock },
-  { to: '/admin/config',  label: 'Regole turni',      Icon: Settings },
+  { to: '/admin/turni',   label: 'Modifica Turni',    Icon: Calendar },
   { to: '/admin/ferie',   label: 'Gestione Ferie',    Icon: Calendar },
   { to: '/admin/cambi',   label: 'Cambi Turno',       Icon: ArrowRightLeft },
   { to: '/admin/backup',  label: 'Backup/Ripristino', Icon: Archive },
