@@ -66,6 +66,8 @@ export interface ProprietaTurno {
 
 export interface Configurazione {
   id: string
+  /** Reparto a cui appartiene questa configurazione (multi-reparto). */
+  reparto_id: string
   anno_inizio: number
   mese_inizio: number         // 1..12
   anno_fine: number

@@ -239,9 +239,10 @@ export async function creaBozzaAggiornamento(
     }
   }
 
-  // ── Salva la bozza (una sola attiva: cancella le precedenti) ───────
+  // ── Salva la bozza (una sola attiva PER REPARTO: cancella le precedenti
+  //    SOLO di questo reparto) ─────────────────────────────────────────
   await supabase.from('turnazione_anteprima').delete()
-    .neq('id', '00000000-0000-0000-0000-000000000000')
+    .eq('reparto_id', config.reparto_id)
 
   const meta: TurnazioneAnteprima['meta'] = {
     cutover: cutoverISO,
@@ -259,6 +260,7 @@ export async function creaBozzaAggiornamento(
 
   const { data: inserted, error } = await supabase.from('turnazione_anteprima')
     .insert({
+      reparto_id: config.reparto_id,
       descrizione: `Aggiornamento schema ${p.schemaNuovo} dal ${cutoverISO}`,
       snapshot: { turni: snap },
       meta,
@@ -274,13 +276,14 @@ export async function creaBozzaAggiornamento(
 
 /** Applica lo snapshot a `turni` (replace completo), aggiorna `configurazione`
  *  dai meta, elimina la bozza. Ritorna il numero di turni inseriti. */
-export async function pubblicaBozza(anteprima: TurnazioneAnteprima, configId: string): Promise<number> {
+export async function pubblicaBozza(anteprima: TurnazioneAnteprima, configId: string, repartoId: string): Promise<number> {
   const turni = anteprima.snapshot?.turni ?? []
 
-  // 1) Replace completo dei turni con lo snapshot (lo snapshot È lo stato
-  //    finale: i mesi non toccati sono copiati invariati).
+  // 1) Replace completo dei turni DI QUESTO REPARTO con lo snapshot (lo
+  //    snapshot È lo stato finale: i mesi non toccati sono copiati invariati).
+  //    Scoped a reparto_id: NON tocca i turni degli altri reparti.
   const { error: delErr } = await supabase.from('turni')
-    .delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    .delete().eq('reparto_id', repartoId)
   if (delErr) throw delErr
 
   const CHUNK = 500
@@ -290,6 +293,7 @@ export async function pubblicaBozza(anteprima: TurnazioneAnteprima, configId: st
       // Rimuovi eventuali id/timestamp dallo snapshot (li rigenera il DB).
       const r = { ...(t as unknown as Record<string, unknown>) }
       delete r.id; delete r.created_at; delete r.updated_at
+      r.reparto_id = repartoId   // forza il reparto corretto sui turni inseriti
       return r
     })
     const { error } = await supabase.from('turni').insert(chunk)

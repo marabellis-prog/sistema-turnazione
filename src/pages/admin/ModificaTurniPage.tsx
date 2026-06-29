@@ -1275,7 +1275,7 @@ export function ModificaTurniPage() {
 
       // 3) Filtra le celle che combaciano col DB (no-op, no upsert)
       const updates: Array<{
-        medico_id: string; data: string;
+        medico_id: string; data: string; reparto_id: string;
         turno_clinico: TurnoClinico; turno_ricerca: TurnoRicerca;
         modificato_manualmente: boolean;
         slot_mattina: SlotPlacement; slot_pomeriggio: SlotPlacement;
@@ -1296,7 +1296,7 @@ export function ModificaTurniPage() {
         const orig = getOriginale(medico_id, data)
         const modificato_manualmente = (cell.tc !== orig.tc) || (cell.tr !== orig.tr)
         updates.push({
-          medico_id, data,
+          medico_id, data, reparto_id: repartoAttivo,
           turno_clinico:          cell.tc,
           turno_ricerca:          cell.tr,
           modificato_manualmente,

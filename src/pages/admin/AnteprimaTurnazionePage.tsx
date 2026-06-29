@@ -78,7 +78,7 @@ export function AnteprimaTurnazionePage() {
     if (!ok) return
     setBusy('approva'); setErr(null)
     try {
-      await pubblicaBozza(anteprima, config.id)
+      await pubblicaBozza(anteprima, config.id, repartoAttivo)
       clearAll()
       ;['turni', 'turni-modifica', 'ferie-ranges', 'configurazione', 'cambi-turno', 'turnazione-anteprima']
         .forEach(k => qc.invalidateQueries({ queryKey: [k] }))

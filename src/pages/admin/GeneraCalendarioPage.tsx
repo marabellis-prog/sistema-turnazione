@@ -310,6 +310,7 @@ export function GeneraCalendarioPage() {
       setMessaggio('Calcolo turni in corso...')
       const cfgObj = {
         id: config?.id ?? '',
+        reparto_id: repartoAttivo,
         anno_inizio: annoInizio, mese_inizio: meseInizio,
         giorno_inizio: giornoInizio,
         anno_fine:   annoFine,   mese_fine:   meseFine,
@@ -346,6 +347,7 @@ export function GeneraCalendarioPage() {
       // generazione completa riparte pulita, niente celle "rosse".
       const turniGenerati = turniGen.map(t => ({
         ...t,
+        reparto_id:               repartoAttivo,
         turno_clinico_base:       t.turno_clinico,
         turno_ricerca_base:       t.turno_ricerca,
         turno_clinico_originario: null,
