@@ -17,7 +17,7 @@ import {
   Loader2, Clock, Eye, X,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { useConfigReparto } from '../../hooks/useConfigReparto'
+import { useImpostazioniGlobali } from '../../hooks/useImpostazioniGlobali'
 import { useReparto } from '../../contexts/RepartoContext'
 import { useMediciReparto } from '../../hooks/useMediciReparto'
 import { useConfirm } from '../../hooks/useConfirm'
@@ -53,7 +53,7 @@ export function BackupRipristinoPage() {
   const [msg,           setMsg]           = useState<string | null>(null)
   const [err,           setErr]           = useState<string | null>(null)
   const [previewId,     setPreviewId]     = useState<string | null>(null)
-  const { repartoAttivo } = useReparto()
+  const { repartoAttivo, repartoCorrente } = useReparto()
   const { set: festivitaCustomSet } = useFestivitaCustom(repartoAttivo)
 
   // ── Snapshot completo del backup selezionato per anteprima ────────
@@ -78,12 +78,13 @@ export function BackupRipristinoPage() {
   // ── Medici per la preview ─────────────────────────────────────────
   const { data: medici = [] } = useMediciReparto()
 
-  // ── Lista backup (senza snapshot, troppo pesante) ──────────────────
+  // ── Lista backup DEL REPARTO ATTIVO (senza snapshot, troppo pesante) ──
   const { data: backups = [], isLoading } = useQuery<BackupRow[]>({
-    queryKey: ['turni-backup'],
+    queryKey: ['turni-backup', repartoAttivo],
     queryFn: async () => {
       const { data, error } = await supabase.from('turni_backup')
         .select('id, created_at, descrizione, num_turni')
+        .eq('reparto_id', repartoAttivo)
         .order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as BackupRow[]
@@ -92,8 +93,8 @@ export function BackupRipristinoPage() {
     refetchOnMount: 'always',
   })
 
-  // ── Settings backup dalla configurazione (intervallo + retention) ──
-  const { data: config } = useConfigReparto()
+  // ── Policy backup GLOBALE (intervallo + retention) — da Centro di Controllo ──
+  const { data: policy } = useImpostazioniGlobali()
 
   // ── Crea backup manuale ────────────────────────────────────────────
   async function handleCreaBackup() {
@@ -101,10 +102,10 @@ export function BackupRipristinoPage() {
     try {
       const descr = descrManuale.trim() ||
         `Backup manuale ${new Date().toLocaleString('it-IT')}`
-      const bk = await createBackup(descr)
-      // Rotazione automatica anche per i backup manuali
-      const retention = config?.backup_da_tenere ?? 10
-      const rotati = await ruotaBackup(retention)
+      const bk = await createBackup(repartoAttivo, descr)
+      // Rotazione automatica anche per i backup manuali (retention globale)
+      const retention = policy?.backup_da_tenere ?? 10
+      const rotati = await ruotaBackup(repartoAttivo, retention)
       setMsg(
         `Backup creato (${bk.num_turni ?? 0} turni)` +
         (rotati > 0 ? ` — ${rotati} backup vecchi rimossi per rotazione.` : '.')
@@ -156,7 +157,7 @@ export function BackupRipristinoPage() {
     if (!ok) return
     setBusyId(b.id); setErr(null); setMsg(null)
     try {
-      const res = await restoreBackup(b.id)
+      const res = await restoreBackup(repartoAttivo, b.id)
       setMsg(
         `Ripristino completato: ${res.inserted} turni reinseriti. ` +
         `Backup pre-ripristino creato come safety net.`
@@ -184,10 +185,10 @@ export function BackupRipristinoPage() {
           Backup / Ripristino turni
         </h2>
         <p className="text-sm text-stone-600 mt-0.5">
-          Snapshot completi dei turni. Auto-backup ogni{' '}
-          <strong>{config?.backup_intervallo_giorni ?? '?'} giorni</strong>,
-          mantenuti gli ultimi <strong>{config?.backup_da_tenere ?? '?'}</strong>.
-          Modifica i parametri in <em>Impostazioni</em>.
+          Snapshot dei turni di <strong>{repartoCorrente?.nome ?? 'questo reparto'}</strong>. Auto-backup ogni{' '}
+          <strong>{policy?.backup_intervallo_giorni ?? '?'} giorni</strong>,
+          mantenuti gli ultimi <strong>{policy?.backup_da_tenere ?? '?'}</strong>.
+          La policy si imposta in <em>Centro di Controllo</em>.
         </p>
       </div>
 

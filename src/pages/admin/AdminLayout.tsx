@@ -41,10 +41,10 @@ export function AdminLayout() {
   useFerieRealtime()
   useCambiTurnoRealtime()
 
-  // Auto-backup dei turni: al primo accesso admin se l'ultimo backup e`
-  // piu` vecchio dell'intervallo configurato, crea uno snapshot + rotazione.
-  // Mai blocca la UI: failures sono solo loggate in console.
-  useAutoBackup()
+  // Auto-backup dei turni del REPARTO ATTIVO: se l'ultimo backup di questo
+  // reparto e` piu` vecchio dell'intervallo (policy globale), crea uno
+  // snapshot + rotazione. Mai blocca la UI: failures solo in console.
+  useAutoBackup(repartoAttivo)
 
   // Count ferie ancora da approvare → driver del badge arancione.
   const { data: ferieDaApprovare = 0 } = useQuery({

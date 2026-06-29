@@ -64,6 +64,14 @@ export interface ProprietaTurno {
   created_at: string
 }
 
+/** Impostazioni GLOBALI del gestionale (singleton). Policy backup centrale. */
+export interface ImpostazioniGlobali {
+  id: boolean
+  backup_intervallo_giorni: number   // 0 = auto-backup disattivato
+  backup_da_tenere: number
+  updated_at: string
+}
+
 export interface Configurazione {
   id: string
   /** Reparto a cui appartiene questa configurazione (multi-reparto). */

@@ -20,6 +20,7 @@ import { ConfirmModal } from '../../components/ConfirmModal'
 import { Navigate } from 'react-router-dom'
 import { GestioneUtentiPage } from './GestioneUtentiPage'
 import { DatabaseStatsBox } from '../../components/DatabaseStatsBox'
+import { ImpostazioniBackupBox } from '../../components/ImpostazioniBackupBox'
 import { REPARTO_11N, useReparto } from '../../contexts/RepartoContext'
 import type { Reparto, RepartoResponsabile, UtenteAutorizzato } from '../../types'
 
@@ -315,6 +316,8 @@ export function CentroControlloPage() {
       {/* Monitoraggio globale del progetto Supabase (free tier) — solo admin */}
       <DatabaseStatsBox />
       <RepartiSection />
+      <div className="border-t-2 border-stone-200" />
+      <ImpostazioniBackupBox />
       <div className="border-t-2 border-stone-200" />
       <GestioneUtentiPage />
     </div>

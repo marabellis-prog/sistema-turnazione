@@ -24,18 +24,19 @@
 import { useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
-import type { Configurazione, Turno, TurnoBackup } from '../types'
+import type { ImpostazioniGlobali, Turno, TurnoBackup } from '../types'
 
 const CHUNK = 500   // batch size per INSERT bulk in restore (PostgREST limit)
 
-// ── Helper: snapshot dei turni correnti in un nuovo record backup ────
-export async function createBackup(descrizione: string): Promise<TurnoBackup> {
-  // Fetch tutti i turni del DB (no filtri: l'idea e` uno snapshot completo)
+// ── Helper: snapshot dei turni di UN REPARTO in un nuovo record backup ────
+export async function createBackup(repartoId: string, descrizione: string): Promise<TurnoBackup> {
+  // Snapshot dei soli turni del reparto indicato (backup per-reparto).
   const all: Turno[] = []
   let offset = 0
   const PAGE = 1000
   while (true) {
     const { data, error } = await supabase.from('turni').select('*')
+      .eq('reparto_id', repartoId)
       .order('data').range(offset, offset + PAGE - 1)
     if (error) throw error
     if (!data || data.length === 0) break
@@ -44,9 +45,10 @@ export async function createBackup(descrizione: string): Promise<TurnoBackup> {
     offset += PAGE
   }
 
-  // Insert nel turni_backup
+  // Insert nel turni_backup (taggato col reparto)
   const { data: inserted, error: insErr } = await supabase.from('turni_backup')
     .insert({
+      reparto_id: repartoId,
       descrizione,
       num_turni: all.length,
       snapshot:  { turni: all },
@@ -57,11 +59,11 @@ export async function createBackup(descrizione: string): Promise<TurnoBackup> {
   return inserted as TurnoBackup
 }
 
-// ── Rotazione: mantieni solo gli ultimi N backup ─────────────────────
-export async function ruotaBackup(daTenere: number): Promise<number> {
+// ── Rotazione: mantieni solo gli ultimi N backup DEL REPARTO ─────────
+export async function ruotaBackup(repartoId: string, daTenere: number): Promise<number> {
   if (daTenere < 1) return 0
   const { data: list, error } = await supabase.from('turni_backup')
-    .select('id').order('created_at', { ascending: false })
+    .select('id').eq('reparto_id', repartoId).order('created_at', { ascending: false })
   if (error) throw error
   if (!list || list.length <= daTenere) return 0
   const toDelete = list.slice(daTenere).map(x => x.id)
@@ -80,11 +82,12 @@ export async function ruotaBackup(daTenere: number): Promise<number> {
 //
 // Non e` atomico (transazione DB) ma in caso di fallimento allo step 3-4
 // l'admin puo` ripristinare dall'auto-backup creato allo step 1.
-export async function restoreBackup(backupId: string): Promise<{
+export async function restoreBackup(repartoId: string, backupId: string): Promise<{
   inserted: number; preBackupId: string
 }> {
-  // 1) Crea backup pre-ripristino
+  // 1) Crea backup pre-ripristino (solo del reparto)
   const pre = await createBackup(
+    repartoId,
     `Auto pre-ripristino del ${new Date().toLocaleString('it-IT')}`
   )
 
@@ -95,15 +98,21 @@ export async function restoreBackup(backupId: string): Promise<{
   const snapshot = (bk as { snapshot: { turni: Turno[] } }).snapshot
   const turniFromBk = snapshot?.turni ?? []
 
-  // 3) DELETE all (la condizione non-eq forza Supabase a non bloccare)
+  // 3) DELETE dei soli turni DEL REPARTO (NON tocca gli altri reparti, 11N
+  //    incluso: un ripristino di un reparto è isolato).
   const { error: delErr } = await supabase.from('turni')
-    .delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    .delete().eq('reparto_id', repartoId)
   if (delErr) throw delErr
 
-  // 4) INSERT bulk in chunks
+  // 4) INSERT bulk in chunks, forzando il reparto corretto sui turni.
   let inserted = 0
   for (let i = 0; i < turniFromBk.length; i += CHUNK) {
-    const chunk = turniFromBk.slice(i, i + CHUNK)
+    const chunk = turniFromBk.slice(i, i + CHUNK).map(t => {
+      const r = { ...(t as unknown as Record<string, unknown>) }
+      delete r.id; delete r.created_at; delete r.updated_at
+      r.reparto_id = repartoId
+      return r
+    })
     const { error: insErr } = await supabase.from('turni').insert(chunk)
     if (insErr) throw insErr
     inserted += chunk.length
@@ -122,31 +131,30 @@ export async function deleteBackup(backupId: string): Promise<void> {
 // configurato (`configurazione.backup_intervallo_giorni`), crea un
 // auto-backup e applica la rotazione. Usa una ref per evitare doppi
 // trigger in caso di Strict Mode o re-mount.
-export function useAutoBackup() {
+export function useAutoBackup(repartoId: string) {
   const qc = useQueryClient()
-  const triggered = useRef(false)
+  const triggered = useRef<string | null>(null)
 
-  // Leggo configurazione (per intervallo + retention)
-  const { data: config } = useQuery<Configurazione | null>({
-    queryKey: ['configurazione'],
+  // Policy GLOBALE (intervallo + retention): impostata in Centro di Controllo.
+  const { data: policy } = useQuery<ImpostazioniGlobali | null>({
+    queryKey: ['impostazioni-globali'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('configurazione').select('*')
-        .order('updated_at', { ascending: false }).limit(1).maybeSingle()
+        .from('impostazioni_globali').select('*').limit(1).maybeSingle()
       if (error) throw error
-      return data
+      return data as ImpostazioniGlobali | null
     },
+    staleTime: 60_000,
   })
 
-  // Leggo l'ultimo backup. NB: `isFetched` ci dice quando la query ha
-  // effettivamente RISPOSTO (success o error). Senza questa check si
-  // creava un backup spurio ad ogni refresh perche` il data iniziale
-  // (undefined, loading) era trattato come "nessun backup esiste".
+  // Ultimo backup DI QUESTO REPARTO. `isFetched` evita un backup spurio
+  // mentre la query è ancora in loading (data === undefined).
   const { data: lastBackup, isFetched: backupFetched } = useQuery<TurnoBackup | null>({
-    queryKey: ['turni-backup', 'latest'],
+    queryKey: ['turni-backup', 'latest', repartoId],
     queryFn: async () => {
       const { data, error } = await supabase.from('turni_backup')
         .select('id, created_at, descrizione, num_turni')
+        .eq('reparto_id', repartoId)
         .order('created_at', { ascending: false })
         .limit(1).maybeSingle()
       if (error) throw error
@@ -156,43 +164,38 @@ export function useAutoBackup() {
   })
 
   useEffect(() => {
-    if (triggered.current) return
-    if (!config) return
-    // Gating: aspetta che entrambe le query abbiano risposto. Altrimenti
-    // `lastBackup === undefined` (loading) verrebbe scambiato per
-    // "nessun backup esiste mai" → backup spurio ad ogni mount.
+    // Riarma quando cambia il reparto attivo (un auto-backup per reparto).
+    if (triggered.current === repartoId) return
+    if (!policy) return
     if (!backupFetched) return
-    if (lastBackup === undefined) return  // safety net per il typeguard
+    if (lastBackup === undefined) return
 
-    const interval = config.backup_intervallo_giorni ?? 7
+    const interval = policy.backup_intervallo_giorni ?? 7
     if (interval <= 0) return    // 0 = disattiva auto-backup
-    const retention = config.backup_da_tenere ?? 10
+    const retention = policy.backup_da_tenere ?? 10
 
-    // Da qui `lastBackup` e` TurnoBackup oppure null (mai undefined)
     let serve = false
     if (lastBackup === null) {
-      // Nessun backup mai fatto → serve
       serve = true
     } else {
-      const diffMs = Date.now() - new Date(lastBackup.created_at).getTime()
-      const diffDays = diffMs / (1000 * 60 * 60 * 24)
+      const diffDays = (Date.now() - new Date(lastBackup.created_at).getTime()) / (1000 * 60 * 60 * 24)
       if (diffDays >= interval) serve = true
     }
     if (!serve) return
 
-    triggered.current = true
+    triggered.current = repartoId
     ;(async () => {
       try {
         const descr = `Auto-backup ${new Date().toLocaleString('it-IT', {
           day: '2-digit', month: '2-digit', year: 'numeric',
           hour: '2-digit', minute: '2-digit',
         })}`
-        await createBackup(descr)
-        await ruotaBackup(retention)
+        await createBackup(repartoId, descr)
+        await ruotaBackup(repartoId, retention)
         qc.invalidateQueries({ queryKey: ['turni-backup'] })
       } catch (e) {
         console.error('[autoBackup]', (e as Error).message)
       }
     })()
-  }, [config, lastBackup, backupFetched, qc])
+  }, [policy, lastBackup, backupFetched, qc, repartoId])
 }
