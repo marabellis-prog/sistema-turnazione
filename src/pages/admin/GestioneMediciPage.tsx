@@ -1,11 +1,12 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Save, X, Trash2, AlertTriangle, RefreshCw, GripVertical, Users } from 'lucide-react'
+import { Plus, Pencil, Save, X, Trash2, AlertTriangle, RefreshCw, GripVertical, Users, Search, UserPlus } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
-import type { Medico } from '../../types'
+import { useReparto } from '../../contexts/RepartoContext'
+import type { Medico, UtenteAutorizzato } from '../../types'
 
 // ─────────────────────────────────────────────────────────────────
 // NOTA ARCHITETTURALE — dipendenze di un medico nel sistema:
@@ -33,6 +34,7 @@ export function GestioneMediciPage() {
   const qc = useQueryClient()
   const { confirm, confirmState } = useConfirm()
   const { setNeedsRegen } = usePendingActions()
+  const { repartoAttivo, repartoCorrente } = useReparto()
 
   // ── Stato editing inline (solo nome + REP, NON ordine) ───────
   const [editId,   setEditId]   = useState<string | null>(null)
@@ -51,23 +53,37 @@ export function GestioneMediciPage() {
   const [draggingIdx, setDraggingIdx] = useState<number | null>(null)
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
 
-  // ── Stato aggiungi ───────────────────────────────────────────
-  const [nuovoNome, setNuovoNome] = useState('')
+  // ── Stato aggiungi (ricerca utenti globali / crea nuovo) ─────
+  const [searchTerm, setSearchTerm] = useState('')
+  const [showNew,    setShowNew]    = useState(false)
+  const [nuovoNome,  setNuovoNome]  = useState('')
+  const [nuovoEmail, setNuovoEmail] = useState('')
 
   // ── Feedback ─────────────────────────────────────────────────
   const [errore,  setErrore]  = useState('')
   const [avviso,  setAvviso]  = useState('')
   const [saving,  setSaving]  = useState(false)
 
-  // ── Query ────────────────────────────────────────────────────
+  // ── Query (scoped al reparto attivo) ─────────────────────────
   const { data: medici = [], isLoading } = useQuery<Medico[]>({
-    queryKey: ['medici-tutti'],
+    queryKey: ['medici-tutti', repartoAttivo],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('medici').select('*').order('numero_ordine')
+        .from('medici').select('*').eq('reparto_id', repartoAttivo).order('numero_ordine')
       if (error) throw error
       return data
     },
+  })
+
+  // Utenti globali — per la ricerca "3 lettere" in fase di aggiunta turnista.
+  const { data: utenti = [] } = useQuery<UtenteAutorizzato[]>({
+    queryKey: ['utenti_autorizzati'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_all_utenti_autorizzati')
+      if (error) throw error
+      return (data ?? []) as UtenteAutorizzato[]
+    },
+    staleTime: 0,
   })
 
   // Sincronizza l'ordine locale con il DB — solo se non ci sono modifiche pendenti
@@ -176,7 +192,7 @@ export function GestioneMediciPage() {
       setNeedsRegen(msg)
       setAvviso(msg + ' — rigenera il calendario.')
       qc.invalidateQueries({ queryKey: ['medici'] })
-      qc.invalidateQueries({ queryKey: ['medici-tutti'] })
+      qc.invalidateQueries({ queryKey: ['medici-tutti', repartoAttivo] })
     } catch (e: unknown) {
       setErrore((e as Error).message)
     } finally {
@@ -240,7 +256,7 @@ export function GestioneMediciPage() {
     try {
       for (const campo of CAMPI_SCHEMA) {
         await supabase.from('schemi_modello')
-          .update({ [campo]: null }).eq(campo, m.numero_ordine)
+          .update({ [campo]: null }).eq(campo, m.numero_ordine).eq('reparto_id', repartoAttivo)
       }
       const { error } = await supabase.from('medici').delete().eq('id', m.id)
       if (error) throw error
@@ -250,7 +266,7 @@ export function GestioneMediciPage() {
       setNeedsRegen(msg)
       setHasOrderChanges(false)   // il DB sarà riallineato
       qc.invalidateQueries({ queryKey: ['medici'] })
-      qc.invalidateQueries({ queryKey: ['medici-tutti'] })
+      qc.invalidateQueries({ queryKey: ['medici-tutti', repartoAttivo] })
       qc.invalidateQueries({ queryKey: ['schemi_modello'] })
       qc.invalidateQueries({ queryKey: ['turni'] })
     } catch (e: unknown) {
@@ -260,26 +276,65 @@ export function GestioneMediciPage() {
     }
   }
 
-  // ── Aggiungi medico ──────────────────────────────────────────
-  async function aggiungi() {
-    const nome = nuovoNome.trim().toUpperCase()
-    if (!nome) return
-    const nextOrdine = localMedici.length > 0
-      ? Math.max(...localMedici.map(m => m.numero_ordine)) + 1
-      : 1
+  // ── Aggiungi turnista ────────────────────────────────────────
+  function nextOrdine() {
+    return localMedici.length > 0 ? Math.max(...localMedici.map(m => m.numero_ordine)) + 1 : 1
+  }
 
+  // Utenti globali che NON sono gia' turnisti di questo reparto (per id o nome).
+  const risultati = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase()
+    if (q.length < 3) return []
+    const nomiPresenti = new Set(localMedici.map(m => m.nome.toUpperCase().trim()))
+    const idPresenti = new Set(localMedici.map(m => m.utente_id).filter(Boolean))
+    return utenti.filter(u => u.attivo
+      && !idPresenti.has(u.id)
+      && !nomiPresenti.has((u.nome ?? '').toUpperCase().trim())
+      && ((u.nome ?? '').toLowerCase().includes(q) || u.email.toLowerCase().includes(q)))
+      .slice(0, 6)
+  }, [searchTerm, utenti, localMedici])
+
+  // Aggiunge un utente globale ESISTENTE come turnista del reparto.
+  async function aggiungiDaUtente(u: UtenteAutorizzato) {
+    setErrore('')
     const { error } = await supabase.from('medici').insert({
-      nome, numero_ordine: nextOrdine,
-      is_reperibilita: false, attivo: true,
+      nome: (u.nome || u.email).toUpperCase(), numero_ordine: nextOrdine(),
+      is_reperibilita: false, attivo: true, reparto_id: repartoAttivo, utente_id: u.id,
     })
     if (error) { setErrore(error.message); return }
-
-    setNuovoNome('')
-    const msg = `${nome} aggiunto (n°${nextOrdine})`
+    setSearchTerm('')
+    const msg = `${u.nome || u.email} aggiunto come turnista`
     setAvviso(msg + ' — rigenera il calendario per includerlo.')
     setNeedsRegen(msg)
     qc.invalidateQueries({ queryKey: ['medici'] })
-    qc.invalidateQueries({ queryKey: ['medici-tutti'] })
+    qc.invalidateQueries({ queryKey: ['medici-tutti', repartoAttivo] })
+  }
+
+  // Crea un NUOVO turnista: nuovo utente globale (livello user) + medico linkato.
+  async function aggiungiNuovo() {
+    const nome = nuovoNome.trim().toUpperCase()
+    const email = nuovoEmail.trim().toLowerCase()
+    if (!nome)  { setErrore('Inserisci il nome.'); return }
+    if (!email) { setErrore('Serve l\'email collegata a un account Gmail per il login.'); return }
+    setSaving(true); setErrore('')
+    const { error: uErr } = await supabase.rpc('insert_utente_autorizzato',
+      { p_email: email, p_nome: nome, p_ruolo: 'user' })
+    if (uErr) { setSaving(false); setErrore('Utente: ' + uErr.message); return }
+    const { data: lista } = await supabase.rpc('get_all_utenti_autorizzati')
+    const nuovo = ((lista ?? []) as UtenteAutorizzato[]).find(x => x.email === email)
+    const { error: mErr } = await supabase.from('medici').insert({
+      nome, numero_ordine: nextOrdine(), is_reperibilita: false, attivo: true,
+      reparto_id: repartoAttivo, utente_id: nuovo?.id ?? null,
+    })
+    setSaving(false)
+    if (mErr) { setErrore(mErr.message); return }
+    setNuovoNome(''); setNuovoEmail(''); setShowNew(false)
+    const msg = `${nome} creato come turnista e utente (login con ${email})`
+    setAvviso(msg + ' — rigenera il calendario per includerlo.')
+    setNeedsRegen(msg)
+    qc.invalidateQueries({ queryKey: ['utenti_autorizzati'] })
+    qc.invalidateQueries({ queryKey: ['medici'] })
+    qc.invalidateQueries({ queryKey: ['medici-tutti', repartoAttivo] })
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -293,10 +348,10 @@ export function GestioneMediciPage() {
         <div>
           <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
             <Users size={20} style={{ color: '#476540' }} />
-            Gestione Medici
+            Turnisti — {repartoCorrente?.nome ?? '…'}
           </h2>
           <p className="text-sm text-stone-600 mt-0.5">
-            Trascina le righe per riordinare la rotazione.
+            Turnisti di questo reparto. Trascina le righe per riordinare la rotazione.
             Dopo modifiche o eliminazioni <strong>rigenera il calendario</strong>.
           </p>
         </div>
@@ -477,27 +532,61 @@ export function GestioneMediciPage() {
         </table>
       </div>
 
-      {/* Aggiungi nuovo medico */}
-      <div className="card p-4">
-        <h3 className="font-semibold text-stone-700 mb-3 text-sm">Aggiungi medico</h3>
-        <div className="flex gap-2">
-          <input
-            value={nuovoNome}
-            onChange={e => setNuovoNome(e.target.value.toUpperCase())}
-            onKeyDown={e => e.key === 'Enter' && aggiungi()}
-            placeholder="COGNOME NOME…"
-            className="input flex-1 text-sm uppercase"
-          />
-          <button onClick={aggiungi} disabled={!nuovoNome.trim()} className="btn-primary text-sm">
-            <Plus size={15} /> Aggiungi
-          </button>
+      {/* Aggiungi turnista: ricerca utenti globali (3+ lettere) o crea nuovo */}
+      <div className="card p-4 space-y-3">
+        <h3 className="font-semibold text-stone-700 text-sm flex items-center gap-2">
+          <UserPlus size={15} /> Aggiungi turnista
+        </h3>
+
+        <div>
+          <div className="flex items-center gap-2">
+            <Search size={15} className="text-stone-400 shrink-0" />
+            <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+              placeholder="Scrivi almeno 3 lettere del nome…" className="input flex-1 text-sm" />
+          </div>
+          {searchTerm.trim().length >= 3 && (
+            <div className="mt-1 border border-stone-200 rounded-lg overflow-hidden divide-y divide-stone-100">
+              {risultati.map(u => (
+                <button key={u.id} onClick={() => aggiungiDaUtente(u)}
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-olive-50 text-left">
+                  <span><strong className="uppercase">{u.nome || '—'}</strong>
+                    <span className="text-stone-400 text-xs ml-1">{u.email}</span></span>
+                  <Plus size={14} className="text-olive-600 shrink-0" />
+                </button>
+              ))}
+              {risultati.length === 0 && (
+                <div className="px-3 py-2 text-xs text-stone-500">Nessun utente trovato — aggiungilo come nuovo qui sotto.</div>
+              )}
+            </div>
+          )}
         </div>
-        <p className="text-xs text-stone-500 mt-2">
-          Viene aggiunto come ultimo in ordine (n°&nbsp;
-          {localMedici.length > 0
-            ? Math.max(...localMedici.map(m => m.numero_ordine)) + 1
-            : 1}).
-          Usa il drag &amp; drop per riposizionarlo nella rotazione.
+
+        {!showNew ? (
+          <button onClick={() => { setShowNew(true); setNuovoNome(searchTerm.toUpperCase()) }}
+            className="text-xs font-semibold inline-flex items-center gap-1" style={{ color: '#476540' }}>
+            <Plus size={13} /> Non c'è? Aggiungi un nuovo turnista
+          </button>
+        ) : (
+          <div className="rounded-lg border border-olive-200 p-3 space-y-2" style={{ background: 'rgba(232,240,224,0.4)' }}>
+            <p className="text-xs text-stone-600">
+              Verrà aggiunto come turnista <strong>e come utente</strong> (livello User). Serve la sua
+              <strong> email Gmail</strong> per il login.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <input value={nuovoNome} onChange={e => setNuovoNome(e.target.value.toUpperCase())}
+                placeholder="COGNOME NOME" className="input text-sm uppercase" />
+              <input value={nuovoEmail} onChange={e => setNuovoEmail(e.target.value)}
+                placeholder="email@gmail.com" type="email" className="input text-sm" />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={aggiungiNuovo} disabled={saving || !nuovoNome.trim() || !nuovoEmail.trim()}
+                className="btn-primary py-1 px-3 text-xs gap-1"><Plus size={13} /> Crea turnista</button>
+              <button onClick={() => { setShowNew(false); setNuovoEmail('') }} className="btn-secondary py-1 px-2 text-xs">Annulla</button>
+            </div>
+          </div>
+        )}
+        <p className="text-[11px] text-stone-500">
+          Aggiunto come ultimo in rotazione (n° {nextOrdine()}). Trascina per riposizionarlo.
         </p>
       </div>
 
