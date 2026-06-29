@@ -130,6 +130,17 @@ export function GestioneMediciPage() {
   const ospiti = useMemo(() => medici.filter(m => m.ruolo_reparto === 'ospite'), [medici])
   // Medico attualmente in modifica nel modal (turnista o ospite).
   const editMedico = useMemo(() => medici.find(m => m.id === editId) ?? null, [medici, editId])
+
+  // Cambio reparto attivo → abbandona le modifiche d'ordine non salvate e
+  // chiudi l'editing: l'avviso giallo e l'ordine pendente appartengono al
+  // reparto PRECEDENTE, non al nuovo (altrimenti l'avviso "resta appiccicato").
+  useEffect(() => {
+    setHasOrderChanges(false)
+    setEditId(null)
+    setErrore('')
+    setAvviso('')
+  }, [repartoAttivo])
+
   useEffect(() => {
     if (!hasOrderChanges) setLocalMedici(turnistiAttivi)
   }, [turnistiAttivi, hasOrderChanges])

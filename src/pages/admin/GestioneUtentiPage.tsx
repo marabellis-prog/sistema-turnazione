@@ -123,6 +123,11 @@ export function GestioneUtentiPage() {
     if (error) { setErrore(error.message); return }
     setEditId(null)
     await refetchUtenti()
+    // Il trigger ha propagato cognome/nome ai medici collegati: invalido le
+    // viste che mostrano i medici (Turnisti, Calendario, settimanali…),
+    // altrimenti restano sul nome vecchio in cache (staleTime 5 min).
+    qc.invalidateQueries({ queryKey: ['medici'] })
+    qc.invalidateQueries({ queryKey: ['medici-tutti'] })
   }
 
   async function elimina(u: UtenteAutorizzato) {
