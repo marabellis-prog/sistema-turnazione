@@ -739,7 +739,7 @@ export function CalendarioPage() {
       // Ricrea i giorni rimanenti (sempre come pending, perché lo erano)
       for (const { start, end } of toRanges(remaining)) {
         await supabase.from('ferie').insert({
-          medico_id: mioMedico.id, data_inizio: start, data_fine: end,
+          medico_id: mioMedico.id, reparto_id: mioMedico.reparto_id, data_inizio: start, data_fine: end,
           note: record.note, approvate: false,
         })
       }
@@ -748,7 +748,7 @@ export function CalendarioPage() {
     // ── Aggiunte: tutte come pending ─────────────────────────────────
     for (const { start, end } of toRanges(toAdd)) {
       const { error } = await supabase.from('ferie').insert({
-        medico_id: mioMedico.id, data_inizio: start, data_fine: end,
+        medico_id: mioMedico.id, reparto_id: mioMedico.reparto_id, data_inizio: start, data_fine: end,
         note: null, approvate: false,
       })
       if (error) throw error

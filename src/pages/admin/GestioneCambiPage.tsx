@@ -98,10 +98,11 @@ export function GestioneCambiPage() {
 
   // ── Query: tutte le richieste ──────────────────────────────────────
   const { data: cambi = [], isLoading } = useQuery<CambioTurno[]>({
-    queryKey: ['cambi-turno'],
+    queryKey: ['cambi-turno', repartoAttivo],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('cambi_turno').select('*')
+        .eq('reparto_id', repartoAttivo)
         .order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as CambioTurno[]

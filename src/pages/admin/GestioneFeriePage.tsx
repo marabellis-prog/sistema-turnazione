@@ -68,9 +68,10 @@ export function GestioneFeriePage() {
   }, [config?.max_ferie_concomitanti])
 
   const { data: ferie = [] } = useQuery<Ferie[]>({
-    queryKey: ['ferie'],
+    queryKey: ['ferie', repartoAttivo],
     queryFn: async () => {
-      const { data, error } = await supabase.from('ferie').select('*').order('data_inizio')
+      const { data, error } = await supabase.from('ferie').select('*')
+        .eq('reparto_id', repartoAttivo).order('data_inizio')
       if (error) throw error
       return data ?? []
     },
@@ -136,7 +137,7 @@ export function GestioneFeriePage() {
         // Ricrea i giorni rimanenti come nuovi record (stesso approvate)
         for (const { start, end } of toRanges(remaining)) {
           await supabase.from('ferie').insert({
-            medico_id: medicoId, data_inizio: start, data_fine: end,
+            medico_id: medicoId, reparto_id: repartoAttivo, data_inizio: start, data_fine: end,
             note: record.note, approvate: record.approvate,
           })
         }
@@ -145,7 +146,7 @@ export function GestioneFeriePage() {
       // ── Gestisci aggiunte: crea richieste (approvate=false) ──
       for (const { start, end } of toRanges(toAdd)) {
         await supabase.from('ferie').insert({
-          medico_id: medicoId, data_inizio: start, data_fine: end,
+          medico_id: medicoId, reparto_id: repartoAttivo, data_inizio: start, data_fine: end,
           note: null, approvate: false,
         })
       }

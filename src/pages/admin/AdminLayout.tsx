@@ -48,11 +48,12 @@ export function AdminLayout() {
 
   // Count ferie ancora da approvare → driver del badge arancione.
   const { data: ferieDaApprovare = 0 } = useQuery({
-    queryKey: ['ferie-pending-count'],
+    queryKey: ['ferie-pending-count', repartoAttivo],
     queryFn: async () => {
       const { count, error } = await supabase
         .from('ferie')
         .select('*', { count: 'exact', head: true })
+        .eq('reparto_id', repartoAttivo)
         .eq('approvate', false)
       if (error) throw error
       return count ?? 0
@@ -65,11 +66,12 @@ export function AdminLayout() {
 
   // Count richieste cambio turno pending → secondo badge arancione.
   const { data: cambiDaApprovare = 0 } = useQuery({
-    queryKey: ['cambi-turno-pending-count'],
+    queryKey: ['cambi-turno-pending-count', repartoAttivo],
     queryFn: async () => {
       const { count, error } = await supabase
         .from('cambi_turno')
         .select('*', { count: 'exact', head: true })
+        .eq('reparto_id', repartoAttivo)
         .eq('stato', 'pending')
       if (error) throw error
       return count ?? 0

@@ -215,6 +215,7 @@ export function CambioTurnoModal({
     try {
       const { error: insErr } = await supabase.from('cambi_turno').insert({
         medico_richiedente_id: medicoRichiedente.id,
+        reparto_id: medicoRichiedente.reparto_id,
         modifiche,
         motivo: motivo.trim() || null,
         stato:  'pending',
