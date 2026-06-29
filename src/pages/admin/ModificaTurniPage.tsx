@@ -563,6 +563,17 @@ export function ModificaTurniPage() {
     },
   })
 
+  // Ritirati (subentro): per mostrarne i turni storici nella griglia, marcati.
+  const { data: mediciRitirati = [] } = useQuery<Medico[]>({
+    queryKey: ['medici-ritirati'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('medici').select('*').eq('attivo', false).order('nome')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+
   // Condivide la queryKey ['schemi_modello'] con GestioneSchemaPage e
   // GeneraCalendarioPage: così quando lo schema viene salvato altrove,
   // l'invalidateQueries fatto da quella pagina raggiunge anche noi.
@@ -633,6 +644,12 @@ export function ModificaTurniPage() {
         return all
       },
     })
+
+  // Medici visibili in griglia = attivi + ritirati con turni nel periodo.
+  const mediciVisibili = useMemo(() => {
+    const conTurni = new Set(turni.map(t => t.medico_id))
+    return [...medici, ...mediciRitirati.filter(m => conTurni.has(m.id))]
+  }, [medici, mediciRitirati, turni])
 
   // ── Turni teorici "di base" — FALLBACK ricalcolato da schema ───────
   // Usato solo per le celle che NON hanno il base memorizzato nel DB
@@ -1684,7 +1701,7 @@ export function ModificaTurniPage() {
           </tr>
         </thead>
         <tbody>
-          {medici.map(m => (
+          {mediciVisibili.map(m => (
             <tr key={m.id}>
               <td style={{
                 width: 140, minWidth: 140,
@@ -1694,7 +1711,7 @@ export function ModificaTurniPage() {
                 border: '1px solid #d5ccb8',
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 fontWeight: 500, color: '#3a3d30',
-              }}>{nomeBreve(m.cognome, m.nome_proprio, m.nome)}</td>
+              }}>{nomeBreve(m.cognome, m.nome_proprio, m.nome)}{m.attivo === false && <span style={{ marginLeft: 4, fontSize: 8, fontWeight: 700, color: '#a16207' }}>RIT.</span>}</td>
               {cols.map(c => renderCella(m.id, c, tipo))}
             </tr>
           ))}
@@ -2174,7 +2191,7 @@ export function ModificaTurniPage() {
           </h3>
           <div className="overflow-auto rounded-lg border border-stone-300 bg-white">
             <RiepilogoTurni
-              medici={medici}
+              medici={mediciVisibili}
               colonne={colonne}
               festivitaCustomSet={festivitaCustomSet}
               // Stesso aggiustamento della vista pubblica (Marabelli +4 ecc.):

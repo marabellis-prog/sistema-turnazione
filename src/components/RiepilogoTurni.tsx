@@ -190,8 +190,9 @@ export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, f
       <tbody>
         {stats.map(s => (
           <tr key={s.medico.id}>
-            <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 500, color: '#3a3d30' }}>
+            <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 500, color: s.medico.attivo === false ? '#a16207' : '#3a3d30' }}>
               {s.medico.nome}
+              {s.medico.attivo === false && <span style={{ fontSize: 9, fontWeight: 700, marginLeft: 4 }}>(rit.)</span>}
             </td>
             <td style={tdStyle}>{s.M || ''}</td>
             <td style={tdStyle}>{s.P || ''}</td>

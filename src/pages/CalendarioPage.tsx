@@ -219,6 +219,19 @@ export function CalendarioPage() {
     },
   })
 
+  // Turnisti RITIRATI (dopo un subentro): caricati a parte per mostrarne i
+  // turni STORICI nelle viste, marcati come "ritirato", senza toccare la
+  // rotazione attiva.
+  const { data: mediciRitirati = [] } = useQuery<Medico[]>({
+    queryKey: ['medici-ritirati'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('medici').select('*').eq('attivo', false).order('nome')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+
   // Match utente loggato ↔ medico in elenco — per nome (uppercase + trim).
   // Stesso pattern usato in GestioneUtentiPage. Se l'utente non corrisponde
   // ad alcun medico (es. account "supervisore" senza assegnazione), il
@@ -351,6 +364,14 @@ export function CalendarioPage() {
     }
     return map
   }, [turni])
+
+  // Medici "visibili" = attivi (rotazione) + ritirati che hanno almeno un turno
+  // nel periodo caricato → lo storico dei ritirati resta visibile (in coda).
+  const mediciVisibili = useMemo(() => {
+    const conTurni = new Set(turni.map(t => t.medico_id))
+    const ritiratiVis = mediciRitirati.filter(m => conTurni.has(m.id))
+    return [...medici, ...ritiratiVis]
+  }, [medici, mediciRitirati, turni])
 
   // Festività custom (santo patrono, eventi locali) — affette il flag
   // isFestivo delle colonne calendario.
@@ -580,7 +601,7 @@ export function CalendarioPage() {
           </tr>
         </thead>
         <tbody>
-          {medici.map(med => {
+          {mediciVisibili.map(med => {
             const medMap = turniMap.get(med.id)
             const isSel  = rigaSel === med.id
             return (
@@ -597,6 +618,10 @@ export function CalendarioPage() {
                   // al nome rendendolo illeggibile.
                   style={{ background: isSel ? '#e3d1b4' : undefined }}>
                   {nomeBreve(med.cognome, med.nome_proprio, med.nome)}
+                  {med.attivo === false && (
+                    <span className="ml-1 text-[9px] font-bold uppercase" style={{ color: '#a16207' }}
+                      title="Turnista ritirato (subentro) — turni storici">rit.</span>
+                  )}
                 </td>
                 {colonne.map(col => {
                   const cell  = medMap?.get(col.data)
@@ -1007,7 +1032,7 @@ export function CalendarioPage() {
             {/* Tabella — tutti i medici */}
             <div className="overflow-auto p-4">
               <RiepilogoTurni
-                medici={medici}
+                medici={mediciVisibili}
                 colonne={colonne}
                 festivitaCustomSet={festivitaCustomSet}
                 // Aggiustamento manuale conteggi (Marabelli): UNICA fonte di
