@@ -67,6 +67,7 @@ export function GestioneMediciPage() {
   const [nuovoCognome, setNuovoCognome] = useState('')
   const [nuovoNome,    setNuovoNome]    = useState('')
   const [nuovoEmail,   setNuovoEmail]   = useState('')
+  const [ruoloNuovo,   setRuoloNuovo]   = useState<'turnista' | 'ospite'>('turnista')
 
   // ── Feedback ─────────────────────────────────────────────────
   const [errore,  setErrore]  = useState('')
@@ -109,6 +110,18 @@ export function GestioneMediciPage() {
     },
   })
   const [subentroPer, setSubentroPer] = useState<Medico | null>(null)
+
+  // Utenti responsabili di QUESTO reparto → etichetta "Responsabile" in colonna Ruolo.
+  const { data: responsabiliIds = [] } = useQuery<string[]>({
+    queryKey: ['reparto-responsabili', repartoAttivo],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('reparto_responsabili')
+        .select('utente_id').eq('reparto_id', repartoAttivo)
+      if (error) throw error
+      return (data ?? []).map((r: { utente_id: string }) => r.utente_id)
+    },
+  })
+  const responsabiliSet = useMemo(() => new Set(responsabiliIds), [responsabiliIds])
 
   // Sincronizza l'ordine locale con il DB — solo se non ci sono modifiche pendenti
   useEffect(() => {
@@ -302,6 +315,14 @@ export function GestioneMediciPage() {
     return localMedici.length > 0 ? Math.max(...localMedici.map(m => m.numero_ordine)) + 1 : 1
   }
 
+  // Cambia al volo il ruolo nel reparto (Turnista ↔ Ospite) di un medico.
+  async function cambiaRuoloReparto(m: Medico, nuovo: 'turnista' | 'ospite') {
+    const { error } = await supabase.from('medici').update({ ruolo_reparto: nuovo }).eq('id', m.id)
+    if (error) { setErrore(error.message); return }
+    setLocalMedici(prev => prev.map(x => x.id === m.id ? { ...x, ruolo_reparto: nuovo } : x))
+    qc.invalidateQueries({ queryKey: ['medici-tutti', repartoAttivo] })
+  }
+
   // Utenti globali che NON sono gia' turnisti di questo reparto (per id o nome).
   const risultati = useMemo(() => {
     const raw = searchTerm.trim().toLowerCase()
@@ -326,7 +347,7 @@ export function GestioneMediciPage() {
     setErrore('')
     const { error } = await supabase.from('medici').insert({
       nome: u.nome || u.email, cognome: u.cognome ?? null, nome_proprio: u.nome_proprio ?? null,
-      numero_ordine: nextOrdine(),
+      numero_ordine: nextOrdine(), ruolo_reparto: ruoloNuovo,
       is_reperibilita: false, attivo: true, reparto_id: repartoAttivo, utente_id: u.id,
     })
     if (error) { setErrore(error.message); return }
@@ -355,7 +376,8 @@ export function GestioneMediciPage() {
     const nuovo = ((lista ?? []) as UtenteAutorizzato[]).find(x => x.email === email)
     const { error: mErr } = await supabase.from('medici').insert({
       nome, cognome, nome_proprio: nomeProprio,
-      numero_ordine: nextOrdine(), is_reperibilita: false, attivo: true,
+      numero_ordine: nextOrdine(), ruolo_reparto: ruoloNuovo,
+      is_reperibilita: false, attivo: true,
       reparto_id: repartoAttivo, utente_id: nuovo?.id ?? null,
     })
     setSaving(false)
@@ -452,13 +474,14 @@ export function GestioneMediciPage() {
               <th className="w-8" />          {/* drag handle */}
               <th className="px-3 py-2 text-left font-semibold text-stone-600 w-10">N°</th>
               <th className="px-3 py-2 text-left font-semibold text-stone-600">Nome</th>
+              <th className="px-3 py-2 text-center font-semibold text-stone-600 w-28">Ruolo</th>
               <th className="px-3 py-2 w-20" />
             </tr>
           </thead>
           <tbody ref={tbodyRef} className="divide-y divide-gray-100">
             {isLoading && (
               <tr>
-                <td colSpan={4} className="px-3 py-4 text-center text-stone-500">
+                <td colSpan={5} className="px-3 py-4 text-center text-stone-500">
                   Caricamento…
                 </td>
               </tr>
@@ -485,6 +508,7 @@ export function GestioneMediciPage() {
                     onKeyDown={e => e.key === 'Enter' && saveEdit()}
                   />
                 </td>
+                <td className="px-2 py-1.5 text-center text-xs text-stone-400">—</td>
                 <td className="px-2 py-1.5">
                   <div className="flex gap-1 justify-end">
                     <button onClick={saveEdit} disabled={saving}
@@ -541,6 +565,20 @@ export function GestioneMediciPage() {
                   {m.nome}
                 </td>
 
+                <td className="px-3 py-2 text-center">
+                  {m.utente_id && responsabiliSet.has(m.utente_id) ? (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                      style={{ background: '#1c2818', color: '#e0e8d8' }}>Responsabile</span>
+                  ) : (
+                    <select value={m.ruolo_reparto ?? 'turnista'}
+                      onChange={e => cambiaRuoloReparto(m, e.target.value as 'turnista' | 'ospite')}
+                      className="text-xs rounded px-1 py-0.5 border border-stone-200 bg-white cursor-pointer">
+                      <option value="turnista">Turnista</option>
+                      <option value="ospite">Ospite</option>
+                    </select>
+                  )}
+                </td>
+
                 <td className="px-3 py-2">
                   <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={() => startEdit(m)}
@@ -569,8 +607,22 @@ export function GestioneMediciPage() {
       {/* Aggiungi turnista: ricerca utenti globali (3+ lettere) o crea nuovo */}
       <div className="card p-4 space-y-3">
         <h3 className="font-semibold text-stone-700 text-sm flex items-center gap-2">
-          <UserPlus size={15} /> Aggiungi turnista
+          <UserPlus size={15} /> Aggiungi al reparto
         </h3>
+
+        {/* Ruolo nel reparto del nuovo nominativo (il Responsabile si assegna
+            nel Centro di controllo, non qui). */}
+        <div className="flex items-center gap-3 text-xs">
+          <span className="text-stone-500">Aggiungi come:</span>
+          <label className="flex items-center gap-1 cursor-pointer">
+            <input type="radio" name="ruoloNuovo" checked={ruoloNuovo === 'turnista'}
+              onChange={() => setRuoloNuovo('turnista')} className="accent-olive-600" /> Turnista
+          </label>
+          <label className="flex items-center gap-1 cursor-pointer">
+            <input type="radio" name="ruoloNuovo" checked={ruoloNuovo === 'ospite'}
+              onChange={() => setRuoloNuovo('ospite')} className="accent-olive-600" /> Ospite
+          </label>
+        </div>
 
         <div>
           <div className="flex items-center gap-2">

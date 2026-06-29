@@ -11,6 +11,7 @@ import { useTurnazioneAnteprima } from '../hooks/useTurnazioneAnteprima'
 import { MessaggiModal } from './MessaggiModal'
 import { supabase } from '../lib/supabase'
 import { useDebug } from '../contexts/DebugContext'
+import { useReparto } from '../contexts/RepartoContext'
 import type { AuthUser, Medico, Messaggio, UtenteAutorizzato } from '../types'
 
 interface Props {
@@ -109,6 +110,7 @@ export function NavBar({ user, onSignOut }: Props) {
 
   // ── Debug: Modalità Admin (on/off) + Doppelgänger (solo admin reale) ──
   const { isRealAdmin, realUser, adminMode, doppleganger, setAdminMode, setDoppleganger } = useDebug()
+  const { hasAdminAccess } = useReparto()
   const { data: utentiImp = [] } = useQuery<UtenteAutorizzato[]>({
     queryKey: ['utenti-impersonabili'],
     queryFn: async () => {
@@ -427,7 +429,7 @@ export function NavBar({ user, onSignOut }: Props) {
                 <span className="hidden lg:inline">Anteprima</span>
               </a>
             )}
-            {user.ruolo === 'admin' &&
+            {hasAdminAccess &&
               smartLink('/admin',           hrefAdmin,          TAB_ADMIN, 'Admin',           Settings)}
           </div>
         )}

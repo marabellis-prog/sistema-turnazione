@@ -10,6 +10,8 @@ export interface Medico {
   /** Cognome e nome separati (propagati dall'utente collegato via trigger). */
   cognome?: string | null
   nome_proprio?: string | null
+  /** Ruolo dentro il reparto: 'turnista' (in rotazione) o 'ospite' (solo vista). */
+  ruolo_reparto?: 'turnista' | 'ospite'
   /** Multi-reparto: il turnista appartiene a un reparto. */
   reparto_id?: string
   /** Link all'utente globale (utenti_autorizzati) se il turnista ha accesso. */

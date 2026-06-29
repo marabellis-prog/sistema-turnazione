@@ -106,6 +106,7 @@ function AppShell({ loading, signInWithGoogle, signOut }: {
   const user = effectiveUser
 
   return (
+    <RepartoProvider>
     <div className="min-h-screen flex flex-col">
       {/* NavBar solo se loggati */}
       {user && <NavBar user={user} onSignOut={signOut} />}
@@ -234,6 +235,7 @@ function AppShell({ loading, signInWithGoogle, signOut }: {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>
+    </RepartoProvider>
   )
 }
 
@@ -241,11 +243,9 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <PendingActionsProvider>
-        <RepartoProvider>
-          <BrowserRouter basename="/sistema-turnazione">
-            <AppRoutes />
-          </BrowserRouter>
-        </RepartoProvider>
+        <BrowserRouter basename="/sistema-turnazione">
+          <AppRoutes />
+        </BrowserRouter>
       </PendingActionsProvider>
     </QueryClientProvider>
   )

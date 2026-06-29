@@ -1,4 +1,5 @@
 import { Navigate } from 'react-router-dom'
+import { useReparto } from '../contexts/RepartoContext'
 import type { AuthUser } from '../types'
 
 interface Props {
@@ -20,6 +21,7 @@ interface Props {
 export function ProtectedRoute({
   user, loading, requireAdmin = false, allowedRoles, loadingComponent, children,
 }: Props) {
+  const { hasAdminAccess } = useReparto()
   if (loading) {
     if (loadingComponent) return <>{loadingComponent}</>
     return (
@@ -33,7 +35,8 @@ export function ProtectedRoute({
   }
 
   if (!user) return <Navigate to="/login" replace />
-  if (requireAdmin && user.ruolo !== 'admin') return <Navigate to="/" replace />
+  // Accesso admin = super-admin OPPURE responsabile di almeno un reparto.
+  if (requireAdmin && !hasAdminAccess) return <Navigate to="/" replace />
 
   // Default: vietato agli ospiti (consentiti admin e user). Le rotte che
   // ammettono ospiti devono dichiarare allowedRoles esplicitamente.
