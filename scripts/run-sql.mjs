@@ -83,7 +83,10 @@ if (argv.includes('--stdin')) {
   if (!path) { console.error('[run-sql] --file richiede un path'); process.exit(2) }
   sql = readFileSync(path, 'utf8')
 } else if (argv.length > 0) {
-  sql = argv.join(' ')
+  // NB: escludi i flag (es. --confirm-destructive) dalla SQL inline, altrimenti
+  // `--confirm-destructive` finisce nella query e il `--` commenta l'intera riga
+  // → lo statement non viene eseguito (HTTP 201, 0 rows) e sembra un no-op.
+  sql = argv.filter(a => !a.startsWith('--')).join(' ')
 } else {
   console.error('USO: node scripts/run-sql.mjs "SQL" | --file path | --stdin')
   process.exit(2)
