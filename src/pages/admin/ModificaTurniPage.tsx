@@ -27,6 +27,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Calendar, Save, Layers, Rows3, RefreshCw, AlertTriangle, X, RotateCcw } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { nomeBreve } from '../../lib/nomeTurnista'
 import {
   calcolaCalendarioCompleto, calcolaTurnoTeorico, primoLunediDelPeriodo,
   getDayOfWeek, ricalcolaGiorno, generaColonne, MESI_IT,
@@ -1693,7 +1694,7 @@ export function ModificaTurniPage() {
                 border: '1px solid #d5ccb8',
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 fontWeight: 500, color: '#3a3d30',
-              }}>{m.nome}</td>
+              }}>{nomeBreve(m.cognome, m.nome_proprio, m.nome)}</td>
               {cols.map(c => renderCella(m.id, c, tipo))}
             </tr>
           ))}

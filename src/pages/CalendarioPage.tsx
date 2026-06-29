@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw, Info, Plane, BarChart3, X, ArrowRightLeft, CalendarCheck } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { nomeBreve } from '../lib/nomeTurnista'
 import { generaColonne, MESI_IT } from '../lib/algorithm'
 import { CalendarLoadingScreen } from '../components/CalendarLoadingScreen'
 import { FerieModal, expandRange, toRanges, type DayChange } from '../components/FerieModal'
@@ -595,7 +596,7 @@ export function CalendarioPage() {
                   // contenuto che scorre dietro traspariva e si sovrapponeva
                   // al nome rendendolo illeggibile.
                   style={{ background: isSel ? '#e3d1b4' : undefined }}>
-                  {med.nome}
+                  {nomeBreve(med.cognome, med.nome_proprio, med.nome)}
                 </td>
                 {colonne.map(col => {
                   const cell  = medMap?.get(col.data)

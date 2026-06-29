@@ -17,6 +17,7 @@
 import { useMemo } from 'react'
 import { isFestivo } from '../lib/holidays'
 import { MESI_IT } from '../lib/algorithm'
+import { nomeBreve } from '../lib/nomeTurnista'
 import type { Medico, Turno, ColonnaCal, SlotPlacement } from '../types'
 
 const CELL_COLORS: Record<string, { bg: string; fg: string }> = {
@@ -263,7 +264,7 @@ export function BackupTurniPreview({ turni, medici, festivitaCustomSet }: Props)
                 border: '1px solid #d5ccb8',
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 fontWeight: 500, color: '#3a3d30',
-              }}>{m.nome}</td>
+              }}>{nomeBreve(m.cognome, m.nome_proprio, m.nome)}</td>
               {colonne.map(c => {
                 const t = turniByKey.get(`${m.id}|${c.data}`)
                 const tc = t?.turno_clinico ?? ''

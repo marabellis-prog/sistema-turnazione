@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, Shield, User, Lock, UserPlus, Pencil, Save, X, UserCheck } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { emailValida } from '../../lib/email'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import type { UtenteAutorizzato, Medico } from '../../types'
@@ -15,7 +16,8 @@ export function GestioneUtentiPage() {
   // ── Editing inline utenti attivi ─────────────────────────────
   const [editId,    setEditId]    = useState<string | null>(null)
   const [editEmail, setEditEmail] = useState('')
-  const [editNome,  setEditNome]  = useState('')
+  const [editCognome,     setEditCognome]     = useState('')
+  const [editNomeProprio, setEditNomeProprio] = useState('')
   const [editRuolo, setEditRuolo] = useState<'user' | 'admin' | 'ospite'>('user')
 
   // ── Aggiunta veloce da medico ────────────────────────────────
@@ -23,8 +25,9 @@ export function GestioneUtentiPage() {
   const [ruoloMedico, setRuoloMedico] = useState<Record<string, 'user' | 'admin' | 'ospite'>>({})
 
   // ── Aggiunta manuale ─────────────────────────────────────────
-  const [email,  setEmail]  = useState('')
-  const [nome,   setNome]   = useState('')
+  const [email,      setEmail]      = useState('')
+  const [cognomeNew, setCognomeNew] = useState('')
+  const [nomeNew,    setNomeNew]    = useState('')
   const [ruolo,  setRuolo]  = useState<'user' | 'admin' | 'ospite'>('user')
 
   const [errore,  setErrore]  = useState('')
@@ -70,20 +73,28 @@ export function GestioneUtentiPage() {
   function startEdit(u: UtenteAutorizzato) {
     setEditId(u.id)
     setEditEmail(u.email)
-    setEditNome(u.nome ?? '')
+    setEditCognome(u.cognome ?? '')
+    setEditNomeProprio(u.nome_proprio ?? '')
     setEditRuolo(u.ruolo)
     setErrore('')
   }
 
   async function saveEdit() {
     if (!editEmail.trim()) { setErrore('Email obbligatoria.'); return }
+    if (!emailValida(editEmail)) { setErrore('Indirizzo email non valido (controlla la @ e il dominio).'); return }
+    const cognome = editCognome.trim().toUpperCase()
+    const nomeProprio = editNomeProprio.trim()
+    const nomeComb = `${cognome} ${nomeProprio}`.replace(/\s+/g, ' ').trim()
     setSaving(true); setErrore('')
-    // RPC bypassa RLS (UPDATE diretto bloccato silenziosamente dalla policy)
+    // RPC bypassa RLS (UPDATE diretto bloccato silenziosamente dalla policy).
+    // cognome/nome_proprio si propagano ai medici collegati tramite trigger.
     const { error } = await supabase.rpc('update_utente_autorizzato', {
       p_id:    editId!,
       p_email: editEmail.trim().toLowerCase(),
-      p_nome:  editNome.trim().toUpperCase() || null,
+      p_nome:  nomeComb || null,
       p_ruolo: editRuolo,
+      p_cognome:      cognome,
+      p_nome_proprio: nomeProprio,
     })
     setSaving(false)
     if (error) { setErrore(error.message); return }
@@ -116,6 +127,8 @@ export function GestioneUtentiPage() {
       p_email: mail,
       p_nome:  m.nome,
       p_ruolo: ruoloDaUsare,
+      p_cognome:      m.cognome ?? null,
+      p_nome_proprio: m.nome_proprio ?? null,
     })
     setSaving(false)
     if (error) { setErrore(error.message); return }
@@ -127,15 +140,21 @@ export function GestioneUtentiPage() {
   // ── Aggiunta manuale ─────────────────────────────────────────
   async function aggiungiManuale() {
     if (!email.trim()) { setErrore("Inserisci un'email."); return }
+    if (!emailValida(email)) { setErrore('Indirizzo email non valido (controlla la @ e il dominio).'); return }
+    const cognome = cognomeNew.trim().toUpperCase()
+    const nomeProprio = nomeNew.trim()
+    const nomeComb = `${cognome} ${nomeProprio}`.replace(/\s+/g, ' ').trim()
     setSaving(true); setErrore('')
     const { error } = await supabase.rpc('insert_utente_autorizzato', {
       p_email: email.trim().toLowerCase(),
-      p_nome:  nome.trim().toUpperCase() || null,
+      p_nome:  nomeComb || null,
       p_ruolo: ruolo,
+      p_cognome:      cognome || null,
+      p_nome_proprio: nomeProprio || null,
     })
     setSaving(false)
     if (error) { setErrore(error.message); return }
-    setEmail(''); setNome('')
+    setEmail(''); setCognomeNew(''); setNomeNew('')
     await refetchUtenti()
   }
 
@@ -170,7 +189,7 @@ export function GestioneUtentiPage() {
           <thead className="bg-stone-50 border-b border-stone-200">
             <tr>
               <th className="px-3 py-2 text-left text-xs font-semibold text-stone-600">Email</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-stone-600">Nome</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-stone-600">Cognome e nome</th>
               <th className="px-3 py-2 text-center text-xs font-semibold text-stone-600 w-24">Ruolo</th>
               <th className="px-3 py-2 w-20" />
             </tr>
@@ -197,12 +216,20 @@ export function GestioneUtentiPage() {
                     />
                   </td>
                   <td className="px-2 py-1.5">
-                    <input
-                      value={editNome}
-                      onChange={e => setEditNome(e.target.value.toUpperCase())}
-                      placeholder="NOME"
-                      className="input py-0.5 text-xs w-full uppercase"
-                    />
+                    <div className="flex gap-1">
+                      <input
+                        value={editCognome}
+                        onChange={e => setEditCognome(e.target.value.toUpperCase())}
+                        placeholder="COGNOME"
+                        className="input py-0.5 text-xs w-full uppercase"
+                      />
+                      <input
+                        value={editNomeProprio}
+                        onChange={e => setEditNomeProprio(e.target.value)}
+                        placeholder="Nome"
+                        className="input py-0.5 text-xs w-full"
+                      />
+                    </div>
                   </td>
                   <td className="px-2 py-1.5 text-center">
                     <select
@@ -346,16 +373,21 @@ export function GestioneUtentiPage() {
       <div className="card p-4 space-y-3">
         <h3 className="font-semibold text-stone-700 text-sm">Aggiungi account manualmente</h3>
         <p className="text-xs text-stone-500">Per account non presenti tra i medici (sostituti, osservatori, ecc.)</p>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="label text-xs">Email Google *</label>
             <input value={email} onChange={e => setEmail(e.target.value)}
               placeholder="esempio@gmail.com" type="email" className="input text-sm" />
           </div>
           <div>
-            <label className="label text-xs">Nome (opzionale)</label>
-            <input value={nome} onChange={e => setNome(e.target.value.toUpperCase())}
-              placeholder="NOME COGNOME" className="input text-sm uppercase" />
+            <label className="label text-xs">Cognome</label>
+            <input value={cognomeNew} onChange={e => setCognomeNew(e.target.value.toUpperCase())}
+              placeholder="COGNOME" className="input text-sm uppercase" />
+          </div>
+          <div>
+            <label className="label text-xs">Nome</label>
+            <input value={nomeNew} onChange={e => setNomeNew(e.target.value)}
+              placeholder="Nome" className="input text-sm" />
           </div>
         </div>
         <div className="flex items-end gap-3">

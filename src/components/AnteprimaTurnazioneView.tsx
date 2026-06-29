@@ -16,6 +16,7 @@
 import { useMemo, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { nomeBreve } from '../lib/nomeTurnista'
 import { isFestivo } from '../lib/holidays'
 import { MESI_IT } from '../lib/algorithm'
 import { soglieForDay } from '../lib/soglieImpostazioni'
@@ -315,7 +316,7 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
                     fontSize: 11, padding: '4px 8px', borderTop: '1px solid #d5ccb8', borderLeft: '1px solid #d5ccb8',
                     borderRight: '1px solid #d5ccb8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                     fontWeight: 600, color: '#3a3d30' }}>
-                    {m.nome}
+                    {nomeBreve(m.cognome, m.nome_proprio, m.nome)}
                   </td>
                   {colonne.map(c => {
                     const t = byKey.get(`${m.id}|${c.data}`)

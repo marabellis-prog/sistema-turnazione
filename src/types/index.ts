@@ -2,11 +2,14 @@
 
 export interface Medico {
   id: string
-  nome: string
+  nome: string                // display combinato "COGNOME Nome" (sync dall'utente)
   numero_ordine: number       // posizione 1..N nella rotazione
   is_reperibilita: boolean    // true = il suo numero è il "REP" nello schema
   attivo: boolean
   created_at: string
+  /** Cognome e nome separati (propagati dall'utente collegato via trigger). */
+  cognome?: string | null
+  nome_proprio?: string | null
   /** Multi-reparto: il turnista appartiene a un reparto. */
   reparto_id?: string
   /** Link all'utente globale (utenti_autorizzati) se il turnista ha accesso. */
@@ -355,7 +358,9 @@ export interface UtenteAutorizzato {
    *  'ospite' = SOLO vista settimanale (niente calendario completo,
    *  niente ferie, niente riepilogo). */
   ruolo: 'admin' | 'user' | 'ospite'
-  nome: string | null
+  nome: string | null          // display combinato "COGNOME Nome"
+  cognome?: string | null
+  nome_proprio?: string | null
   attivo: boolean
   created_at: string
 }

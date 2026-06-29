@@ -21,6 +21,7 @@ import { useState, useMemo, useEffect, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, CalendarDays, Info } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { nomeBreve as nomeBreveLib } from '../lib/nomeTurnista'
 import { getDayOfWeek, formatDate, MESI_IT } from '../lib/algorithm'
 import { useTurniRealtime } from '../hooks/useTurniRealtime'
 import { useFerieRealtime } from '../hooks/useFerieRealtime'
@@ -221,7 +222,7 @@ export function SettimanaleAltPage() {
   }
 
   function nomeBreve(m: Medico): string {
-    return m.nome.split(' ').slice(-1)[0].toUpperCase()
+    return nomeBreveLib(m.cognome, m.nome_proprio, m.nome)
   }
 
   // ── Build display per giorno ──────────────────────────────────────

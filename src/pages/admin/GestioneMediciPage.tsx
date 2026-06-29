@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Save, X, Trash2, AlertTriangle, RefreshCw, GripVertical, Users, Search, UserPlus } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { emailValida } from '../../lib/email'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { useReparto } from '../../contexts/RepartoContext'
@@ -301,7 +302,8 @@ export function GestioneMediciPage() {
   async function aggiungiDaUtente(u: UtenteAutorizzato) {
     setErrore('')
     const { error } = await supabase.from('medici').insert({
-      nome: (u.nome || u.email).toUpperCase(), numero_ordine: nextOrdine(),
+      nome: u.nome || u.email, cognome: u.cognome ?? null, nome_proprio: u.nome_proprio ?? null,
+      numero_ordine: nextOrdine(),
       is_reperibilita: false, attivo: true, reparto_id: repartoAttivo, utente_id: u.id,
     })
     if (error) { setErrore(error.message); return }
@@ -314,19 +316,23 @@ export function GestioneMediciPage() {
 
   // Crea un NUOVO turnista: nuovo utente globale (livello user) + medico linkato.
   async function aggiungiNuovo() {
-    // Nome turnista = "COGNOME NOME" (cognome prima, per ordinamento per cognome).
-    const nome = `${nuovoCognome.trim()} ${nuovoNome.trim()}`.replace(/\s+/g, ' ').trim().toUpperCase()
+    // Identità: Cognome MAIUSCOLO + Nome come inserito; display combinato "COGNOME Nome".
+    const cognome = nuovoCognome.trim().toUpperCase()
+    const nomeProprio = nuovoNome.trim()
+    const nome = `${cognome} ${nomeProprio}`.replace(/\s+/g, ' ').trim()
     const email = nuovoEmail.trim().toLowerCase()
     if (!nuovoCognome.trim() || !nuovoNome.trim()) { setErrore('Inserisci cognome e nome.'); return }
     if (!email) { setErrore('Serve l\'email collegata a un account Gmail per il login.'); return }
+    if (!emailValida(email)) { setErrore('Indirizzo email non valido (controlla la @ e il dominio).'); return }
     setSaving(true); setErrore('')
     const { error: uErr } = await supabase.rpc('insert_utente_autorizzato',
-      { p_email: email, p_nome: nome, p_ruolo: 'user' })
+      { p_email: email, p_nome: nome, p_ruolo: 'user', p_cognome: cognome, p_nome_proprio: nomeProprio })
     if (uErr) { setSaving(false); setErrore('Utente: ' + uErr.message); return }
     const { data: lista } = await supabase.rpc('get_all_utenti_autorizzati')
     const nuovo = ((lista ?? []) as UtenteAutorizzato[]).find(x => x.email === email)
     const { error: mErr } = await supabase.from('medici').insert({
-      nome, numero_ordine: nextOrdine(), is_reperibilita: false, attivo: true,
+      nome, cognome, nome_proprio: nomeProprio,
+      numero_ordine: nextOrdine(), is_reperibilita: false, attivo: true,
       reparto_id: repartoAttivo, utente_id: nuovo?.id ?? null,
     })
     setSaving(false)
