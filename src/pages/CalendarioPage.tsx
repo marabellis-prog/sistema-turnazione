@@ -13,6 +13,7 @@ import { SyncCalendarModal } from '../components/SyncCalendarModal'
 import { LegendaCalendario } from '../components/LegendaCalendario'
 import { calcolaColoreFerie, COLORI_FERIE, ETICHETTA_COLORE } from '../lib/ferieColori'
 import { useDebug } from '../contexts/DebugContext'
+import { useMioReparto } from '../contexts/MioRepartoContext'
 import { useFerieRealtime } from '../hooks/useFerieRealtime'
 import { useTurniRealtime } from '../hooks/useTurniRealtime'
 import { useFestivitaCustom, useFestivitaCustomRealtime } from '../hooks/useFestivitaCustom'
@@ -179,6 +180,7 @@ export function CalendarioPage() {
 
   // Utente loggato + stato modal "Richiedi Ferie" e "Riepilogo turni"
   const { effectiveUser: user } = useDebug()
+  const { repartoVista } = useMioReparto()
   const qc = useQueryClient()
   const [showRichiediFerie, setShowRichiediFerie] = useState(false)
   const [showRichiediCambio, setShowRichiediCambio] = useState(false)
@@ -199,10 +201,10 @@ export function CalendarioPage() {
 
   // ── Query dati statici ───────────────────────────────────────────
   const { data: config, isLoading: lCfg } = useQuery<Configurazione | null>({
-    queryKey: ['configurazione'],
+    queryKey: ['configurazione', repartoVista],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('configurazione').select('*')
+        .from('configurazione').select('*').eq('reparto_id', repartoVista)
         .order('updated_at', { ascending: false }).limit(1).maybeSingle()
       if (error) throw error
       return data
@@ -210,10 +212,10 @@ export function CalendarioPage() {
   })
 
   const { data: medici = [], isLoading: lMed } = useQuery<Medico[]>({
-    queryKey: ['medici'],
+    queryKey: ['medici', repartoVista],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('medici').select('*').eq('attivo', true).order('numero_ordine')
+        .from('medici').select('*').eq('reparto_id', repartoVista).eq('attivo', true).order('numero_ordine')
       if (error) throw error
       return data
     },
@@ -223,10 +225,10 @@ export function CalendarioPage() {
   // turni STORICI nelle viste, marcati come "ritirato", senza toccare la
   // rotazione attiva.
   const { data: mediciRitirati = [] } = useQuery<Medico[]>({
-    queryKey: ['medici-ritirati'],
+    queryKey: ['medici-ritirati', repartoVista],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('medici').select('*').eq('attivo', false).order('nome')
+        .from('medici').select('*').eq('reparto_id', repartoVista).eq('attivo', false).order('nome')
       if (error) throw error
       return data ?? []
     },
@@ -250,10 +252,10 @@ export function CalendarioPage() {
   // (es. domenica non generata nel calendario ma con ferie inserite).
   // Includiamo `approvate` per distinguere visivamente le richieste in attesa.
   const { data: ferieDB = [] } = useQuery<Pick<Ferie, 'medico_id' | 'data_inizio' | 'data_fine' | 'approvate'>[]>({
-    queryKey: ['ferie-ranges'],
+    queryKey: ['ferie-ranges', repartoVista],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('ferie').select('medico_id, data_inizio, data_fine, approvate')
+        .from('ferie').select('medico_id, data_inizio, data_fine, approvate').eq('reparto_id', repartoVista)
       if (error) throw error
       return data ?? []
     },

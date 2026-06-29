@@ -11,6 +11,7 @@ import { MessaggiModal } from './MessaggiModal'
 import { supabase } from '../lib/supabase'
 import { useDebug } from '../contexts/DebugContext'
 import { useReparto } from '../contexts/RepartoContext'
+import { useMioReparto } from '../contexts/MioRepartoContext'
 import type { AuthUser, Medico, Messaggio, UtenteAutorizzato } from '../types'
 
 interface Props {
@@ -105,6 +106,7 @@ export function NavBar({ user, onSignOut }: Props) {
   // ── Debug: Modalità Admin (on/off) + Doppelgänger (solo admin reale) ──
   const { isRealAdmin, realUser, adminMode, doppleganger, setAdminMode, setDoppleganger } = useDebug()
   const { hasAdminAccess } = useReparto()
+  const { mieiReparti, repartoVista, setRepartoVista } = useMioReparto()
   const { data: utentiImp = [] } = useQuery<UtenteAutorizzato[]>({
     queryKey: ['utenti-impersonabili'],
     queryFn: async () => {
@@ -335,6 +337,16 @@ export function NavBar({ user, onSignOut }: Props) {
     <nav className="text-white shadow-md print:hidden"
       style={{ background: '#2b3c24' }}>
       <div className="max-w-screen-xl mx-auto px-4 flex items-center gap-3 h-12">
+
+        {/* Selettore reparto-vista — solo se l'utente è in più reparti */}
+        {mieiReparti.length > 1 && (
+          <select value={repartoVista} onChange={e => setRepartoVista(e.target.value)}
+            className="text-xs rounded px-2 py-1 font-semibold cursor-pointer shrink-0"
+            style={{ background: '#3a4f30', color: '#e0e8d8', border: '1px solid #577a45' }}
+            title="Reparto di cui stai guardando i turni">
+            {mieiReparti.map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}
+          </select>
+        )}
 
         {/* Logo + nome app — sempre visibili */}
         <div className="flex items-center gap-2 shrink-0">

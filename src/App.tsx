@@ -26,6 +26,7 @@ import { useAuth }                from './hooks/useAuth'
 import { PendingActionsProvider } from './contexts/PendingActionsContext'
 import { RepartoProvider }        from './contexts/RepartoContext'
 import { DebugProvider, useDebug } from './contexts/DebugContext'
+import { MioRepartoProvider }       from './contexts/MioRepartoContext'
 import { ManutenzionePage }       from './pages/ManutenzionePage'
 
 // ── MODALITÀ MANUTENZIONE ────────────────────────────────────────────
@@ -107,6 +108,7 @@ function AppShell({ loading, signInWithGoogle, signOut }: {
 
   return (
     <RepartoProvider>
+    <MioRepartoProvider>
     <div className="min-h-screen flex flex-col">
       {/* NavBar solo se loggati */}
       {user && <NavBar user={user} onSignOut={signOut} />}
@@ -235,6 +237,7 @@ function AppShell({ loading, signInWithGoogle, signOut }: {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>
+    </MioRepartoProvider>
     </RepartoProvider>
   )
 }
