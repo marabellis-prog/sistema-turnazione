@@ -4,7 +4,6 @@ import { Plus, Pencil, Save, X, Trash2, AlertTriangle, RefreshCw, GripVertical, 
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
-import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { useReparto } from '../../contexts/RepartoContext'
 import type { Medico, UtenteAutorizzato } from '../../types'
 
@@ -33,7 +32,6 @@ const CAMPI_SCHEMA = [
 export function GestioneMediciPage() {
   const qc = useQueryClient()
   const { confirm, confirmState } = useConfirm()
-  const { setNeedsRegen } = usePendingActions()
   const { repartoAttivo, repartoCorrente } = useReparto()
 
   // ── Stato editing inline (solo nome + REP, NON ordine) ───────
@@ -55,9 +53,10 @@ export function GestioneMediciPage() {
 
   // ── Stato aggiungi (ricerca utenti globali / crea nuovo) ─────
   const [searchTerm, setSearchTerm] = useState('')
-  const [showNew,    setShowNew]    = useState(false)
-  const [nuovoNome,  setNuovoNome]  = useState('')
-  const [nuovoEmail, setNuovoEmail] = useState('')
+  const [showNew,      setShowNew]      = useState(false)
+  const [nuovoCognome, setNuovoCognome] = useState('')
+  const [nuovoNome,    setNuovoNome]    = useState('')
+  const [nuovoEmail,   setNuovoEmail]   = useState('')
 
   // ── Feedback ─────────────────────────────────────────────────
   const [errore,  setErrore]  = useState('')
@@ -188,9 +187,8 @@ export function GestioneMediciPage() {
         if (error) throw error
       }
       setHasOrderChanges(false)
-      const msg = 'Ordine medici modificato tramite drag & drop'
-      setNeedsRegen(msg)
-      setAvviso(msg + ' — rigenera il calendario.')
+      const msg = 'Ordine turnisti modificato tramite drag & drop'
+      setAvviso(msg + '.')
       qc.invalidateQueries({ queryKey: ['medici'] })
       qc.invalidateQueries({ queryKey: ['medici-tutti', repartoAttivo] })
     } catch (e: unknown) {
@@ -246,7 +244,7 @@ export function GestioneMediciPage() {
         `• tutti i suoi turni nel calendario\n` +
         `• tutte le sue ferie\n` +
         `• le sue presenze nello schema (azzeramento slots)\n\n` +
-        `Questa operazione NON può essere annullata. Dopo l'eliminazione rigenera il calendario.`,
+        `Questa operazione NON può essere annullata.`,
       confirmLabel: 'Elimina definitivamente',
       danger:       true,
     })
@@ -262,8 +260,7 @@ export function GestioneMediciPage() {
       if (error) throw error
 
       const msg = `${m.nome} eliminato — turni e schema aggiornati`
-      setAvviso(msg + ' · rigenera il calendario.')
-      setNeedsRegen(msg)
+      setAvviso(msg + '.')
       setHasOrderChanges(false)   // il DB sarà riallineato
       qc.invalidateQueries({ queryKey: ['medici'] })
       qc.invalidateQueries({ queryKey: ['medici-tutti', repartoAttivo] })
@@ -310,17 +307,17 @@ export function GestioneMediciPage() {
     if (error) { setErrore(error.message); return }
     setSearchTerm('')
     const msg = `${u.nome || u.email} aggiunto come turnista`
-    setAvviso(msg + ' — rigenera il calendario per includerlo.')
-    setNeedsRegen(msg)
+    setAvviso(msg + '.')
     qc.invalidateQueries({ queryKey: ['medici'] })
     qc.invalidateQueries({ queryKey: ['medici-tutti', repartoAttivo] })
   }
 
   // Crea un NUOVO turnista: nuovo utente globale (livello user) + medico linkato.
   async function aggiungiNuovo() {
-    const nome = nuovoNome.trim().toUpperCase()
+    // Nome turnista = "COGNOME NOME" (cognome prima, per ordinamento per cognome).
+    const nome = `${nuovoCognome.trim()} ${nuovoNome.trim()}`.replace(/\s+/g, ' ').trim().toUpperCase()
     const email = nuovoEmail.trim().toLowerCase()
-    if (!nome)  { setErrore('Inserisci il nome.'); return }
+    if (!nuovoCognome.trim() || !nuovoNome.trim()) { setErrore('Inserisci cognome e nome.'); return }
     if (!email) { setErrore('Serve l\'email collegata a un account Gmail per il login.'); return }
     setSaving(true); setErrore('')
     const { error: uErr } = await supabase.rpc('insert_utente_autorizzato',
@@ -334,10 +331,9 @@ export function GestioneMediciPage() {
     })
     setSaving(false)
     if (mErr) { setErrore(mErr.message); return }
-    setNuovoNome(''); setNuovoEmail(''); setShowNew(false)
+    setNuovoCognome(''); setNuovoNome(''); setNuovoEmail(''); setShowNew(false)
     const msg = `${nome} creato come turnista e utente (login con ${email})`
-    setAvviso(msg + ' — rigenera il calendario per includerlo.')
-    setNeedsRegen(msg)
+    setAvviso(msg + '.')
     qc.invalidateQueries({ queryKey: ['utenti_autorizzati'] })
     qc.invalidateQueries({ queryKey: ['medici'] })
     qc.invalidateQueries({ queryKey: ['medici-tutti', repartoAttivo] })
@@ -358,7 +354,6 @@ export function GestioneMediciPage() {
           </h2>
           <p className="text-sm text-stone-600 mt-0.5">
             Turnisti di questo reparto. Trascina le righe per riordinare la rotazione.
-            Dopo modifiche o eliminazioni <strong>rigenera il calendario</strong>.
           </p>
         </div>
         {hasOrderChanges && (
@@ -568,7 +563,7 @@ export function GestioneMediciPage() {
         </div>
 
         {!showNew ? (
-          <button onClick={() => { setShowNew(true); setNuovoNome(searchTerm.toUpperCase()) }}
+          <button onClick={() => { setShowNew(true); setNuovoCognome(searchTerm.toUpperCase()); setNuovoNome('') }}
             className="text-xs font-semibold inline-flex items-center gap-1" style={{ color: '#476540' }}>
             <Plus size={13} /> Non c'è? Aggiungi un nuovo turnista
           </button>
@@ -579,15 +574,17 @@ export function GestioneMediciPage() {
               <strong> email Gmail</strong> per il login.
             </p>
             <div className="grid grid-cols-2 gap-2">
+              <input value={nuovoCognome} onChange={e => setNuovoCognome(e.target.value.toUpperCase())}
+                placeholder="COGNOME" className="input text-sm uppercase" />
               <input value={nuovoNome} onChange={e => setNuovoNome(e.target.value.toUpperCase())}
-                placeholder="COGNOME NOME" className="input text-sm uppercase" />
-              <input value={nuovoEmail} onChange={e => setNuovoEmail(e.target.value)}
-                placeholder="email@gmail.com" type="email" className="input text-sm" />
+                placeholder="NOME" className="input text-sm uppercase" />
             </div>
+            <input value={nuovoEmail} onChange={e => setNuovoEmail(e.target.value)}
+              placeholder="email@gmail.com" type="email" className="input text-sm w-full" />
             <div className="flex gap-2">
-              <button onClick={aggiungiNuovo} disabled={saving || !nuovoNome.trim() || !nuovoEmail.trim()}
+              <button onClick={aggiungiNuovo} disabled={saving || !nuovoCognome.trim() || !nuovoNome.trim() || !nuovoEmail.trim()}
                 className="btn-primary py-1 px-3 text-xs gap-1"><Plus size={13} /> Crea turnista</button>
-              <button onClick={() => { setShowNew(false); setNuovoEmail('') }} className="btn-secondary py-1 px-2 text-xs">Annulla</button>
+              <button onClick={() => { setShowNew(false); setNuovoCognome(''); setNuovoNome(''); setNuovoEmail('') }} className="btn-secondary py-1 px-2 text-xs">Annulla</button>
             </div>
           </div>
         )}
