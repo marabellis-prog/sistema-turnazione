@@ -28,7 +28,7 @@ export function AdminLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const { navGuard } = usePendingActions()
-  const { reparti, repartoAttivo, setRepartoAttivo } = useReparto()
+  const { reparti, repartoAttivo, setRepartoAttivo, repartoCorrente } = useReparto()
   const [schemaStoricoOpen, setSchemaStoricoOpen] = useState(false)
 
   // Realtime sulle ferie + cambi turno: garantisce che i count dei badge
@@ -179,6 +179,12 @@ export function AdminLayout() {
             "Schemi aggiornati" con freccia espandibile e l'elenco cronologico
             (schema → giorno dello switch). */}
         <div className="mx-3 mt-3 pt-3 px-1" style={{ borderTop: '1px solid #3a4a30' }}>
+          <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: '#577a45' }}>
+            Reparto:
+          </p>
+          <p className="text-sm font-bold mt-0.5 mb-2.5" style={{ color: '#e8f0e0' }}>
+            {repartoCorrente?.nome ?? '—'}
+          </p>
           {!schemaAggiornato ? (
             <>
               <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: '#577a45' }}>

@@ -12,7 +12,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Building2, Plus, Trash2, Pencil, Save, X, UserCog, Power, Lock,
+  Building2, Plus, Trash2, Pencil, Save, X, UserCog, Power, Lock, Copy,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
@@ -28,6 +28,7 @@ function RepartiSection() {
   const [editId, setEditId]       = useState<string | null>(null)
   const [editNome, setEditNome]   = useState('')
   const [addRespFor, setAddRespFor] = useState<string | null>(null)
+  const [copyFor, setCopyFor]       = useState<string | null>(null)
   const [err, setErr]             = useState('')
 
   const { data: reparti = [] } = useQuery<Reparto[]>({
@@ -67,29 +68,10 @@ function RepartiSection() {
     const nome = nuovoNome.trim()
     if (!nome) return
     setErr('')
-    const { data, error } = await supabase.from('reparti').insert({ nome }).select('id').single()
+    // Reparto NUOVO = vuoto (niente copia automatica). Il setup si copia poi
+    // a richiesta con l'icona "Copia da reparto".
+    const { error } = await supabase.from('reparti').insert({ nome })
     if (error) { setErr(error.message); return }
-    const newId = (data as { id: string }).id
-    // Bootstrap: copia tipi di turno + proprieta' dal reparto 11N (template),
-    // cosi' un reparto nuovo nasce gia' con i turni standard (M/P/L/REP, sub/med/sup).
-    try {
-      const [{ data: tipi }, { data: props }] = await Promise.all([
-        supabase.from('tipi_turno').select('*').eq('reparto_id', REPARTO_11N),
-        supabase.from('proprieta_turno').select('*').eq('reparto_id', REPARTO_11N),
-      ])
-      if (tipi?.length) {
-        await supabase.from('tipi_turno').insert(tipi.map(t => ({
-          reparto_id: newId, sigla: t.sigla, nome: t.nome, ora_inizio: t.ora_inizio, ora_fine: t.ora_fine,
-          peso: t.peso, copre_mattina: t.copre_mattina, copre_pomeriggio: t.copre_pomeriggio,
-          is_reperibilita: t.is_reperibilita, colore_bg: t.colore_bg, colore_fg: t.colore_fg, ordine: t.ordine,
-        })))
-      }
-      if (props?.length) {
-        await supabase.from('proprieta_turno').insert(props.map(p => ({
-          reparto_id: newId, sigla: p.sigla, nome: p.nome, colore_bg: p.colore_bg, ordine: p.ordine,
-        })))
-      }
-    } catch { /* se il bootstrap fallisce, i tipi si aggiungono a mano in Tipi di turno */ }
     setNuovoNome(''); reload()
   }
   async function salvaNome(id: string) {
@@ -107,18 +89,45 @@ function RepartiSection() {
   }
   async function elimina(r: Reparto) {
     if (r.id === REPARTO_11N) return
+    setErr('')
+    // Blocco se il reparto NON e' vuoto (turnisti, turni o responsabili).
+    const [m, t, rr] = await Promise.all([
+      supabase.from('medici').select('id', { count: 'exact', head: true }).eq('reparto_id', r.id),
+      supabase.from('turni').select('id', { count: 'exact', head: true }).eq('reparto_id', r.id),
+      supabase.from('reparto_responsabili').select('reparto_id', { count: 'exact', head: true }).eq('reparto_id', r.id),
+    ])
+    const nM = m.count ?? 0, nT = t.count ?? 0, nR = rr.count ?? 0
+    if (nM + nT + nR > 0) {
+      setErr(`Impossibile eliminare "${r.nome}": ha ${nM} turnisti, ${nT} turni e ${nR} responsabili. Svuotalo prima (o disattivalo).`)
+      return
+    }
     const ok = await confirm({
       title:        `Elimina reparto "${r.nome}"`,
-      message:      'Possibile solo se il reparto non ha dati collegati (turnisti, turni…). Altrimenti disattivalo.',
+      message:      'Il reparto è vuoto e verrà eliminato definitivamente. Procedere?',
       confirmLabel: 'Elimina', danger: true,
     })
     if (!ok) return
-    setErr('')
     const { error } = await supabase.from('reparti').delete().eq('id', r.id)
-    if (error) {
-      setErr('Impossibile eliminare: il reparto ha ancora dati collegati. Disattivalo invece.')
-      return
-    }
+    if (error) { setErr(error.message); return }
+    reload()
+  }
+
+  async function copiaSetup(targetId: string, sourceId: string) {
+    const src = reparti.find(x => x.id === sourceId)
+    const ok = await confirm({
+      title:        'Copia setup da reparto',
+      message:      `Copia tipi di turno, proprietà, schemi e regole da "${src?.nome}" in questo reparto. (Non copia turnisti né turni.) Procedere?`,
+      confirmLabel: 'Copia',
+    })
+    if (!ok) return
+    setErr('')
+    const { error } = await supabase.rpc('copia_setup_reparto', { p_target: targetId, p_source: sourceId })
+    if (error) { setErr(error.message); return }
+    setCopyFor(null)
+    qc.invalidateQueries({ queryKey: ['tipi_turno'] })
+    qc.invalidateQueries({ queryKey: ['proprieta_turno'] })
+    qc.invalidateQueries({ queryKey: ['schemi_modello'] })
+    qc.invalidateQueries({ queryKey: ['configurazione'] })
     reload()
   }
   async function aggiungiResp(repId: string, utenteId: string) {
@@ -213,6 +222,13 @@ function RepartiSection() {
                         <Power size={14} />
                       </button>
                       {r.id !== REPARTO_11N && (
+                        <button onClick={() => setCopyFor(copyFor === r.id ? null : r.id)}
+                          className="p-1.5 rounded text-stone-500 hover:text-green-700 hover:bg-green-50"
+                          title="Copia setup (tipi, schemi, regole) da un altro reparto">
+                          <Copy size={14} />
+                        </button>
+                      )}
+                      {r.id !== REPARTO_11N && (
                         <button onClick={() => elimina(r)}
                           className="p-1.5 rounded text-stone-500 hover:text-red-600 hover:bg-red-50" title="Elimina">
                           <Trash2 size={14} />
@@ -260,6 +276,25 @@ function RepartiSection() {
                   </button>
                 )}
               </div>
+
+              {/* Copia setup da un altro reparto (per reparti nuovi/vuoti) */}
+              {copyFor === r.id && (
+                <div className="mt-2 flex items-center gap-2 text-xs bg-green-50 border border-green-200 rounded p-2">
+                  <Copy size={13} className="text-green-700 shrink-0" />
+                  <span className="text-stone-600">Copia tipi/schemi/regole da:</span>
+                  <select autoFocus defaultValue=""
+                    onChange={e => e.target.value && copiaSetup(r.id, e.target.value)}
+                    className="input text-xs py-0.5 w-44">
+                    <option value="" disabled>Scegli reparto…</option>
+                    {reparti.filter(x => x.id !== r.id).map(x => (
+                      <option key={x.id} value={x.id}>{x.nome}</option>
+                    ))}
+                  </select>
+                  <button onClick={() => setCopyFor(null)} className="text-stone-400 hover:text-stone-700">
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
             </div>
           )
         })}

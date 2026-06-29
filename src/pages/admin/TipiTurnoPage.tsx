@@ -14,6 +14,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Palette, Plus, Trash2, Save, X, Pencil, Tag } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useReparto } from '../../contexts/RepartoContext'
+import { useConfirm } from '../../hooks/useConfirm'
+import { ConfirmModal } from '../../components/ConfirmModal'
 import type { TipoTurno, ProprietaTurno } from '../../types'
 
 type DraftTipo = Omit<TipoTurno, 'id' | 'reparto_id' | 'created_at'>
@@ -25,6 +27,7 @@ const EMPTY_TIPO: DraftTipo = {
 
 function TipiSection({ reparto }: { reparto: string }) {
   const qc = useQueryClient()
+  const { confirm, confirmState } = useConfirm()
   const [draft, setDraft]   = useState<DraftTipo>(EMPTY_TIPO)
   const [editId, setEditId] = useState<string | null>(null)
   const [err, setErr]       = useState('')
@@ -60,6 +63,19 @@ function TipiSection({ reparto }: { reparto: string }) {
     setDraft(EMPTY_TIPO); setEditId(null); reload()
   }
   async function elimina(t: TipoTurno) {
+    setErr('')
+    // Blocco se ci sono gia' turni con questo tipo (turno_clinico) nel reparto.
+    const { count } = await supabase.from('turni').select('id', { count: 'exact', head: true })
+      .eq('reparto_id', reparto).eq('turno_clinico', t.sigla)
+    if ((count ?? 0) > 0) {
+      setErr(`Impossibile eliminare "${t.sigla}": è usato in ${count} turni di questo reparto. Cambia/azzera quei turni prima.`)
+      return
+    }
+    const ok = await confirm({
+      title: `Elimina tipo "${t.sigla}"`, message: 'Il tipo di turno verrà eliminato. Procedere?',
+      confirmLabel: 'Elimina', danger: true,
+    })
+    if (!ok) return
     const { error } = await supabase.from('tipi_turno').delete().eq('id', t.id)
     if (error) { setErr(error.message); return }
     reload()
@@ -67,6 +83,8 @@ function TipiSection({ reparto }: { reparto: string }) {
 
   return (
     <div className="card p-4 space-y-3">
+      <ConfirmModal {...confirmState.opts} open={confirmState.open}
+        onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
       <h3 className="font-bold text-stone-800 flex items-center gap-2">
         <Tag size={16} style={{ color: '#476540' }} /> Tipi di turno
       </h3>
@@ -136,12 +154,20 @@ function TipiSection({ reparto }: { reparto: string }) {
           )}
         </div>
       </div>
+
+      <p className="text-[11px] text-stone-500 leading-snug">
+        <strong>Mattina / Pomeriggio</strong>: quali metà-giornata copre il turno (M→mattina,
+        P→pomeriggio, L→entrambe). <strong>Reperibilità</strong>: il turno è di reperibilità e NON
+        conta nella copertura. <strong>Peso</strong>: quanti turni vale (un L vale 2). Servono al
+        controllo automatico "quanti turni ci sono / quanti ne mancano" per ogni giorno.
+      </p>
     </div>
   )
 }
 
 function ProprietaSection({ reparto }: { reparto: string }) {
   const qc = useQueryClient()
+  const { confirm, confirmState } = useConfirm()
   const [sigla, setSigla]   = useState('')
   const [nome, setNome]     = useState('')
   const [colore, setColore] = useState('#d4d4d4')
@@ -168,6 +194,19 @@ function ProprietaSection({ reparto }: { reparto: string }) {
     setSigla(''); setNome(''); reload()
   }
   async function elimina(p: ProprietaTurno) {
+    setErr('')
+    // Blocco se la proprieta' (SUB/MED) e' usata negli slot dei turni.
+    const { count } = await supabase.from('turni').select('id', { count: 'exact', head: true })
+      .eq('reparto_id', reparto).or(`slot_mattina.eq.${p.sigla},slot_pomeriggio.eq.${p.sigla}`)
+    if ((count ?? 0) > 0) {
+      setErr(`Impossibile eliminare "${p.sigla}": è usata in ${count} turni di questo reparto.`)
+      return
+    }
+    const ok = await confirm({
+      title: `Elimina proprietà "${p.sigla}"`, message: 'Procedere?',
+      confirmLabel: 'Elimina', danger: true,
+    })
+    if (!ok) return
     const { error } = await supabase.from('proprieta_turno').delete().eq('id', p.id)
     if (error) { setErr(error.message); return }
     reload()
@@ -175,6 +214,8 @@ function ProprietaSection({ reparto }: { reparto: string }) {
 
   return (
     <div className="card p-4 space-y-3">
+      <ConfirmModal {...confirmState.opts} open={confirmState.open}
+        onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
       <h3 className="font-bold text-stone-800 flex items-center gap-2">
         <Palette size={16} style={{ color: '#476540' }} /> Proprietà (sub / med / supporto…)
       </h3>
