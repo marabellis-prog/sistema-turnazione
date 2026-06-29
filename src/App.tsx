@@ -25,6 +25,7 @@ import { AnteprimaTurnazionePage } from './pages/admin/AnteprimaTurnazionePage'
 import { useAuth }                from './hooks/useAuth'
 import { PendingActionsProvider } from './contexts/PendingActionsContext'
 import { RepartoProvider }        from './contexts/RepartoContext'
+import { DebugProvider, useDebug } from './contexts/DebugContext'
 import { ManutenzionePage }       from './pages/ManutenzionePage'
 
 // ── MODALITÀ MANUTENZIONE ────────────────────────────────────────────
@@ -48,9 +49,8 @@ const queryClient = new QueryClient({
 
 // Componente interno per accedere al routing
 function AppRoutes() {
-  const { user, loading, signInWithGoogle, signOut } = useAuth()
+  const { user: realUser, loading, signInWithGoogle, signOut } = useAuth()
   const navigate = useNavigate()
-  const location = useLocation()
 
   // Ripristina il path salvato da 404.html (GitHub Pages trick)
   useEffect(() => {
@@ -61,11 +61,24 @@ function AppRoutes() {
     }
   }, [navigate])
 
+  // Il DebugProvider espone l'utente "efficace" (doppelgänger / admin-mode)
+  // a tutta l'app; AppShell ci ragiona sopra.
+  return (
+    <DebugProvider realUser={realUser}>
+      <AppShell loading={loading} signInWithGoogle={signInWithGoogle} signOut={signOut} />
+    </DebugProvider>
+  )
+}
+
+function AppShell({ loading, signInWithGoogle, signOut }: {
+  loading: boolean
+  signInWithGoogle: () => void
+  signOut: () => void
+}) {
+  const { realUser, effectiveUser } = useDebug()
+  const location = useLocation()
+
   // Titolo della scheda + favicon dinamici in base alla rotta.
-  // - /admin/* → "Admin · Sistema Turnazione" + favicon-admin.svg
-  // - resto    → "Sistema Turnazione" + favicon.svg
-  // Cosi` a colpo d'occhio distingui la tab admin dalla tab turni anche
-  // quando il browser mostra molte schede in barra.
   useEffect(() => {
     const isAdmin = location.pathname.startsWith('/admin')
     document.title = isAdmin
@@ -82,12 +95,15 @@ function AppRoutes() {
     }
   }, [location.pathname])
 
-  // ── Gate manutenzione: tutti tranne l'admin permanente vedono SOLO il
-  //    calendario statico read-only (nessuna funzione → nessuna scrittura).
-  //    L'admin permanente (io) bypassa e continua a lavorare normalmente.
-  if (MANUTENZIONE && user && user.email?.toLowerCase() !== ADMIN_PERPETUO) {
+  // ── Gate manutenzione: basato sull'utente REALE, così l'admin permanente
+  //    (io) non resta mai chiuso fuori nemmeno mentre usa il doppelgänger. ──
+  if (MANUTENZIONE && realUser && realUser.email?.toLowerCase() !== ADMIN_PERPETUO) {
     return <ManutenzionePage onSignOut={signOut} />
   }
+
+  // Da qui tutta l'app ragiona sull'utente "efficace": così, declassando i
+  // poteri admin o impersonando un utente, vedo l'app come la vedono gli altri.
+  const user = effectiveUser
 
   return (
     <div className="min-h-screen flex flex-col">

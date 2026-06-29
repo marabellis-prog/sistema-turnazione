@@ -12,7 +12,7 @@ import { RiepilogoTurni, aggiustaConteggiRiepilogo } from '../components/Riepilo
 import { SyncCalendarModal } from '../components/SyncCalendarModal'
 import { LegendaCalendario } from '../components/LegendaCalendario'
 import { calcolaColoreFerie, COLORI_FERIE, ETICHETTA_COLORE } from '../lib/ferieColori'
-import { useAuth } from '../hooks/useAuth'
+import { useDebug } from '../contexts/DebugContext'
 import { useFerieRealtime } from '../hooks/useFerieRealtime'
 import { useTurniRealtime } from '../hooks/useTurniRealtime'
 import { useFestivitaCustom, useFestivitaCustomRealtime } from '../hooks/useFestivitaCustom'
@@ -178,7 +178,7 @@ export function CalendarioPage() {
   const [loadDone,     setLoadDone]     = useState(false)
 
   // Utente loggato + stato modal "Richiedi Ferie" e "Riepilogo turni"
-  const { user } = useAuth()
+  const { effectiveUser: user } = useDebug()
   const qc = useQueryClient()
   const [showRichiediFerie, setShowRichiediFerie] = useState(false)
   const [showRichiediCambio, setShowRichiediCambio] = useState(false)

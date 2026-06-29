@@ -35,10 +35,9 @@ export function GestioneMediciPage() {
   const { confirm, confirmState } = useConfirm()
   const { repartoAttivo, repartoCorrente } = useReparto()
 
-  // ── Stato editing inline (solo nome + REP, NON ordine) ───────
+  // ── Stato editing inline (solo nome, NON ordine) ─────────────
   const [editId,   setEditId]   = useState<string | null>(null)
   const [editNome, setEditNome] = useState('')
-  const [editRep,  setEditRep]  = useState(false)
 
   // ── Ordine locale (drag & drop, non ancora salvato) ──────────
   const [localMedici,      setLocalMedici]      = useState<Medico[]>([])
@@ -205,15 +204,14 @@ export function GestioneMediciPage() {
     setHasOrderChanges(false)
   }
 
-  // ── Avvia editing (solo nome + REP) ──────────────────────────
+  // ── Avvia editing (solo nome) ────────────────────────────────
   function startEdit(m: Medico) {
     setEditId(m.id)
     setEditNome(m.nome)
-    setEditRep(m.is_reperibilita)
     setErrore('')
   }
 
-  // ── Salva modifica nome/REP ───────────────────────────────────
+  // ── Salva modifica nome ───────────────────────────────────────
   async function saveEdit() {
     const nome = editNome.trim().toUpperCase()
     if (!nome) { setErrore('Il nome non può essere vuoto.'); return }
@@ -221,7 +219,7 @@ export function GestioneMediciPage() {
 
     const { error } = await supabase
       .from('medici')
-      .update({ nome, is_reperibilita: editRep })
+      .update({ nome })
       .eq('id', editId!)
 
     setSaving(false)
@@ -230,7 +228,7 @@ export function GestioneMediciPage() {
     setEditId(null)
     // Aggiorna anche il nome in localMedici per coerenza visiva
     setLocalMedici(prev => prev.map(m =>
-      m.id === editId ? { ...m, nome, is_reperibilita: editRep } : m
+      m.id === editId ? { ...m, nome } : m
     ))
     qc.invalidateQueries({ queryKey: ['medici'] })
     qc.invalidateQueries({ queryKey: ['medici-tutti'] })
@@ -418,14 +416,13 @@ export function GestioneMediciPage() {
               <th className="w-8" />          {/* drag handle */}
               <th className="px-3 py-2 text-left font-semibold text-stone-600 w-10">N°</th>
               <th className="px-3 py-2 text-left font-semibold text-stone-600">Nome</th>
-              <th className="px-3 py-2 text-center font-semibold text-stone-600 w-14">REP</th>
               <th className="px-3 py-2 w-20" />
             </tr>
           </thead>
           <tbody ref={tbodyRef} className="divide-y divide-gray-100">
             {isLoading && (
               <tr>
-                <td colSpan={5} className="px-3 py-4 text-center text-stone-500">
+                <td colSpan={4} className="px-3 py-4 text-center text-stone-500">
                   Caricamento…
                 </td>
               </tr>
@@ -451,11 +448,6 @@ export function GestioneMediciPage() {
                     autoFocus
                     onKeyDown={e => e.key === 'Enter' && saveEdit()}
                   />
-                </td>
-                <td className="px-2 py-1.5 text-center">
-                  <input type="checkbox" checked={editRep}
-                    onChange={e => setEditRep(e.target.checked)}
-                    className="w-4 h-4 accent-red-500" title="Reperibilità" />
                 </td>
                 <td className="px-2 py-1.5">
                   <div className="flex gap-1 justify-end">
@@ -513,17 +505,11 @@ export function GestioneMediciPage() {
                   {m.nome}
                 </td>
 
-                <td className="px-3 py-2 text-center">
-                  {m.is_reperibilita && (
-                    <span className="badge-rep text-[10px]">REP</span>
-                  )}
-                </td>
-
                 <td className="px-3 py-2">
                   <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={() => startEdit(m)}
                       className="p-1.5 rounded text-stone-500 hover:text-olive-700 hover:bg-olive-50 transition-colors"
-                      title="Modifica nome / reperibilità">
+                      title="Modifica nome">
                       <Pencil size={14} />
                     </button>
                     <button onClick={() => eliminaMedico(m)} disabled={saving}

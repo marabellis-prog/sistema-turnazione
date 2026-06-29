@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useLocation, useNavigate, useHref } from 'react-router-dom'
-import { LogOut, Calendar, CalendarDays, Settings, Users, AlertTriangle, RefreshCw, Mail, Shield, X, CalendarClock } from 'lucide-react'
+import { LogOut, Calendar, CalendarDays, Settings, Users, AlertTriangle, RefreshCw, Mail, Shield, X, CalendarClock, Crown, UserCog } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { usePendingActions } from '../contexts/PendingActionsContext'
 import { useVersionCheck } from '../hooks/useVersionCheck'
@@ -10,7 +10,8 @@ import { useCambiTurnoRealtime } from '../hooks/useCambiTurnoRealtime'
 import { useTurnazioneAnteprima } from '../hooks/useTurnazioneAnteprima'
 import { MessaggiModal } from './MessaggiModal'
 import { supabase } from '../lib/supabase'
-import type { AuthUser, Medico, Messaggio } from '../types'
+import { useDebug } from '../contexts/DebugContext'
+import type { AuthUser, Medico, Messaggio, UtenteAutorizzato } from '../types'
 
 interface Props {
   user: AuthUser | null
@@ -105,6 +106,26 @@ export function NavBar({ user, onSignOut }: Props) {
     if (!myName) return undefined
     return medici.find(m => m.nome.toUpperCase().trim() === myName)
   }, [user?.nome, medici])
+
+  // ── Debug: Modalità Admin (on/off) + Doppelgänger (solo admin reale) ──
+  const { isRealAdmin, realUser, adminMode, doppleganger, setAdminMode, setDoppleganger } = useDebug()
+  const { data: utentiImp = [] } = useQuery<UtenteAutorizzato[]>({
+    queryKey: ['utenti-impersonabili'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_all_utenti_autorizzati')
+      if (error) throw error
+      return (data ?? []) as UtenteAutorizzato[]
+    },
+    enabled: isRealAdmin,
+  })
+  const [debugModal, setDebugModal] = useState<'admin' | 'dg' | null>(null)
+  const [dgScelto, setDgScelto] = useState('')
+  function attivaDoppleganger() {
+    const u = utentiImp.find(x => x.id === dgScelto)
+    if (!u) return
+    setDoppleganger({ id: u.id, email: u.email, ruolo: u.ruolo, nome: u.nome })
+    setDebugModal(null)
+  }
 
   // L'utente puo` essere medico, admin, o entrambi. Mostriamo una
   // bustina separata per ognuno dei ruoli applicabili (max 2 in totale).
@@ -428,6 +449,30 @@ export function NavBar({ user, onSignOut }: Props) {
                 </span>
               )}
             </span>
+
+            {/* ── DEBUG: Modalità Admin (on/off) + Doppelgänger (solo admin reale) ── */}
+            {isRealAdmin && (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button onClick={() => setDebugModal('admin')}
+                  title="Modalità admin (debug) — attiva/disattiva i poteri da admin"
+                  className={`relative text-[10px] font-bold px-1.5 py-0.5 rounded transition-all ${adminMode && !doppleganger ? 'animate-pulse' : ''}`}
+                  style={adminMode && !doppleganger
+                    ? { background: '#3a2e0a', color: '#fde68a', border: '2px solid #facc15', boxShadow: '0 0 8px rgba(250,204,21,0.7)' }
+                    : { background: '#6b7280', color: '#e5e7eb', border: '2px solid transparent' }}>
+                  ADMIN {adminMode ? 'ON' : 'OFF'}
+                  {adminMode && !doppleganger && <Crown size={12} className="absolute -top-2.5 -right-1.5" style={{ color: '#facc15' }} fill="#facc15" />}
+                </button>
+                <button onClick={() => { setDgScelto(realUser?.id ?? ''); setDebugModal('dg') }}
+                  title="Doppelgänger (debug) — fingiti un altro utente"
+                  className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded transition-all"
+                  style={doppleganger
+                    ? { background: '#3a2e0a', color: '#fde68a', border: '2px solid #facc15', boxShadow: '0 0 8px rgba(250,204,21,0.6)' }
+                    : { background: '#456b3a', color: '#e0e8d8', border: '2px solid transparent' }}>
+                  <UserCog size={13} style={doppleganger ? { color: '#facc15' } : undefined} />
+                  <span className="hidden md:inline">{doppleganger ? (doppleganger.nome || doppleganger.email) : 'Doppelgänger'}</span>
+                </button>
+              </div>
+            )}
             {/* Bustina MEDICO (icona Mail): messaggi del medico turnista
                 + sue richieste pending. Visibile se l'utente ha un record
                 in `medici`. */}
@@ -502,6 +547,67 @@ export function NavBar({ user, onSignOut }: Props) {
             mode="admin"
             onClose={() => setShowMessaggi(null)}
           />
+        )}
+
+        {/* Modal debug: Modalità Admin on/off */}
+        {debugModal === 'admin' && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+            style={{ background: 'rgba(28,40,24,0.55)' }} onClick={() => setDebugModal(null)}>
+            <div className="card w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center gap-2 mb-2">
+                <Crown size={20} style={{ color: '#b8860b' }} fill="#facc15" />
+                <h3 className="text-base font-bold" style={{ color: '#2b3c24' }}>Modalità Admin</h3>
+              </div>
+              <p className="text-sm text-stone-600 mb-4">{adminMode
+                ? 'Disattivare i poteri admin? Resti loggato come te, ma vedrai l\'app come un utente normale (niente menu Admin).'
+                : 'Riattivare i poteri admin? Torni a pieni poteri con il menu Admin.'}</p>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setDebugModal(null)} className="btn-secondary text-sm py-1.5 px-3">Annulla</button>
+                <button onClick={() => { setAdminMode(!adminMode); setDebugModal(null) }}
+                  className="btn-primary text-sm py-1.5 px-4">{adminMode ? 'Disattiva' : 'Attiva'}</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal debug: Doppelgänger */}
+        {debugModal === 'dg' && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+            style={{ background: 'rgba(28,40,24,0.55)' }} onClick={() => setDebugModal(null)}>
+            <div className="card w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center gap-2 mb-2">
+                <UserCog size={20} style={{ color: '#476540' }} />
+                <h3 className="text-base font-bold" style={{ color: '#2b3c24' }}>Doppelgänger</h3>
+              </div>
+              {doppleganger ? (
+                <>
+                  <p className="text-sm text-stone-600 mb-4">Stai impersonando <strong>{doppleganger.nome || doppleganger.email}</strong>. Tornare ai tuoi permessi?</p>
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => setDebugModal(null)} className="btn-secondary text-sm py-1.5 px-3">Annulla</button>
+                    <button onClick={() => { setDoppleganger(null); setDebugModal(null) }}
+                      className="btn-primary text-sm py-1.5 px-4">Smetti di impersonare</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-stone-600 mb-2">Fingiti un altro utente per vedere la sua vista (ruolo + suo medico):</p>
+                  <select value={dgScelto} onChange={e => setDgScelto(e.target.value)} className="input text-sm w-full mb-4">
+                    <option value="">— scegli un utente —</option>
+                    {utentiImp.map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.nome || u.email} — {u.ruolo}{u.id === realUser?.id ? ' (io)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => setDebugModal(null)} className="btn-secondary text-sm py-1.5 px-3">Annulla</button>
+                    <button onClick={attivaDoppleganger} disabled={!dgScelto}
+                      className="btn-primary text-sm py-1.5 px-4">Impersona</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         )}
 
         {/* Toast pop-up al nuovo messaggio (realtime). Cliccabile per
