@@ -338,8 +338,10 @@ export function NavBar({ user, onSignOut }: Props) {
       style={{ background: '#2b3c24' }}>
       <div className="max-w-screen-xl mx-auto px-4 flex items-center gap-3 h-12">
 
-        {/* Selettore reparto-vista — solo se l'utente è in più reparti */}
-        {mieiReparti.length > 1 && (
+        {/* Selettore reparto-vista — solo se l'utente è in più reparti e NON
+            in area admin (lì si usa il selettore del pannello: stessa
+            selezione, niente doppio menu che confonde). */}
+        {mieiReparti.length > 1 && !loc.pathname.startsWith('/admin') && (
           <select value={repartoVista} onChange={e => setRepartoVista(e.target.value)}
             className="text-xs rounded px-2 py-1 font-semibold cursor-pointer shrink-0"
             style={{ background: '#3a4f30', color: '#e0e8d8', border: '1px solid #577a45' }}

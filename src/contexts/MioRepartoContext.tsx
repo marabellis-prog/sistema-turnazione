@@ -14,7 +14,7 @@ import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useDebug } from './DebugContext'
-import { REPARTO_11N } from './RepartoContext'
+import { REPARTO_11N, useReparto } from './RepartoContext'
 import type { Reparto } from '../types'
 
 const LS_KEY = 'reparto_vista'
@@ -30,9 +30,12 @@ const Ctx = createContext<MioRepartoCtx | null>(null)
 
 export function MioRepartoProvider({ children }: { children: ReactNode }) {
   const { effectiveUser } = useDebug()
+  // Sta SOTTO RepartoProvider → può leggere il reparto ATTIVO (admin).
+  const { repartoAttivo, setRepartoAttivo, reparti, hasAdminAccess } = useReparto()
   const utenteId = effectiveUser?.id ?? null
 
-  const { data: mieiReparti = [], isLoading } = useQuery<Reparto[]>({
+  // Reparti dove l'utente efficace è MEDICO attivo (per il visualizzatore puro).
+  const { data: mieiRepartiMedico = [], isLoading } = useQuery<Reparto[]>({
     queryKey: ['miei-reparti', utenteId],
     queryFn: async () => {
       if (!utenteId) return []
@@ -51,21 +54,30 @@ export function MioRepartoProvider({ children }: { children: ReactNode }) {
     staleTime: 60_000,
   })
 
-  const [repartoVista, setStato] = useState<string>(
+  const [repartoVistaState, setStato] = useState<string>(
     () => localStorage.getItem(LS_KEY) || REPARTO_11N,
   )
-  function setRepartoVista(id: string) {
+  function setRepartoVistaState(id: string) {
     localStorage.setItem(LS_KEY, id)
     setStato(id)
   }
 
-  // Se il reparto-vista non è tra i miei (cambio identità / accesso), ripiega
-  // sul primo dei miei reparti.
+  // Fallback SOLO per il visualizzatore puro: se il reparto-vista non è tra i
+  // suoi, ripiega sul primo. Gli admin seguono invece repartoAttivo (sotto).
   useEffect(() => {
-    if (mieiReparti.length && !mieiReparti.some(r => r.id === repartoVista)) {
-      setRepartoVista(mieiReparti[0].id)
+    if (!hasAdminAccess && mieiRepartiMedico.length &&
+        !mieiRepartiMedico.some(r => r.id === repartoVistaState)) {
+      setRepartoVistaState(mieiRepartiMedico[0].id)
     }
-  }, [mieiReparti, repartoVista])
+  }, [mieiRepartiMedico, repartoVistaState, hasAdminAccess])
+
+  // Selezione UNIFICATA per chi ha accesso admin: la vista pubblica SEGUE il
+  // reparto attivo → pannello admin e menu in headbar pilotano la STESSA
+  // selezione (niente più disallineamento), e il menu elenca i reparti gestiti.
+  // Per il visualizzatore puro: stato proprio, limitato ai reparti dove è medico.
+  const repartoVista    = hasAdminAccess ? repartoAttivo    : repartoVistaState
+  const setRepartoVista = hasAdminAccess ? setRepartoAttivo : setRepartoVistaState
+  const mieiReparti     = hasAdminAccess ? reparti          : mieiRepartiMedico
 
   return (
     <Ctx.Provider value={{ mieiReparti, repartoVista, setRepartoVista, loading: isLoading }}>
