@@ -249,7 +249,6 @@ export function GestioneUtentiPage() {
                     >
                       <option value="user">User</option>
                       <option value="admin">Admin</option>
-                      <option value="ospite">Ospite</option>
                     </select>
                   </td>
                   <td className="px-2 py-1.5">
@@ -407,7 +406,6 @@ export function GestioneUtentiPage() {
               className="input text-sm w-48">
               <option value="user">User – solo consultazione</option>
               <option value="admin">Admin – gestione completa</option>
-              <option value="ospite">Ospite – solo vista settimanale</option>
             </select>
           </div>
           <button onClick={aggiungiManuale} disabled={saving || !email.trim()} className="btn-primary text-sm">
