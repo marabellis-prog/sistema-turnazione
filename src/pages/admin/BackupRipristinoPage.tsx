@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfigReparto } from '../../hooks/useConfigReparto'
+import { useReparto } from '../../contexts/RepartoContext'
 import { useMediciReparto } from '../../hooks/useMediciReparto'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
@@ -52,7 +53,8 @@ export function BackupRipristinoPage() {
   const [msg,           setMsg]           = useState<string | null>(null)
   const [err,           setErr]           = useState<string | null>(null)
   const [previewId,     setPreviewId]     = useState<string | null>(null)
-  const { set: festivitaCustomSet } = useFestivitaCustom()
+  const { repartoAttivo } = useReparto()
+  const { set: festivitaCustomSet } = useFestivitaCustom(repartoAttivo)
 
   // ── Snapshot completo del backup selezionato per anteprima ────────
   // Query separata che fetcha il JSONB snapshot (pesante: lo prendiamo

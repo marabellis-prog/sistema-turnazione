@@ -142,7 +142,7 @@ export function GestioneCambiPage() {
       return data ?? []
     },
   })
-  const { set: festivitaCustomSet } = useFestivitaCustom()
+  const { set: festivitaCustomSet } = useFestivitaCustom(repartoAttivo)
   const colonne = useMemo(
     () => config ? generaColonne(config, festivitaCustomSet) : [],
     [config, festivitaCustomSet]

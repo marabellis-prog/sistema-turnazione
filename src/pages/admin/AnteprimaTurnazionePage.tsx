@@ -28,13 +28,13 @@ export function AnteprimaTurnazionePage() {
   const qc = useQueryClient()
   const { confirm, confirmState } = useConfirm()
   const { clearAll } = usePendingActions()
-  const { set: festivitaCustomSet } = useFestivitaCustom()
+  const { repartoAttivo } = useReparto()
+  const { set: festivitaCustomSet } = useFestivitaCustom(repartoAttivo)
   const [busy, setBusy] = useState<null | 'approva' | 'scarta' | 'salva'>(null)
   const [err, setErr]   = useState<string | null>(null)
   const [turniLocal, setTurniLocal] = useState<Turno[]>([])
   const [dirty, setDirty] = useState(false)
 
-  const { repartoAttivo } = useReparto()
   const { data: anteprima, isLoading } = useTurnazioneAnteprima(repartoAttivo)
 
   // Carica i turni editabili dallo snapshot quando cambia la bozza.

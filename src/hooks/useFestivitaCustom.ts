@@ -17,12 +17,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import type { FestivitaCustom } from '../types'
 
-export function useFestivitaCustom() {
+export function useFestivitaCustom(repartoId: string) {
   const { data = [], isLoading } = useQuery<FestivitaCustom[]>({
-    queryKey: ['festivita-custom'],
+    queryKey: ['festivita-custom', repartoId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('festivita_custom').select('*')
+        .from('festivita_custom').select('*').eq('reparto_id', repartoId)
         .order('data', { ascending: true })
       if (error) throw error
       return data ?? []

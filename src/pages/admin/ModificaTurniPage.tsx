@@ -663,7 +663,7 @@ export function ModificaTurniPage() {
 
   // Festività custom (santo patrono, eventi locali) — affette il flag
   // isFestivo delle colonne calendario e i check di consistenza.
-  const { set: festivitaCustomSet } = useFestivitaCustom()
+  const { set: festivitaCustomSet } = useFestivitaCustom(repartoAttivo)
   useFestivitaCustomRealtime()
 
   // ── Colonne (giorni) e raggruppamento per mese ─────────────────────

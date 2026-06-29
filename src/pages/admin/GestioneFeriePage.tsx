@@ -30,7 +30,7 @@ export function GestioneFeriePage() {
   const qc = useQueryClient()
   const { repartoAttivo } = useReparto()
   const { confirm, confirmState } = useConfirm()
-  const { set: festivitaCustomSet } = useFestivitaCustom()
+  const { set: festivitaCustomSet } = useFestivitaCustom(repartoAttivo)
 
   const [modalMedico,    setModalMedico]    = useState<Medico | null>(null)
   const [insertMedicoId, setInsertMedicoId] = useState('')

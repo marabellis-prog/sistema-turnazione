@@ -18,7 +18,7 @@ import type { Medico } from '../types'
 
 export function AnteprimaCalendarioPage() {
   const { repartoVista } = useMioReparto()
-  const { set: festivitaCustomSet } = useFestivitaCustom()
+  const { set: festivitaCustomSet } = useFestivitaCustom(repartoVista)
   const { data: anteprima, isLoading } = useTurnazioneAnteprima(repartoVista)
   const { data: medici = [] } = useQuery<Medico[]>({
     queryKey: ['medici', repartoVista],

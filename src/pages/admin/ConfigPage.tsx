@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfigReparto } from '../../hooks/useConfigReparto'
+import { useReparto } from '../../contexts/RepartoContext'
 import { useConfigurazioneRealtime } from '../../hooks/useConfigurazioneRealtime'
 import { useFestivitaCustom, useFestivitaCustomRealtime } from '../../hooks/useFestivitaCustom'
 import { useConfirm } from '../../hooks/useConfirm'
@@ -95,7 +96,8 @@ export function ConfigPage() {
   const [festDescr,   setFestDescr]   = useState('')
   const [festSaving,  setFestSaving]  = useState(false)
   const [festErr,     setFestErr]     = useState<string | null>(null)
-  const { festivita: festivitaList } = useFestivitaCustom()
+  const { repartoAttivo } = useReparto()
+  const { festivita: festivitaList } = useFestivitaCustom(repartoAttivo)
 
   // Backup settings draft
   const [backupInt,   setBackupInt]   = useState('7')
@@ -264,6 +266,7 @@ export function ConfigPage() {
     setFestSaving(true)
     try {
       const { error } = await supabase.from('festivita_custom').insert({
+        reparto_id:  repartoAttivo,
         data:        festData,
         descrizione: festDescr.trim(),
       })

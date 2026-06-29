@@ -395,7 +395,7 @@ export function CalendarioPage() {
 
   // Festività custom (santo patrono, eventi locali) — affette il flag
   // isFestivo delle colonne calendario.
-  const { set: festivitaCustomSet } = useFestivitaCustom()
+  const { set: festivitaCustomSet } = useFestivitaCustom(repartoVista)
   useFestivitaCustomRealtime()
   const colonne = useMemo<ColonnaCal[]>(
     () => config ? generaColonne(config, festivitaCustomSet) : [],

@@ -11,6 +11,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Wrench, LogOut } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useFestivitaCustom } from '../hooks/useFestivitaCustom'
+import { REPARTO_11N } from '../contexts/RepartoContext'
 import { BackupTurniPreview } from '../components/BackupTurniPreview'
 import type { Turno, Medico } from '../types'
 
@@ -29,7 +30,7 @@ async function fetchAllTurni(): Promise<Turno[]> {
 }
 
 export function ManutenzionePage({ onSignOut }: { onSignOut: () => void }) {
-  const { set: festivitaCustomSet } = useFestivitaCustom()
+  const { set: festivitaCustomSet } = useFestivitaCustom(REPARTO_11N)
 
   const { data: medici = [] } = useQuery<Medico[]>({
     queryKey: ['medici'],
