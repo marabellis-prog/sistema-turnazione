@@ -45,9 +45,10 @@ export function GestioneMediciPage() {
   const { confirm, confirmState } = useConfirm()
   const { repartoAttivo, repartoCorrente } = useReparto()
 
-  // ── Stato editing inline (solo nome, NON ordine) ─────────────
-  const [editId,   setEditId]   = useState<string | null>(null)
-  const [editNome, setEditNome] = useState('')
+  // ── Stato editing identità (cognome + nome, via modal) ───────
+  const [editId,          setEditId]          = useState<string | null>(null)
+  const [editCognome,     setEditCognome]     = useState('')
+  const [editNomeProprio, setEditNomeProprio] = useState('')
 
   // ── Ordine locale (drag & drop, non ancora salvato) ──────────
   const [localMedici,      setLocalMedici]      = useState<Medico[]>([])
@@ -127,6 +128,8 @@ export function GestioneMediciPage() {
   // Turnisti (in rotazione, trascinabili) vs Ospiti (fuori rotazione, pannello).
   const turnistiAttivi = useMemo(() => medici.filter(m => m.ruolo_reparto !== 'ospite'), [medici])
   const ospiti = useMemo(() => medici.filter(m => m.ruolo_reparto === 'ospite'), [medici])
+  // Medico attualmente in modifica nel modal (turnista o ospite).
+  const editMedico = useMemo(() => medici.find(m => m.id === editId) ?? null, [medici, editId])
   useEffect(() => {
     if (!hasOrderChanges) setLocalMedici(turnistiAttivi)
   }, [turnistiAttivi, hasOrderChanges])
@@ -245,34 +248,54 @@ export function GestioneMediciPage() {
     setHasOrderChanges(false)
   }
 
-  // ── Avvia editing (solo nome) ────────────────────────────────
+  // ── Avvia editing identità (apre il modal) ───────────────────
   function startEdit(m: Medico) {
     setEditId(m.id)
-    setEditNome(m.nome)
+    // Prefilla da cognome/nome_proprio se presenti; altrimenti split del nome
+    // legacy (primo token = cognome, resto = nome) come ripiego.
+    if (m.cognome || m.nome_proprio) {
+      setEditCognome(m.cognome ?? '')
+      setEditNomeProprio(m.nome_proprio ?? '')
+    } else {
+      const parts = (m.nome ?? '').trim().split(/\s+/)
+      setEditCognome(parts[0] ?? '')
+      setEditNomeProprio(parts.slice(1).join(' '))
+    }
     setErrore('')
   }
 
-  // ── Salva modifica nome ───────────────────────────────────────
+  // ── Salva modifica identità (cognome + nome) ──────────────────
   async function saveEdit() {
-    const nome = editNome.trim().toUpperCase()
-    if (!nome) { setErrore('Il nome non può essere vuoto.'); return }
+    if (!editMedico) return
+    const cognome     = editCognome.trim().toUpperCase()
+    const nomeProprio = editNomeProprio.trim()
+    if (!cognome) { setErrore('Il cognome non può essere vuoto.'); return }
+    const nome = `${cognome} ${nomeProprio}`.replace(/\s+/g, ' ').trim()
     setSaving(true); setErrore('')
 
-    const { error } = await supabase
-      .from('medici')
-      .update({ nome })
-      .eq('id', editId!)
+    // Identità canonica: se il medico è legato a un utente, aggiorno l'UTENTE
+    // (via RPC) e il trigger propaga cognome/nome/nome_proprio a TUTTI i medici
+    // collegati → il nome cambia ovunque (calendari, altri reparti). Se l'utente
+    // non è in lista (o medico senza account), update diretto del solo medico.
+    const u = editMedico.utente_id ? utenti.find(x => x.id === editMedico.utente_id) : null
+    if (u) {
+      const { error } = await supabase.rpc('update_utente_autorizzato', {
+        p_id: u.id, p_email: u.email, p_nome: nome, p_ruolo: u.ruolo,
+        p_cognome: cognome, p_nome_proprio: nomeProprio,
+      })
+      if (error) { setSaving(false); setErrore(error.message); return }
+    } else {
+      const { error } = await supabase.from('medici')
+        .update({ nome, cognome, nome_proprio: nomeProprio || null })
+        .eq('id', editMedico.id)
+      if (error) { setSaving(false); setErrore(error.message); return }
+    }
 
     setSaving(false)
-    if (error) { setErrore(error.message); return }
-
     setEditId(null)
-    // Aggiorna anche il nome in localMedici per coerenza visiva
-    setLocalMedici(prev => prev.map(m =>
-      m.id === editId ? { ...m, nome } : m
-    ))
     qc.invalidateQueries({ queryKey: ['medici'] })
-    qc.invalidateQueries({ queryKey: ['medici-tutti'] })
+    qc.invalidateQueries({ queryKey: ['medici-tutti', repartoAttivo] })
+    qc.invalidateQueries({ queryKey: ['utenti_autorizzati'] })
   }
 
   // ── Elimina medico con cascade ───────────────────────────────
@@ -401,7 +424,7 @@ export function GestioneMediciPage() {
 
   // ─────────────────────────────────────────────────────────────
   return (
-    <div className="max-w-3xl space-y-5">
+    <div className="w-full space-y-5">
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
         onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
 
@@ -414,6 +437,47 @@ export function GestioneMediciPage() {
           onClose={() => setSubentroPer(null)}
           onDone={(msg) => { setSubentroPer(null); setAvviso(msg) }}
         />
+      )}
+
+      {/* Modal modifica nominativo (cognome + nome) — turnisti e ospiti */}
+      {editMedico && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => { if (!saving) setEditId(null) }}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-5 space-y-4"
+            onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-stone-800 flex items-center gap-2">
+              <Pencil size={16} style={{ color: '#476540' }} /> Modifica nominativo
+            </h3>
+            <div className="space-y-2">
+              <div>
+                <label className="text-xs font-semibold text-stone-500">Cognome</label>
+                <input value={editCognome} onChange={e => setEditCognome(e.target.value.toUpperCase())}
+                  className="input w-full text-sm uppercase" autoFocus
+                  onKeyDown={e => e.key === 'Enter' && saveEdit()} />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-stone-500">Nome</label>
+                <input value={editNomeProprio} onChange={e => setEditNomeProprio(e.target.value)}
+                  className="input w-full text-sm"
+                  onKeyDown={e => e.key === 'Enter' && saveEdit()} />
+              </div>
+            </div>
+            <p className="text-[11px] text-stone-400">
+              {editMedico.utente_id
+                ? 'Aggiorna l’identità dell’utente: il nome cambia ovunque (calendari, altri reparti).'
+                : 'Medico senza account: il nome viene aggiornato solo in questo reparto.'}
+            </p>
+            {errore && <p className="text-xs text-red-600">{errore}</p>}
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setEditId(null)} disabled={saving}
+                className="btn-secondary py-1.5 px-3 text-sm">Annulla</button>
+              <button onClick={saveEdit} disabled={saving || !editCognome.trim()}
+                className="btn-primary py-1.5 px-3 text-sm gap-1.5">
+                <Save size={13} /> {saving ? 'Salvataggio…' : 'Salva'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Titolo + pulsante salva ordine */}
@@ -497,45 +561,9 @@ export function GestioneMediciPage() {
               </tr>
             )}
 
-            {localMedici.map((m, idx) => editId === m.id ? (
+            {localMedici.map((m, idx) => (
 
-              /* ── Riga in editing (solo nome + REP) ── */
-              <tr key={m.id} className="bg-olive-50">
-                {/* Handle disabilitato durante edit */}
-                <td className="pl-2 text-stone-300">
-                  <GripVertical size={14} />
-                </td>
-                {/* N° readonly */}
-                <td className="px-3 py-1.5 text-stone-400 font-mono font-semibold text-sm">
-                  {idx + 1}
-                </td>
-                <td className="px-2 py-1.5">
-                  <input
-                    value={editNome}
-                    onChange={e => setEditNome(e.target.value.toUpperCase())}
-                    className="input py-0.5 text-sm uppercase w-full"
-                    autoFocus
-                    onKeyDown={e => e.key === 'Enter' && saveEdit()}
-                  />
-                </td>
-                <td className="px-2 py-1.5 text-center text-xs text-stone-400">—</td>
-                <td className="px-2 py-1.5">
-                  <div className="flex gap-1 justify-end">
-                    <button onClick={saveEdit} disabled={saving}
-                      className="btn-primary py-0.5 px-2 text-xs gap-1">
-                      <Save size={11} /> Salva
-                    </button>
-                    <button onClick={() => setEditId(null)}
-                      className="btn-secondary py-0.5 px-1.5 text-xs">
-                      <X size={11} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-
-            ) : (
-
-              /* ── Riga normale — draggable (mouse + touch) ── */
+              /* ── Riga — draggable (mouse + touch); modifica nel modal ── */
               <tr
                 key={m.id}
                 data-drag-index={idx}
@@ -615,15 +643,22 @@ export function GestioneMediciPage() {
       </div>
 
       {/* Pannello Ospiti — fuori rotazione, niente drag */}
-      <div className="card p-3 w-52 shrink-0">
-        <h3 className="font-semibold text-stone-700 text-sm mb-2">Ospiti</h3>
+      <div className="card p-3 w-72 shrink-0">
+        <h3 className="font-semibold text-stone-700 text-sm mb-2 flex items-center gap-1.5">
+          <Users size={15} style={{ color: '#9a7b4f' }} /> Ospiti
+        </h3>
         {ospiti.length === 0 ? (
           <p className="text-xs text-stone-400">Nessun ospite.</p>
         ) : (
-          <ul className="space-y-1.5">
+          <ul className="space-y-1">
             {ospiti.map(o => (
-              <li key={o.id} className="flex items-center justify-between gap-1.5 text-sm">
-                <span className="uppercase truncate" title={o.nome}>{o.nome}</span>
+              <li key={o.id} className="flex items-center gap-1 text-sm">
+                <span className="uppercase flex-1 truncate" title={o.nome}>{o.nome}</span>
+                <button onClick={() => startEdit(o)}
+                  className="p-1 rounded text-stone-400 hover:text-olive-700 hover:bg-olive-50 shrink-0 transition-colors"
+                  title="Modifica nominativo">
+                  <Pencil size={13} />
+                </button>
                 <button onClick={() => cambiaRuoloReparto(o, 'turnista')}
                   className="text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 hover:opacity-90"
                   style={{ background: '#456b3a', color: '#fff' }}
