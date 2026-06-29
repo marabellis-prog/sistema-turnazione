@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Save, RotateCcw, Plus, X, Trash2, Eye, EyeOff, AlertTriangle, Copy } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { useReparto } from '../../contexts/RepartoContext'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
@@ -233,6 +234,7 @@ function Cella({
 // ════════════════════════════════════════════════════════════════
 export function GestioneSchemaPage() {
   const qc = useQueryClient()
+  const { repartoAttivo } = useReparto()
 
   const [schemaNum,  setSchemaNum]  = useState(1)
   const [tipoSchema, setTipoSchema] = useState<'weekly' | 'custom'>('weekly')
@@ -343,9 +345,10 @@ export function GestioneSchemaPage() {
 
   // ── Queries ──────────────────────────────────────────────────
   const { data: schemi = [] } = useQuery<SchemaModello[]>({
-    queryKey: ['schemi_modello'],
+    queryKey: ['schemi_modello', repartoAttivo],
     queryFn: async () => {
       const { data, error } = await supabase.from('schemi_modello').select('*')
+        .eq('reparto_id', repartoAttivo)
         .order('giorno_settimana').order('slot')
       if (error) throw error
       return data
@@ -646,12 +649,13 @@ export function GestioneSchemaPage() {
     setSaving(true); setMsg('')
     try {
       const { error: delErr } = await supabase.from('schemi_modello')
-        .delete().eq('schema_num', schemaNum)
+        .delete().eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum)
       if (delErr) throw delErr
       const rows: Omit<SchemaModello, 'id'>[] = []
       for (const [dStr, slots] of Object.entries(griglia)) {
         slots.forEach((r, idx) => {
           rows.push({
+            reparto_id: repartoAttivo,
             schema_num: schemaNum, giorno_settimana: +dStr, slot: idx,
             numero_medico_mattina:    r.vals['M']  ?? null,
             numero_medico_pomeriggio: r.vals['P']  ?? null,

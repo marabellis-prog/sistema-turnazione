@@ -191,6 +191,7 @@ export interface SchemaModello {
   is_sub: boolean             // true = il turno clinico di questo slot è in sub-intensiva
   is_med: boolean             // true = il turno clinico di questo slot è in medicina
   is_supporto?: boolean       // true = slot di Supporto (jolly grigio, senza SUB/MED)
+  reparto_id?: string
 }
 
 /** Dove fisicamente lavora il medico in una mezza giornata.

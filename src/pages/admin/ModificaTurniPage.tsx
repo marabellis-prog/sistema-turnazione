@@ -27,6 +27,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Calendar, Save, Layers, Rows3, RefreshCw, AlertTriangle, X, RotateCcw } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { useReparto } from '../../contexts/RepartoContext'
 import { nomeBreve } from '../../lib/nomeTurnista'
 import {
   calcolaCalendarioCompleto, calcolaTurnoTeorico, primoLunediDelPeriodo,
@@ -488,6 +489,7 @@ export function ModificaTurniPage() {
   const navigate = useNavigate()
   const { registerNavGuard } = usePendingActions()
   const { confirm, confirmState } = useConfirm()
+  const { repartoAttivo } = useReparto()
 
   // Realtime sulle ferie: nuove richieste / approvazioni / cancellazioni
   // si riflettono istantaneamente sul pattern verde delle celle.
@@ -578,9 +580,10 @@ export function ModificaTurniPage() {
   // GeneraCalendarioPage: così quando lo schema viene salvato altrove,
   // l'invalidateQueries fatto da quella pagina raggiunge anche noi.
   const { data: schemi = [] } = useQuery<SchemaModello[]>({
-    queryKey: ['schemi_modello'],
+    queryKey: ['schemi_modello', repartoAttivo],
     queryFn: async () => {
       const { data, error } = await supabase.from('schemi_modello').select('*')
+        .eq('reparto_id', repartoAttivo)
         .order('giorno_settimana').order('slot')
       if (error) throw error
       return data ?? []

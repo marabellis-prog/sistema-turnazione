@@ -25,6 +25,7 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { useReparto } from '../../contexts/RepartoContext'
 import { useConfirm } from '../../hooks/useConfirm'
 import { useCambiTurnoRealtime } from '../../hooks/useCambiTurnoRealtime'
 import { ConfirmModal } from '../../components/ConfirmModal'
@@ -84,6 +85,7 @@ function diversa(m: ModificaCambio): boolean {
 
 export function GestioneCambiPage() {
   const qc = useQueryClient()
+  const { repartoAttivo } = useReparto()
   const { confirm, confirmState } = useConfirm()
   const [msg,        setMsg]        = useState<string | null>(null)
   const [err,        setErr]        = useState<string | null>(null)
@@ -138,9 +140,10 @@ export function GestioneCambiPage() {
     },
   })
   const { data: schemi = [] } = useQuery<SchemaModello[]>({
-    queryKey: ['schemi_modello'],
+    queryKey: ['schemi_modello', repartoAttivo],
     queryFn: async () => {
       const { data, error } = await supabase.from('schemi_modello').select('*')
+        .eq('reparto_id', repartoAttivo)
         .order('giorno_settimana').order('slot')
       if (error) throw error
       return data ?? []

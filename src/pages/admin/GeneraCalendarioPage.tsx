@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Zap, AlertTriangle, CheckCircle, Info, RefreshCw } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { useReparto } from '../../contexts/RepartoContext'
 import { calcolaCalendarioCompleto, primoLunediDelPeriodo, MESI_IT } from '../../lib/algorithm'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
@@ -190,6 +191,7 @@ function AntepremaSchema({
 // ════════════════════════════════════════════════════════════════
 export function GeneraCalendarioPage() {
   const qc = useQueryClient()
+  const { repartoAttivo } = useReparto()
   const { confirm, confirmState } = useConfirm()
   const { clearAll } = usePendingActions()
   const tableRef = useRef<HTMLDivElement>(null)
@@ -238,9 +240,10 @@ export function GeneraCalendarioPage() {
   })
 
   const { data: schemi = [] } = useQuery<SchemaModello[]>({
-    queryKey: ['schemi_modello'],
+    queryKey: ['schemi_modello', repartoAttivo],
     queryFn: async () => {
       const { data, error } = await supabase.from('schemi_modello').select('*')
+        .eq('reparto_id', repartoAttivo)
       if (error) throw error
       return data
     },
