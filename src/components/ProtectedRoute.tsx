@@ -21,8 +21,11 @@ interface Props {
 export function ProtectedRoute({
   user, loading, requireAdmin = false, allowedRoles, loadingComponent, children,
 }: Props) {
-  const { hasAdminAccess } = useReparto()
-  if (loading) {
+  const { hasAdminAccess, loading: repartoLoading } = useReparto()
+  // Per le rotte admin aspettiamo che l'accesso (super-admin / responsabile)
+  // sia determinato: altrimenti durante il caricamento hasAdminAccess è
+  // ancora false e redirezioneremmo a vuoto alla pagina pubblica.
+  if (loading || (requireAdmin && repartoLoading)) {
     if (loadingComponent) return <>{loadingComponent}</>
     return (
       <div className="flex min-h-screen items-center justify-center">

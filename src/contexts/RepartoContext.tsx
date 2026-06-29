@@ -39,7 +39,7 @@ export function RepartoProvider({ children }: { children: ReactNode }) {
   const utenteId     = effectiveUser?.id ?? null
   const isSuperAdmin = effectiveUser?.ruolo === 'admin'
 
-  const { data: tutti = [], isLoading } = useQuery<Reparto[]>({
+  const { data: tutti = [], isLoading: lReparti } = useQuery<Reparto[]>({
     queryKey: ['reparti'],
     queryFn: async () => {
       const { data, error } = await supabase.from('reparti').select('*')
@@ -51,7 +51,7 @@ export function RepartoProvider({ children }: { children: ReactNode }) {
   })
 
   // Reparti di cui l'utente è responsabile (per il super-admin è irrilevante).
-  const { data: gestitiIds = [] } = useQuery<string[]>({
+  const { data: gestitiIds = [], isLoading: lGestiti } = useQuery<string[]>({
     queryKey: ['reparti-gestiti', utenteId],
     queryFn: async () => {
       if (!utenteId) return []
@@ -66,6 +66,12 @@ export function RepartoProvider({ children }: { children: ReactNode }) {
 
   const reparti = isSuperAdmin ? tutti : tutti.filter(r => gestitiIds.includes(r.id))
   const hasAdminAccess = isSuperAdmin || reparti.length > 0
+
+  // "loading" dell'ACCESSO: finché non conosciamo i reparti gestiti di un
+  // non-super-admin NON possiamo decidere hasAdminAccess → ProtectedRoute deve
+  // aspettare (mostrare spinner) invece di redirezionare alla pubblica.
+  const accessoInCorso = !isSuperAdmin && !!utenteId && lGestiti
+  const loading = lReparti || accessoInCorso
 
   const [repartoAttivo, setStato] = useState<string>(
     () => localStorage.getItem(LS_KEY) || REPARTO_11N,
@@ -88,7 +94,7 @@ export function RepartoProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={{
       reparti, repartoAttivo, setRepartoAttivo, repartoCorrente,
-      isSuperAdmin, hasAdminAccess, loading: isLoading,
+      isSuperAdmin, hasAdminAccess, loading,
     }}>
       {children}
     </Ctx.Provider>
