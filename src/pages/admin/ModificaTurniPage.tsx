@@ -29,6 +29,7 @@ import { Calendar, Save, Layers, Rows3, RefreshCw, AlertTriangle, X, RotateCcw }
 import { supabase } from '../../lib/supabase'
 import { useReparto } from '../../contexts/RepartoContext'
 import { useConfigReparto } from '../../hooks/useConfigReparto'
+import { useMediciReparto } from '../../hooks/useMediciReparto'
 import { nomeBreve } from '../../lib/nomeTurnista'
 import {
   calcolaCalendarioCompleto, calcolaTurnoTeorico, primoLunediDelPeriodo,
@@ -547,15 +548,7 @@ export function ModificaTurniPage() {
   // ── Query dati ─────────────────────────────────────────────────────
   const { data: config, isLoading: lCfg } = useConfigReparto()
 
-  const { data: medici = [], isLoading: lMed } = useQuery<Medico[]>({
-    queryKey: ['medici'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('medici').select('*').eq('attivo', true).order('numero_ordine')
-      if (error) throw error
-      return data ?? []
-    },
-  })
+  const { data: medici = [], isLoading: lMed } = useMediciReparto()
 
   // Ritirati (subentro): per mostrarne i turni storici nella griglia, marcati.
   const { data: mediciRitirati = [] } = useQuery<Medico[]>({

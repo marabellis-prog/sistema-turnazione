@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Calendar, Check, X, Plus, Clock, Wifi, WifiOff, Settings, Save } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { useReparto } from '../../contexts/RepartoContext'
 import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useConfirm } from '../../hooks/useConfirm'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
@@ -27,6 +28,7 @@ function fmtIt(iso: string): string {
 
 export function GestioneFeriePage() {
   const qc = useQueryClient()
+  const { repartoAttivo } = useReparto()
   const { confirm, confirmState } = useConfirm()
   const { set: festivitaCustomSet } = useFestivitaCustom()
 
@@ -41,13 +43,14 @@ export function GestioneFeriePage() {
 
   // ── Query ────────────────────────────────────────────────────
   const { data: medici = [] } = useQuery<Medico[]>({
-    queryKey: ['medici-tutti'],
+    queryKey: ['medici-ferie', repartoAttivo],
     queryFn: async () => {
       // Ordine alfabetico per la pagina Gestione Ferie: la rotazione
       // (numero_ordine) qui non serve, è più utile trovare il medico
       // a colpo d'occhio. Sort lato client con localeCompare 'it' per
       // gestire correttamente accenti e maiuscole/minuscole.
       const { data, error } = await supabase.from('medici').select('*')
+        .eq('reparto_id', repartoAttivo).eq('attivo', true)
       if (error) throw error
       return (data ?? []).sort((a, b) =>
         a.nome.localeCompare(b.nome, 'it', { sensitivity: 'base' })

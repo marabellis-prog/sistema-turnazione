@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useReparto } from '../../contexts/RepartoContext'
 import { useConfigReparto } from '../../hooks/useConfigReparto'
+import { useMediciReparto } from '../../hooks/useMediciReparto'
 import { calcolaCalendarioCompleto, primoLunediDelPeriodo, MESI_IT } from '../../lib/algorithm'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
@@ -222,15 +223,7 @@ export function GeneraCalendarioPage() {
   // ── Queries ──────────────────────────────────────────────────
   const { data: config } = useConfigReparto()
 
-  const { data: medici = [] } = useQuery<Medico[]>({
-    queryKey: ['medici'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('medici')
-        .select('*').eq('attivo', true).order('numero_ordine')
-      if (error) throw error
-      return data
-    },
-  })
+  const { data: medici = [] } = useMediciReparto()
 
   const { data: schemi = [] } = useQuery<SchemaModello[]>({
     queryKey: ['schemi_modello', repartoAttivo],

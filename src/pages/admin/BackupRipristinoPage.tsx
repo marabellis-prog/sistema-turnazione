@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useConfigReparto } from '../../hooks/useConfigReparto'
+import { useMediciReparto } from '../../hooks/useMediciReparto'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import {
@@ -73,14 +74,7 @@ export function BackupRipristinoPage() {
   })
 
   // ── Medici per la preview ─────────────────────────────────────────
-  const { data: medici = [] } = useQuery<Medico[]>({
-    queryKey: ['medici-tutti'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('medici').select('*')
-      if (error) throw error
-      return data ?? []
-    },
-  })
+  const { data: medici = [] } = useMediciReparto()
 
   // ── Lista backup (senza snapshot, troppo pesante) ──────────────────
   const { data: backups = [], isLoading } = useQuery<BackupRow[]>({
