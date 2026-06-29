@@ -19,6 +19,7 @@ import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { Navigate } from 'react-router-dom'
 import { GestioneUtentiPage } from './GestioneUtentiPage'
+import { DatabaseStatsBox } from '../../components/DatabaseStatsBox'
 import { REPARTO_11N, useReparto } from '../../contexts/RepartoContext'
 import type { Reparto, RepartoResponsabile, UtenteAutorizzato } from '../../types'
 
@@ -311,6 +312,8 @@ export function CentroControlloPage() {
   if (!isSuperAdmin) return <Navigate to="/admin/medici" replace />
   return (
     <div className="space-y-8 max-w-3xl">
+      {/* Monitoraggio globale del progetto Supabase (free tier) — solo admin */}
+      <DatabaseStatsBox />
       <RepartiSection />
       <div className="border-t-2 border-stone-200" />
       <GestioneUtentiPage />
