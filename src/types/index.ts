@@ -190,6 +190,20 @@ export interface DbStats {
   tables: Array<{ name: string; rows: number }>
 }
 
+/** Schema come UNITÀ: struttura (slot in schemi_modello) + validità propria.
+ *  Le regole/fabbisogno e l'algoritmo si legheranno a questo (in costruzione). */
+export interface Schema {
+  id: string
+  reparto_id: string
+  schema_num: number
+  nome: string | null
+  valido_dal: string | null
+  valido_al: string | null
+  durata_giorni: number | null
+  created_at: string
+  updated_at: string
+}
+
 export interface SchemaModello {
   id: string
   schema_num: number
