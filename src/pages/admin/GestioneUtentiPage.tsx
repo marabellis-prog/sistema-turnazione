@@ -83,8 +83,21 @@ export function GestioneUtentiPage() {
   function startEdit(u: UtenteAutorizzato) {
     setEditId(u.id)
     setEditEmail(u.email)
-    setEditCognome(u.cognome ?? '')
-    setEditNomeProprio(u.nome_proprio ?? '')
+    // Se mancano i campi separati ma c'è il nome combinato, lo splitto
+    // (ultima parola = nome, il resto = cognome) così la modifica non parte
+    // vuota e non si rischia di azzerare il nome al salvataggio.
+    if (u.cognome || u.nome_proprio) {
+      setEditCognome(u.cognome ?? '')
+      setEditNomeProprio(u.nome_proprio ?? '')
+    } else if (u.nome?.trim()) {
+      const parts = u.nome.trim().split(/\s+/)
+      const nomeP = parts.length > 1 ? parts.pop()! : ''
+      setEditCognome(parts.join(' '))
+      setEditNomeProprio(nomeP)
+    } else {
+      setEditCognome('')
+      setEditNomeProprio('')
+    }
     setEditRuolo(u.ruolo)
     setErrore('')
   }
