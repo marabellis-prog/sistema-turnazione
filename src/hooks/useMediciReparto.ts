@@ -17,7 +17,8 @@ export function useMediciReparto() {
     queryKey: ['medici', repartoAttivo],
     queryFn: async () => {
       const { data, error } = await supabase.from('medici').select('*')
-        .eq('reparto_id', repartoAttivo).eq('attivo', true).order('numero_ordine')
+        .eq('reparto_id', repartoAttivo).eq('attivo', true)
+        .not('numero_ordine', 'is', null).order('numero_ordine')
       if (error) throw error
       return data ?? []
     },

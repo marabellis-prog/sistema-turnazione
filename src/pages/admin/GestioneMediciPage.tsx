@@ -124,9 +124,12 @@ export function GestioneMediciPage() {
   const responsabiliSet = useMemo(() => new Set(responsabiliIds), [responsabiliIds])
 
   // Sincronizza l'ordine locale con il DB — solo se non ci sono modifiche pendenti
+  // Turnisti (in rotazione, trascinabili) vs Ospiti (fuori rotazione, pannello).
+  const turnistiAttivi = useMemo(() => medici.filter(m => m.ruolo_reparto !== 'ospite'), [medici])
+  const ospiti = useMemo(() => medici.filter(m => m.ruolo_reparto === 'ospite'), [medici])
   useEffect(() => {
-    if (!hasOrderChanges) setLocalMedici(medici)
-  }, [medici, hasOrderChanges])
+    if (!hasOrderChanges) setLocalMedici(turnistiAttivi)
+  }, [turnistiAttivi, hasOrderChanges])
 
   // Listener touchmove NON-PASSIVE sul tbody: impedisce lo scroll della pagina
   // durante il drag su Safari/iOS (i listener React sono passivi di default)
@@ -238,7 +241,7 @@ export function GestioneMediciPage() {
 
   // ── Annulla riordino ─────────────────────────────────────────
   function annullaOrdine() {
-    setLocalMedici(medici)
+    setLocalMedici(turnistiAttivi)
     setHasOrderChanges(false)
   }
 
@@ -289,9 +292,11 @@ export function GestioneMediciPage() {
 
     setSaving(true)
     try {
-      for (const campo of CAMPI_SCHEMA) {
-        await supabase.from('schemi_modello')
-          .update({ [campo]: null }).eq(campo, m.numero_ordine).eq('reparto_id', repartoAttivo)
+      if (m.numero_ordine != null) {
+        for (const campo of CAMPI_SCHEMA) {
+          await supabase.from('schemi_modello')
+            .update({ [campo]: null }).eq(campo, m.numero_ordine).eq('reparto_id', repartoAttivo)
+        }
       }
       const { error } = await supabase.from('medici').delete().eq('id', m.id)
       if (error) throw error
@@ -317,10 +322,14 @@ export function GestioneMediciPage() {
 
   // Cambia al volo il ruolo nel reparto (Turnista ↔ Ospite) di un medico.
   async function cambiaRuoloReparto(m: Medico, nuovo: 'turnista' | 'ospite') {
-    const { error } = await supabase.from('medici').update({ ruolo_reparto: nuovo }).eq('id', m.id)
+    // Ospite = fuori rotazione (numero_ordine NULL). Turnista = rientra in coda
+    // (numero_ordine = ultimo dei turnisti + 1).
+    const maxOrd = Math.max(0, ...medici.filter(x => x.ruolo_reparto !== 'ospite').map(x => x.numero_ordine))
+    const patch = { ruolo_reparto: nuovo, numero_ordine: nuovo === 'ospite' ? null : maxOrd + 1 }
+    const { error } = await supabase.from('medici').update(patch).eq('id', m.id)
     if (error) { setErrore(error.message); return }
-    setLocalMedici(prev => prev.map(x => x.id === m.id ? { ...x, ruolo_reparto: nuovo } : x))
     qc.invalidateQueries({ queryKey: ['medici-tutti', repartoAttivo] })
+    qc.invalidateQueries({ queryKey: ['medici'] })
   }
 
   // Utenti globali che NON sono gia' turnisti di questo reparto (per id o nome).
@@ -392,7 +401,7 @@ export function GestioneMediciPage() {
 
   // ─────────────────────────────────────────────────────────────
   return (
-    <div className="max-w-xl space-y-5">
+    <div className="max-w-3xl space-y-5">
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
         onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
 
@@ -466,8 +475,9 @@ export function GestioneMediciPage() {
         </div>
       )}
 
-      {/* Lista medici */}
-      <div className="card overflow-hidden">
+      {/* Turnisti (rotazione) a sinistra · Ospiti a destra */}
+      <div className="flex gap-4 items-start">
+      <div className="card overflow-hidden flex-1">
         <table className="w-full text-sm">
           <thead className="bg-stone-50 border-b border-stone-200">
             <tr>
@@ -602,6 +612,29 @@ export function GestioneMediciPage() {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Pannello Ospiti — fuori rotazione, niente drag */}
+      <div className="card p-3 w-52 shrink-0">
+        <h3 className="font-semibold text-stone-700 text-sm mb-2">Ospiti</h3>
+        {ospiti.length === 0 ? (
+          <p className="text-xs text-stone-400">Nessun ospite.</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {ospiti.map(o => (
+              <li key={o.id} className="flex items-center justify-between gap-1.5 text-sm">
+                <span className="uppercase truncate" title={o.nome}>{o.nome}</span>
+                <button onClick={() => cambiaRuoloReparto(o, 'turnista')}
+                  className="text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 hover:opacity-90"
+                  style={{ background: '#456b3a', color: '#fff' }}
+                  title="Rendi turnista (in coda alla rotazione)">→ Turnista</button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="text-[10px] text-stone-400 mt-2 leading-snug">Vedono il reparto ma non sono in rotazione.</p>
+      </div>
+
       </div>
 
       {/* Aggiungi turnista: ricerca utenti globali (3+ lettere) o crea nuovo */}
