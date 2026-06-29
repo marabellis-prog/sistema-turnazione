@@ -12,16 +12,20 @@ import { CalendarClock, Info } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useTurnazioneAnteprima } from '../hooks/useTurnazioneAnteprima'
 import { useFestivitaCustom } from '../hooks/useFestivitaCustom'
+import { useMioReparto } from '../contexts/MioRepartoContext'
 import { AnteprimaTurnazioneView } from '../components/AnteprimaTurnazioneView'
 import type { Medico } from '../types'
 
 export function AnteprimaCalendarioPage() {
+  const { repartoVista } = useMioReparto()
   const { set: festivitaCustomSet } = useFestivitaCustom()
-  const { data: anteprima, isLoading } = useTurnazioneAnteprima()
+  const { data: anteprima, isLoading } = useTurnazioneAnteprima(repartoVista)
   const { data: medici = [] } = useQuery<Medico[]>({
-    queryKey: ['medici'],
+    queryKey: ['medici', repartoVista],
     queryFn: async () => {
-      const { data, error } = await supabase.from('medici').select('*').eq('attivo', true).order('numero_ordine')
+      const { data, error } = await supabase.from('medici').select('*')
+        .eq('reparto_id', repartoVista).eq('attivo', true)
+        .not('numero_ordine', 'is', null).order('numero_ordine')
       if (error) throw error
       return data
     },

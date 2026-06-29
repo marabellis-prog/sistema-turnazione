@@ -12,7 +12,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import type { TurnazioneAnteprima } from '../types'
 
-export function useTurnazioneAnteprima() {
+export function useTurnazioneAnteprima(repartoId: string) {
   const qc = useQueryClient()
 
   useEffect(() => {
@@ -26,11 +26,14 @@ export function useTurnazioneAnteprima() {
     return () => { supabase.removeChannel(ch) }
   }, [qc])
 
+  // Bozza del REPARTO indicato (ogni reparto ha la sua). Il prefisso
+  // ['turnazione-anteprima'] dell'invalidate realtime copre la chiave scoped.
   return useQuery<TurnazioneAnteprima | null>({
-    queryKey: ['turnazione-anteprima'],
+    queryKey: ['turnazione-anteprima', repartoId],
     queryFn: async () => {
       const { data, error } = await supabase.from('turnazione_anteprima')
-        .select('*').order('created_at', { ascending: false }).limit(1).maybeSingle()
+        .select('*').eq('reparto_id', repartoId)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle()
       if (error) throw error
       return (data as TurnazioneAnteprima | null) ?? null
     },

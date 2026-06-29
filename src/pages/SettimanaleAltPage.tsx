@@ -25,6 +25,7 @@ import { nomeBreve as nomeBreveLib } from '../lib/nomeTurnista'
 import { getDayOfWeek, formatDate, MESI_IT } from '../lib/algorithm'
 import { useTurniRealtime } from '../hooks/useTurniRealtime'
 import { useFerieRealtime } from '../hooks/useFerieRealtime'
+import { useMioReparto } from '../contexts/MioRepartoContext'
 import { ForceLandscapeOverlay } from '../components/ForceLandscapeOverlay'
 import type { Configurazione, Medico, Turno, Ferie, SlotPlacement } from '../types'
 
@@ -117,11 +118,14 @@ export function SettimanaleAltPage() {
   useTurniRealtime()
   useFerieRealtime()
 
+  // Reparto della vista pubblica (selettore in NavBar per chi è in più reparti).
+  const { repartoVista } = useMioReparto()
+
   const { data: config } = useQuery<Configurazione | null>({
-    queryKey: ['configurazione'],
+    queryKey: ['configurazione', repartoVista],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('configurazione').select('*')
+        .from('configurazione').select('*').eq('reparto_id', repartoVista)
         .order('updated_at', { ascending: false }).limit(1).maybeSingle()
       if (error) throw error
       return data
@@ -129,10 +133,11 @@ export function SettimanaleAltPage() {
   })
 
   const { data: medici = [] } = useQuery<Medico[]>({
-    queryKey: ['medici'],
+    queryKey: ['medici', repartoVista],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('medici').select('*').eq('attivo', true).order('numero_ordine')
+        .from('medici').select('*').eq('reparto_id', repartoVista).eq('attivo', true)
+        .not('numero_ordine', 'is', null).order('numero_ordine')
       if (error) throw error
       return data ?? []
     },
@@ -173,11 +178,11 @@ export function SettimanaleAltPage() {
   }, [giorni])
 
   const { data: turni = [] } = useQuery<Turno[]>({
-    queryKey: ['turni', 'settimanale-alt', periodoView?.di, periodoView?.df],
+    queryKey: ['turni', 'settimanale-alt', repartoVista, periodoView?.di, periodoView?.df],
     queryFn: async () => {
       if (!periodoView) return []
       const { data, error } = await supabase
-        .from('turni').select('*')
+        .from('turni').select('*').eq('reparto_id', repartoVista)
         .gte('data', periodoView.di).lte('data', periodoView.df)
       if (error) throw error
       return data ?? []
@@ -188,10 +193,10 @@ export function SettimanaleAltPage() {
   })
 
   const { data: ferieDB = [] } = useQuery<Pick<Ferie, 'medico_id' | 'data_inizio' | 'data_fine' | 'approvate'>[]>({
-    queryKey: ['ferie-ranges'],
+    queryKey: ['ferie-ranges', repartoVista],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('ferie').select('medico_id, data_inizio, data_fine, approvate')
+        .from('ferie').select('medico_id, data_inizio, data_fine, approvate').eq('reparto_id', repartoVista)
       if (error) throw error
       return data ?? []
     },

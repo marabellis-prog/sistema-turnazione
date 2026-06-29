@@ -13,6 +13,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useMediciReparto } from '../../hooks/useMediciReparto'
+import { useReparto } from '../../contexts/RepartoContext'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
@@ -33,7 +34,8 @@ export function AnteprimaTurnazionePage() {
   const [turniLocal, setTurniLocal] = useState<Turno[]>([])
   const [dirty, setDirty] = useState(false)
 
-  const { data: anteprima, isLoading } = useTurnazioneAnteprima()
+  const { repartoAttivo } = useReparto()
+  const { data: anteprima, isLoading } = useTurnazioneAnteprima(repartoAttivo)
 
   // Carica i turni editabili dallo snapshot quando cambia la bozza.
   useEffect(() => {
