@@ -334,12 +334,29 @@ export function CalendarioPage() {
     }
   }, [])
 
+  // Cambio reparto-vista → rimetti in loading: arriva una nuova fetch.
+  // Evita il "flash" della vista del reparto precedente / del messaggio
+  // "Nessuna configurazione" mentre i dati del nuovo reparto caricano.
+  useEffect(() => {
+    setLoadDone(false)
+  }, [repartoVista])
+
   // Avvia quando config + medici + mesi sono pronti
   useEffect(() => {
     if (config && medici.length > 0 && mesi.length > 0) {
       caricaTurni(config, mesi)
     }
   }, [config, medici.length, mesi, caricaTurni])
+
+  // Esci dal loading anche quando NON c'è nulla da caricare: reparto senza
+  // configurazione o senza turnisti (es. reparto nuovo non ancora configurato).
+  // Senza questo `caricaTurni` non parte mai e il loading resta bloccato a vuoto.
+  // Aspetta che le query statiche si siano assestate (!lCfg && !lMed).
+  useEffect(() => {
+    if (!lCfg && !lMed && (!config || medici.length === 0 || mesi.length === 0)) {
+      setLoadDone(true)
+    }
+  }, [lCfg, lMed, config, medici.length, mesi.length])
 
   // Realtime turni: l'admin modifica un turno → tutti i client (medici
   // collegati al calendario, altri admin) ricevono l'evento e ricaricano.
@@ -504,10 +521,13 @@ export function CalendarioPage() {
     )
   }
 
-  if (!config) {
+  if (!config || medici.length === 0) {
     return (
-      <div className="flex items-center justify-center h-64 text-stone-500 text-sm">
-        Nessuna configurazione. Vai in Admin → Genera Calendario.
+      <div className="flex flex-col items-center justify-center h-64 text-stone-500 text-sm gap-1 px-4 text-center">
+        <p className="font-semibold text-stone-600">Reparto non ancora configurato</p>
+        <p>{!config
+          ? 'Questo reparto non ha ancora un calendario. L’amministratore deve configurarlo e generarlo.'
+          : 'Questo reparto non ha ancora turnisti in rotazione.'}</p>
       </div>
     )
   }
