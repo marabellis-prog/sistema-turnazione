@@ -30,7 +30,7 @@ export function AdminLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const { navGuard } = usePendingActions()
-  const { reparti, repartoAttivo, setRepartoAttivo, repartoCorrente } = useReparto()
+  const { reparti, repartoAttivo, setRepartoAttivo, repartoCorrente, isSuperAdmin } = useReparto()
   const [schemaStoricoOpen, setSchemaStoricoOpen] = useState(false)
 
   // Realtime sulle ferie + cambi turno: garantisce che i count dei badge
@@ -156,7 +156,7 @@ export function AdminLayout() {
           </select>
         </div>
 
-        {links.map(({ to, label, Icon }) => {
+        {links.filter(l => isSuperAdmin || l.to !== '/admin/centro-controllo').map(({ to, label, Icon }) => {
           const isActive = location.pathname.startsWith(to)
           return (
             <button

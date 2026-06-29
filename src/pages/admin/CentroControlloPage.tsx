@@ -17,8 +17,9 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
+import { Navigate } from 'react-router-dom'
 import { GestioneUtentiPage } from './GestioneUtentiPage'
-import { REPARTO_11N } from '../../contexts/RepartoContext'
+import { REPARTO_11N, useReparto } from '../../contexts/RepartoContext'
 import type { Reparto, RepartoResponsabile, UtenteAutorizzato } from '../../types'
 
 function RepartiSection() {
@@ -304,6 +305,10 @@ function RepartiSection() {
 }
 
 export function CentroControlloPage() {
+  const { isSuperAdmin } = useReparto()
+  // Solo il super-admin: gestione reparti, utenti globali, responsabili.
+  // Un responsabile (admin del suo reparto) NON deve vederlo.
+  if (!isSuperAdmin) return <Navigate to="/admin/medici" replace />
   return (
     <div className="space-y-8 max-w-3xl">
       <RepartiSection />
