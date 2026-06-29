@@ -4,6 +4,7 @@ import { Zap, AlertTriangle, CheckCircle, Info, RefreshCw } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useReparto } from '../../contexts/RepartoContext'
+import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { calcolaCalendarioCompleto, primoLunediDelPeriodo, MESI_IT } from '../../lib/algorithm'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
@@ -219,15 +220,7 @@ export function GeneraCalendarioPage() {
   const rangeValido = !!dataInizioStr && !!dataFineStr && dataFineStr >= dataInizioStr
 
   // ── Queries ──────────────────────────────────────────────────
-  const { data: config } = useQuery<Configurazione | null>({
-    queryKey: ['configurazione'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('configurazione')
-        .select('*').order('updated_at', { ascending: false }).limit(1).maybeSingle()
-      if (error) throw error
-      return data
-    },
-  })
+  const { data: config } = useConfigReparto()
 
   const { data: medici = [] } = useQuery<Medico[]>({
     queryKey: ['medici'],
@@ -316,7 +309,7 @@ export function GeneraCalendarioPage() {
       if (config?.id) {
         await supabase.from('configurazione').update(configPayload).eq('id', config.id)
       } else {
-        await supabase.from('configurazione').insert(configPayload)
+        await supabase.from('configurazione').insert({ ...configPayload, reparto_id: repartoAttivo })
       }
       qc.invalidateQueries({ queryKey: ['configurazione'] })
 

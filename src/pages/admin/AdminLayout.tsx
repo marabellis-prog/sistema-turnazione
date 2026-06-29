@@ -4,6 +4,7 @@ import { Users, Calendar, Zap, Table2, AlertCircle, ArrowRightLeft, Settings, Ar
 import { useQuery } from '@tanstack/react-query'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { useReparto } from '../../contexts/RepartoContext'
+import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
 import { useCambiTurnoRealtime } from '../../hooks/useCambiTurnoRealtime'
 import { useAutoBackup } from '../../hooks/useBackupManager'
@@ -80,15 +81,7 @@ export function AdminLayout() {
   })
 
   // Config: schema attivo + cronologia switch (per la sezione in fondo).
-  const { data: config } = useQuery<Configurazione | null>({
-    queryKey: ['configurazione'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('configurazione')
-        .select('*').order('updated_at', { ascending: false }).limit(1).maybeSingle()
-      if (error) throw error
-      return data
-    },
-  })
+  const { data: config } = useConfigReparto()
   const schemaStorico   = config?.schema_storico ?? []
   const schemaAggiornato = schemaStorico.length >= 2   // >= 1 switch oltre la generazione
   const fmtData = (iso: string) => {

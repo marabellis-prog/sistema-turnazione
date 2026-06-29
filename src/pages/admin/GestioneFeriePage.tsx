@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Calendar, Check, X, Plus, Clock, Wifi, WifiOff, Settings, Save } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useConfirm } from '../../hooks/useConfirm'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
 import { ConfirmModal } from '../../components/ConfirmModal'
@@ -54,16 +55,7 @@ export function GestioneFeriePage() {
     },
   })
 
-  const { data: config } = useQuery<Configurazione | null>({
-    queryKey: ['configurazione'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('configurazione').select('*')
-        .order('updated_at', { ascending: false }).limit(1).maybeSingle()
-      if (error) throw error
-      return data
-    },
-  })
+  const { data: config } = useConfigReparto()
 
   // Sync del draft quando il config arriva dal DB
   useEffect(() => {

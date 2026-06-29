@@ -28,6 +28,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Calendar, Save, Layers, Rows3, RefreshCw, AlertTriangle, X, RotateCcw } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useReparto } from '../../contexts/RepartoContext'
+import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { nomeBreve } from '../../lib/nomeTurnista'
 import {
   calcolaCalendarioCompleto, calcolaTurnoTeorico, primoLunediDelPeriodo,
@@ -544,16 +545,7 @@ export function ModificaTurniPage() {
   const hasUnsaved = modifiche.size > 0
 
   // ── Query dati ─────────────────────────────────────────────────────
-  const { data: config, isLoading: lCfg } = useQuery<Configurazione | null>({
-    queryKey: ['configurazione'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('configurazione').select('*')
-        .order('updated_at', { ascending: false }).limit(1).maybeSingle()
-      if (error) throw error
-      return data
-    },
-  })
+  const { data: config, isLoading: lCfg } = useConfigReparto()
 
   const { data: medici = [], isLoading: lMed } = useQuery<Medico[]>({
     queryKey: ['medici'],

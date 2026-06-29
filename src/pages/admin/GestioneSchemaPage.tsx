@@ -4,6 +4,7 @@ import { Save, RotateCcw, Plus, X, Trash2, Eye, EyeOff, AlertTriangle, Copy } fr
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useReparto } from '../../contexts/RepartoContext'
+import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
@@ -368,15 +369,7 @@ export function GestioneSchemaPage() {
   // Schema attualmente attivo (dal config): serve a decidere se segnalare
   // "Rigenera calendario" al salvataggio. Modificare uno schema NON attivo
   // non deve far comparire l'avviso di rigenerazione.
-  const { data: config } = useQuery<Configurazione | null>({
-    queryKey: ['configurazione'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('configurazione').select('*')
-        .order('updated_at', { ascending: false }).limit(1).maybeSingle()
-      if (error) throw error
-      return data
-    },
-  })
+  const { data: config } = useConfigReparto()
   const schemaAttivo = config?.schema_attivo ?? 1
 
   // Menu "Copia da…" (apre la scelta di un altro schema come base)

@@ -11,6 +11,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarClock, CheckCircle, Trash2, Loader2, AlertTriangle, Save } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
@@ -68,15 +69,7 @@ export function AnteprimaTurnazionePage() {
       return data
     },
   })
-  const { data: config } = useQuery<Configurazione | null>({
-    queryKey: ['configurazione'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('configurazione').select('*')
-        .order('updated_at', { ascending: false }).limit(1).maybeSingle()
-      if (error) throw error
-      return data
-    },
-  })
+  const { data: config } = useConfigReparto()
 
   async function handleApprova() {
     if (!anteprima || !config) return

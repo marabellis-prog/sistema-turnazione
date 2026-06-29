@@ -22,6 +22,7 @@ import {
   CalendarDays, Database, Archive, Sparkles, CalendarClock, X,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useConfigurazioneRealtime } from '../../hooks/useConfigurazioneRealtime'
 import { useFestivitaCustom, useFestivitaCustomRealtime } from '../../hooks/useFestivitaCustom'
 import { useConfirm } from '../../hooks/useConfirm'
@@ -131,16 +132,7 @@ export function ConfigPage() {
     refetchInterval: 5 * 60_000,  // refresh ogni 5 min
   })
 
-  const { data: config } = useQuery<Configurazione | null>({
-    queryKey: ['configurazione'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('configurazione').select('*')
-        .order('updated_at', { ascending: false }).limit(1).maybeSingle()
-      if (error) throw error
-      return data
-    },
-  })
+  const { data: config } = useConfigReparto()
 
   // Festività italiane che cadono nel periodo della configurazione attiva.
   // Itera anno_inizio..anno_fine, prende le festività italiane di ogni anno

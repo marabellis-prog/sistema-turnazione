@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useReparto } from '../../contexts/RepartoContext'
+import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useConfirm } from '../../hooks/useConfirm'
 import { useCambiTurnoRealtime } from '../../hooks/useCambiTurnoRealtime'
 import { ConfirmModal } from '../../components/ConfirmModal'
@@ -129,16 +130,7 @@ export function GestioneCambiPage() {
   // ── Dati di contesto per il ricalcolo RM/RP post-approvazione ─────
   // Servono solo al click "Approva" ma li precarico cosi` l'azione e`
   // istantanea senza fetch in volo.
-  const { data: config } = useQuery<Configurazione | null>({
-    queryKey: ['configurazione'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('configurazione').select('*')
-        .order('updated_at', { ascending: false }).limit(1).maybeSingle()
-      if (error) throw error
-      return data
-    },
-  })
+  const { data: config } = useConfigReparto()
   const { data: schemi = [] } = useQuery<SchemaModello[]>({
     queryKey: ['schemi_modello', repartoAttivo],
     queryFn: async () => {
