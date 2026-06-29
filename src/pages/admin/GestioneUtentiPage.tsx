@@ -46,6 +46,16 @@ export function GestioneUtentiPage() {
     staleTime: 0,
   })
 
+  // Utenti ordinati per livello (admin → user → ospite) poi alfabetico.
+  const utentiOrdinati = useMemo(() => {
+    const rank: Record<string, number> = { admin: 0, user: 1, ospite: 2 }
+    return [...utenti].sort((a, b) => {
+      const r = (rank[a.ruolo] ?? 9) - (rank[b.ruolo] ?? 9)
+      if (r !== 0) return r
+      return (a.nome ?? a.email).localeCompare(b.nome ?? b.email, 'it', { sensitivity: 'base' })
+    })
+  }, [utenti])
+
   const { data: medici = [] } = useQuery<Medico[]>({
     queryKey: ['medici'],
     queryFn: async () => {
@@ -199,7 +209,7 @@ export function GestioneUtentiPage() {
               <tr><td colSpan={4} className="px-3 py-4 text-center text-stone-500">Caricamento...</td></tr>
             )}
 
-            {utenti.map(u => {
+            {utentiOrdinati.map(u => {
               const isPerm = u.email === ADMIN_PERMANENTE
 
               /* ── riga in editing ── */
