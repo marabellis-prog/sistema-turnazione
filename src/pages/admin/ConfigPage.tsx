@@ -28,7 +28,7 @@ import { useConfigurazioneRealtime } from '../../hooks/useConfigurazioneRealtime
 import { useFestivitaCustom, useFestivitaCustomRealtime } from '../../hooks/useFestivitaCustom'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
-import { getItalianHolidaysWithNames } from '../../lib/holidays'
+import { holidaysForNation, NAZIONI, nazioneValida } from '../../lib/holidays'
 import { MESI_IT } from '../../lib/algorithm'
 import type { Configurazione, SoglieSlot, SogliaEpoca } from '../../types'
 
@@ -96,15 +96,18 @@ export function ConfigPage() {
   const [festDescr,   setFestDescr]   = useState('')
   const [festSaving,  setFestSaving]  = useState(false)
   const [festErr,     setFestErr]     = useState<string | null>(null)
-  const { repartoAttivo } = useReparto()
+  const [nazioneSaving, setNazioneSaving] = useState(false)
+  const { repartoAttivo, repartoCorrente } = useReparto()
   const { festivita: festivitaList } = useFestivitaCustom(repartoAttivo)
 
   const { data: config } = useConfigReparto()
 
-  // Festività italiane che cadono nel periodo della configurazione attiva.
-  // Itera anno_inizio..anno_fine, prende le festività italiane di ogni anno
-  // e filtra quelle nel range [data_inizio, data_fine] del periodo.
-  const festivitaItaliane = useMemo(() => {
+  // Nazione del reparto → festività nazionali. Selettore + salvataggio sotto.
+  const nazione = nazioneValida(repartoCorrente?.nazione)
+
+  // Festività NAZIONALI (della nazione del reparto) che cadono nel periodo
+  // della configurazione attiva.
+  const festivitaNazionali = useMemo(() => {
     if (!config) return []
     const pad = (n: number) => String(n).padStart(2, '0')
     const startISO = `${config.anno_inizio}-${pad(config.mese_inizio)}-01`
@@ -112,12 +115,28 @@ export function ConfigPage() {
     const endISO   = `${config.anno_fine}-${pad(config.mese_fine)}-${pad(lastDay)}`
     const out: Array<{ data: string; nome: string }> = []
     for (let y = config.anno_inizio; y <= config.anno_fine; y++) {
-      for (const f of getItalianHolidaysWithNames(y)) {
+      for (const f of holidaysForNation(nazione, y)) {
         if (f.data >= startISO && f.data <= endISO) out.push(f)
       }
     }
     return out.sort((a, b) => a.data.localeCompare(b.data))
-  }, [config])
+  }, [config, nazione])
+
+  // Cambia la nazione del reparto (RPC: super-admin o responsabile del reparto).
+  async function salvaNazione(nuova: string) {
+    setNazioneSaving(true); setErr(null)
+    try {
+      const { error } = await supabase.rpc('set_reparto_nazione',
+        { p_reparto_id: repartoAttivo, p_nazione: nuova })
+      if (error) throw error
+      qc.invalidateQueries({ queryKey: ['reparti'] })
+      qc.invalidateQueries({ queryKey: ['reparto-nazione', repartoAttivo] })
+    } catch (e) {
+      setErr('Nazione: ' + (e as Error).message)
+    } finally {
+      setNazioneSaving(false)
+    }
+  }
 
   // Etichetta del periodo per l'header della sezione festività italiane:
   // - stesso anno → "Maggio - Ottobre 2026"
@@ -284,16 +303,17 @@ export function ConfigPage() {
       {/* Header */}
       <div>
         <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
-          <Settings size={20} style={{ color: '#476540' }} />
-          Impostazioni
+          <CalendarDays size={20} style={{ color: '#476540' }} />
+          Festività e fabbisogno
         </h2>
         <p className="text-sm text-stone-600 mt-0.5">
-          Numero atteso di medici per slot / mezza giornata / tipo di giorno.
-          Usato dal check di consistenza in <strong>Modifica Turni</strong> per
-          segnalare giorni in cui il count effettivo non corrisponde all'atteso.
+          Più in basso: <strong>nazione</strong> del reparto e <strong>festività</strong>
+          (nazionali + locali). Qui sopra il <strong>fabbisogno giornaliero</strong> (medici
+          attesi per slot / tipo di giorno), usato dal check in <strong>Modifica Turni</strong>.
         </p>
         <p className="text-xs text-stone-500 mt-1">
-          Convenzione: <strong>0</strong> = nessun controllo per quello slot.
+          Nota: il fabbisogno si sposterà in <strong>Disegna Schema</strong> (legato allo schema).
+          Convenzione <strong>0</strong> = nessun controllo per quello slot.
         </p>
       </div>
 
@@ -422,6 +442,29 @@ export function ConfigPage() {
         </p>
       </div>
 
+      {/* ── NAZIONE del reparto (guida le festività nazionali) ──────── */}
+      <div className="mt-4">
+        <h3 className="text-lg font-bold text-stone-800 flex items-center gap-2">
+          <CalendarDays size={18} style={{ color: '#476540' }} />
+          Nazione del reparto
+        </h3>
+        <p className="text-sm text-stone-600 mt-0.5">
+          Determina le <strong>festività nazionali</strong> applicate al calendario di
+          questo reparto (due reparti possono stare in nazioni diverse). Le festività
+          locali (santo patrono ecc.) si aggiungono qui sotto.
+        </p>
+        <div className="mt-2 flex items-center gap-2">
+          <select value={nazione} onChange={e => salvaNazione(e.target.value)}
+            disabled={nazioneSaving}
+            className="px-2 py-1.5 rounded border border-stone-300 text-sm font-semibold">
+            {Object.entries(NAZIONI).map(([code, def]) => (
+              <option key={code} value={code}>{def.nome}</option>
+            ))}
+          </select>
+          {nazioneSaving && <Loader2 size={14} className="animate-spin text-stone-400" />}
+        </div>
+      </div>
+
       {/* ── SEZIONE FESTIVITÀ LOCALI (custom) ───────────────────────── */}
       <div className="mt-4">
         <h3 className="text-lg font-bold text-stone-800 flex items-center gap-2">
@@ -429,7 +472,7 @@ export function ConfigPage() {
           Festività Locali
         </h3>
         <p className="text-sm text-stone-600 mt-0.5">
-          Aggiungi date trattate come festive oltre alle festività nazionali italiane
+          Aggiungi date trattate come festive oltre alle festività nazionali
           (es. <strong>santo patrono</strong>, eventi locali). Quel giorno appare come
           festivo nel calendario, nel conteggio "F" del riepilogo e nei check di consistenza
           (atteso "festivo" invece di "feriale"). Eliminando una festività, tutto torna come prima.
@@ -512,18 +555,18 @@ export function ConfigPage() {
       {/* Read-only: serve all'admin per ricordarsi quali festività nazionali
           ricadono nel periodo della configurazione attiva. Non si possono
           eliminare/modificare (sono hardcoded in src/lib/holidays.ts). */}
-      {config && festivitaItaliane.length > 0 && (
+      {config && festivitaNazionali.length > 0 && (
         <div className="mt-2">
           <h3 className="text-lg font-bold text-stone-800 flex items-center gap-2">
             <CalendarDays size={18} style={{ color: '#7a2233' }} />
-            Festività Italiane nel periodo
+            Festività Nazionali ({NAZIONI[nazione]?.nome ?? nazione}) nel periodo
             <span className="text-xs font-normal text-stone-500">
               ({periodoLabel})
             </span>
           </h3>
           <p className="text-sm text-stone-600 mt-0.5">
-            Riferimento delle festività nazionali italiane (incluse Pasqua e Pasquetta
-            calcolate) che cadono nel periodo. Sono <strong>sempre</strong> considerate
+            Riferimento delle festività nazionali (incluse Pasqua e Pasquetta dove
+            previste) che cadono nel periodo. Sono <strong>sempre</strong> considerate
             festive nei calcoli e nei check.
           </p>
           <div className="mt-3 rounded-lg border border-stone-300 bg-white overflow-hidden">
@@ -535,7 +578,7 @@ export function ConfigPage() {
                 </tr>
               </thead>
               <tbody>
-                {festivitaItaliane.map(f => (
+                {festivitaNazionali.map(f => (
                   <tr key={f.data} className="border-t border-stone-200">
                     <td className="px-3 py-2 font-mono text-xs">
                       {fmtDataLunga(f.data)}

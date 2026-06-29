@@ -26,6 +26,8 @@ export interface Reparto {
   nome:       string
   attivo:     boolean
   created_at: string
+  /** Codice nazione per le festività nazionali (es. 'IT'). Default 'IT'. */
+  nazione?:   string
 }
 
 /** Un utente (globale) responsabile di un reparto. */

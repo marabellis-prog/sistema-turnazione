@@ -15,6 +15,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { buildFestivoSet } from '../lib/holidays'
 import type { FestivitaCustom } from '../types'
 
 export function useFestivitaCustom(repartoId: string) {
@@ -30,8 +31,26 @@ export function useFestivitaCustom(repartoId: string) {
     staleTime: 60_000,   // 1 min — l'admin non le aggiunge di continuo
   })
 
-  // Set di stringhe ISO per O(1) lookup in isFestivo / generaColonne
-  const set = useMemo(() => new Set(data.map(f => f.data)), [data])
+  // Nazione del reparto → guida le festività nazionali (deduplicata via key).
+  const { data: nazione = 'IT' } = useQuery<string>({
+    queryKey: ['reparto-nazione', repartoId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('reparti').select('nazione').eq('id', repartoId).maybeSingle()
+      if (error) throw error
+      return ((data?.nazione as string | null) ?? 'IT')
+    },
+    staleTime: 5 * 60_000,
+  })
+
+  // Set festivo = nazionali (della nazione) su un range ampio di anni + custom.
+  // O(1) lookup in isFestivo / generaColonne.
+  const set = useMemo(() => {
+    const thisYear = new Date().getFullYear()
+    const years: number[] = []
+    for (let y = thisYear - 2; y <= thisYear + 5; y++) years.push(y)
+    return buildFestivoSet(nazione, data.map(f => f.data), years)
+  }, [data, nazione])
 
   return { festivita: data, set, isLoading }
 }

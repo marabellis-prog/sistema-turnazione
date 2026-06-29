@@ -1,6 +1,20 @@
 /**
- * Calcola la data di Pasqua per un dato anno (Algoritmo di Gauss/Meeus)
+ * Festività nazionali (per-nazione) + helper festivo.
+ *
+ * Multi-reparto: ogni reparto sceglie la sua NAZIONE (due reparti possono
+ * stare in nazioni diverse). Le festività nazionali derivano dalla nazione;
+ * le festività custom (santo patrono, chiusure locali) sono per-reparto.
+ *
+ * `isFestivo(date, festivoSet)` ora usa SOLO il set passato: il set deve già
+ * contenere le festività nazionali (della nazione del reparto) UNITE alle
+ * custom. Lo costruisce `useFestivitaCustom` con `buildFestivoSet`.
  */
+
+const pad = (n: number) => String(n).padStart(2, '0')
+const isoYMD = (y: number, m: number, d: number) => `${y}-${pad(m)}-${pad(d)}`
+const localIso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+
+/** Data di Pasqua per un dato anno (Algoritmo di Gauss/Meeus). */
 export function getPasqua(year: number): Date {
   const a = year % 19
   const b = Math.floor(year / 100)
@@ -19,89 +33,85 @@ export function getPasqua(year: number): Date {
   return new Date(year, month - 1, day)
 }
 
-/**
- * Restituisce true se la data è un festivo italiano (nazionale) o se
- * compare nel set opzionale `customSet` (festività configurabili
- * dall'admin via Impostazioni — es. santo patrono).
- *
- * `customSet` accetta date in formato ISO "YYYY-MM-DD".
- */
-export function isFestivo(date: Date, customSet?: Set<string>): boolean {
-  const d = date.getDate()
-  const m = date.getMonth() + 1
-  const y = date.getFullYear()
+// ── Festività nazionali per nazione ────────────────────────────────────
+// Estensibile: per aggiungere una nazione, aggiungi una voce a NAZIONI con
+// la sua funzione holidays(year). Pasqua/Pasquetta via getPasqua se serve.
 
-  // Festività custom (admin-defined)
-  if (customSet && customSet.size > 0) {
-    const pad = (n: number) => String(n).padStart(2, '0')
-    if (customSet.has(`${y}-${pad(m)}-${pad(d)}`)) return true
-  }
-
-  // Festività fisse
-  if (d === 1  && m === 1)  return true  // Capodanno
-  if (d === 6  && m === 1)  return true  // Epifania
-  if (d === 25 && m === 4)  return true  // Liberazione
-  if (d === 1  && m === 5)  return true  // Festa del Lavoro
-  if (d === 2  && m === 6)  return true  // Repubblica
-  if (d === 15 && m === 8)  return true  // Ferragosto
-  if (d === 1  && m === 11) return true  // Ognissanti
-  if (d === 8  && m === 12) return true  // Immacolata Concezione
-  if (d === 25 && m === 12) return true  // Natale
-  if (d === 26 && m === 12) return true  // Santo Stefano
-
-  // Pasqua e Pasquetta (variabili)
-  const pasqua = getPasqua(y)
-  if (d === pasqua.getDate() && m === pasqua.getMonth() + 1) return true
-
-  const pasquetta = new Date(pasqua)
-  pasquetta.setDate(pasquetta.getDate() + 1)
-  if (d === pasquetta.getDate() && m === pasquetta.getMonth() + 1) return true
-
-  return false
+interface DefNazione {
+  nome: string
+  /** Festività dell'anno (data ISO + nome leggibile), escluse le custom. */
+  holidays: (year: number) => Array<{ data: string; nome: string }>
 }
 
-/**
- * Restituisce true se la data è domenica O festivo.
- */
-export function isDomenicaOFestivo(date: Date, customSet?: Set<string>): boolean {
-  return date.getDay() === 0 || isFestivo(date, customSet)
-}
-
-/**
- * Restituisce l'elenco delle festività italiane per l'anno specificato,
- * con la data ISO "YYYY-MM-DD" e il nome leggibile (es. "Pasqua").
- * Ordinato per data crescente. Pasqua e Lunedi` dell'Angelo sono calcolati.
- *
- * Usato in /admin/config per mostrare quali festività cadono nel periodo
- * della configurazione attiva.
- */
-export function getItalianHolidaysWithNames(year: number): Array<{ data: string; nome: string }> {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const iso = (m: number, d: number) => `${year}-${pad(m)}-${pad(d)}`
-
+function holidaysIT(year: number): Array<{ data: string; nome: string }> {
   const fixed = [
-    { data: iso(1,  1),  nome: 'Capodanno' },
-    { data: iso(1,  6),  nome: 'Epifania' },
-    { data: iso(4, 25),  nome: 'Liberazione' },
-    { data: iso(5,  1),  nome: 'Festa del Lavoro' },
-    { data: iso(6,  2),  nome: 'Festa della Repubblica' },
-    { data: iso(8, 15),  nome: 'Ferragosto' },
-    { data: iso(11, 1),  nome: 'Ognissanti' },
-    { data: iso(12, 8),  nome: 'Immacolata Concezione' },
-    { data: iso(12, 25), nome: 'Natale' },
-    { data: iso(12, 26), nome: 'Santo Stefano' },
+    { data: isoYMD(year, 1,  1),  nome: 'Capodanno' },
+    { data: isoYMD(year, 1,  6),  nome: 'Epifania' },
+    { data: isoYMD(year, 4, 25),  nome: 'Liberazione' },
+    { data: isoYMD(year, 5,  1),  nome: 'Festa del Lavoro' },
+    { data: isoYMD(year, 6,  2),  nome: 'Festa della Repubblica' },
+    { data: isoYMD(year, 8, 15),  nome: 'Ferragosto' },
+    { data: isoYMD(year, 11, 1),  nome: 'Ognissanti' },
+    { data: isoYMD(year, 12, 8),  nome: 'Immacolata Concezione' },
+    { data: isoYMD(year, 12, 25), nome: 'Natale' },
+    { data: isoYMD(year, 12, 26), nome: 'Santo Stefano' },
   ]
-
   const pasqua = getPasqua(year)
-  const pasquetta = new Date(pasqua)
-  pasquetta.setDate(pasquetta.getDate() + 1)
-
-  const localIso = (d: Date) =>
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-
+  const pasquetta = new Date(pasqua); pasquetta.setDate(pasquetta.getDate() + 1)
   return [
     ...fixed,
     { data: localIso(pasqua),    nome: 'Pasqua' },
-    { data: localIso(pasquetta), nome: 'Lunedi\' dell\'Angelo' },
+    { data: localIso(pasquetta), nome: 'Lunedì dell\'Angelo' },
   ].sort((a, b) => a.data.localeCompare(b.data))
+}
+
+/** Nazioni supportate. 'NONE' = nessuna festività nazionale (solo domeniche
+ *  + eventuali festività custom). Aggiungere nuove nazioni qui. */
+export const NAZIONI: Record<string, DefNazione> = {
+  IT:   { nome: 'Italia',                       holidays: holidaysIT },
+  NONE: { nome: 'Nessuna (solo domeniche)',     holidays: () => [] },
+}
+
+/** Codice nazione valido (fallback IT se sconosciuto/non impostato). */
+export function nazioneValida(codice: string | null | undefined): string {
+  return codice && NAZIONI[codice] ? codice : 'IT'
+}
+
+/** Festività nazionali della nazione per l'anno (lista con nomi, ordinata). */
+export function holidaysForNation(codice: string | null | undefined, year: number) {
+  return NAZIONI[nazioneValida(codice)].holidays(year)
+}
+
+/** Alias storico (Italia). */
+export function getItalianHolidaysWithNames(year: number) {
+  return holidaysIT(year)
+}
+
+/** Costruisce il Set di date ISO festive = nazionali (della nazione) su un
+ *  range di anni UNITE alle festività custom. È il set da passare a isFestivo
+ *  / generaColonne. */
+export function buildFestivoSet(
+  nazione: string | null | undefined,
+  customDates: Iterable<string>,
+  years: number[],
+): Set<string> {
+  const s = new Set<string>(customDates)
+  for (const y of years) {
+    for (const h of holidaysForNation(nazione, y)) s.add(h.data)
+  }
+  return s
+}
+
+/**
+ * true se la data è festiva. Usa SOLO il set passato (nazionali + custom),
+ * costruito a monte con buildFestivoSet. Senza set → false (nessun festivo).
+ */
+export function isFestivo(date: Date, festivoSet?: Set<string>): boolean {
+  if (!festivoSet || festivoSet.size === 0) return false
+  return festivoSet.has(localIso(date))
+}
+
+/** true se la data è domenica O festivo. */
+export function isDomenicaOFestivo(date: Date, festivoSet?: Set<string>): boolean {
+  return date.getDay() === 0 || isFestivo(date, festivoSet)
 }
