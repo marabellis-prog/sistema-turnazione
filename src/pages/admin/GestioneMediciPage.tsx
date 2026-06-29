@@ -1,12 +1,22 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Save, X, Trash2, AlertTriangle, RefreshCw, GripVertical, Users, Search, UserPlus } from 'lucide-react'
+import { Plus, Pencil, Save, X, Trash2, AlertTriangle, RefreshCw, GripVertical, Users, Search, UserPlus, ArrowRightLeft, History } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { emailValida } from '../../lib/email'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { useReparto } from '../../contexts/RepartoContext'
 import type { Medico, UtenteAutorizzato } from '../../types'
+import { SubentroModal } from '../../components/SubentroModal'
+
+interface SubentroRow {
+  id: string
+  numero_ordine: number | null
+  data_subentro: string
+  nota: string | null
+  uscente: { nome: string } | null
+  entrante: { nome: string } | null
+}
 
 // ─────────────────────────────────────────────────────────────────
 // NOTA ARCHITETTURALE — dipendenze di un medico nel sistema:
@@ -68,7 +78,7 @@ export function GestioneMediciPage() {
     queryKey: ['medici-tutti', repartoAttivo],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('medici').select('*').eq('reparto_id', repartoAttivo).order('numero_ordine')
+        .from('medici').select('*').eq('reparto_id', repartoAttivo).eq('attivo', true).order('numero_ordine')
       if (error) throw error
       return data
     },
@@ -84,6 +94,21 @@ export function GestioneMediciPage() {
     },
     staleTime: 0,
   })
+
+  // Storico subentri del reparto (per la sezione in fondo).
+  const { data: subentri = [] } = useQuery<SubentroRow[]>({
+    queryKey: ['subentri', repartoAttivo],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('subentri')
+        .select('id, numero_ordine, data_subentro, nota, uscente:medici!medico_uscente_id(nome), entrante:medici!medico_entrante_id(nome)')
+        .eq('reparto_id', repartoAttivo)
+        .order('data_subentro', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as unknown as SubentroRow[]
+    },
+  })
+  const [subentroPer, setSubentroPer] = useState<Medico | null>(null)
 
   // Sincronizza l'ordine locale con il DB — solo se non ci sono modifiche pendenti
   useEffect(() => {
@@ -349,6 +374,17 @@ export function GestioneMediciPage() {
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
         onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
 
+      {subentroPer && (
+        <SubentroModal
+          uscente={subentroPer}
+          repartoId={repartoAttivo}
+          utenti={utenti}
+          mediciAttuali={localMedici}
+          onClose={() => setSubentroPer(null)}
+          onDone={(msg) => { setSubentroPer(null); setAvviso(msg) }}
+        />
+      )}
+
       {/* Titolo + pulsante salva ordine */}
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -512,6 +548,11 @@ export function GestioneMediciPage() {
                       title="Modifica nome">
                       <Pencil size={14} />
                     </button>
+                    <button onClick={() => setSubentroPer(m)} disabled={saving}
+                      className="p-1.5 rounded text-stone-500 hover:text-olive-700 hover:bg-olive-50 transition-colors"
+                      title="Subentro — sostituisci questo turnista">
+                      <ArrowRightLeft size={14} />
+                    </button>
                     <button onClick={() => eliminaMedico(m)} disabled={saving}
                       className="p-1.5 rounded text-stone-500 hover:text-red-600 hover:bg-red-50 transition-colors"
                       title="Elimina">
@@ -584,6 +625,27 @@ export function GestioneMediciPage() {
           Aggiunto come ultimo in rotazione (n° {nextOrdine()}). Trascina per riposizionarlo.
         </p>
       </div>
+
+      {/* Storico subentri */}
+      {subentri.length > 0 && (
+        <div className="card p-4 space-y-2">
+          <h3 className="font-semibold text-stone-700 text-sm flex items-center gap-2">
+            <History size={15} /> Storico subentri
+          </h3>
+          <ul className="space-y-1">
+            {subentri.map(s => (
+              <li key={s.id} className="text-sm flex items-center gap-2 flex-wrap">
+                <span className="font-mono text-xs text-stone-400">n°{s.numero_ordine ?? '—'}</span>
+                <span className="uppercase font-semibold text-stone-700">{s.uscente?.nome ?? '—'}</span>
+                <ArrowRightLeft size={12} className="text-olive-500 shrink-0" />
+                <span className="uppercase font-semibold text-olive-700">{s.entrante?.nome ?? '—'}</span>
+                <span className="text-xs text-stone-500">dal {s.data_subentro.split('-').reverse().join('/')}</span>
+                {s.nota && <span className="text-xs text-stone-400 italic">— {s.nota}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Legenda */}
       <div className="text-xs text-stone-500 space-y-1 px-1">
