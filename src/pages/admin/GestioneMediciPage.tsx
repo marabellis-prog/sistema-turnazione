@@ -283,15 +283,21 @@ export function GestioneMediciPage() {
 
   // Utenti globali che NON sono gia' turnisti di questo reparto (per id o nome).
   const risultati = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase()
-    if (q.length < 3) return []
+    const raw = searchTerm.trim().toLowerCase()
+    if (raw.length < 3) return []
+    // Ricerca per "parole": ogni token deve comparire in un punto qualsiasi di
+    // nome+email. Cosi "stef" trova "Stefano Marabelli", "Maria Stefanelli" e
+    // "Luigi Abbostefazzi"; "mar stef" trova comunque "Stefano Marabelli".
+    const tokens = raw.split(/\s+/).filter(Boolean)
     const nomiPresenti = new Set(localMedici.map(m => m.nome.toUpperCase().trim()))
     const idPresenti = new Set(localMedici.map(m => m.utente_id).filter(Boolean))
-    return utenti.filter(u => u.attivo
-      && !idPresenti.has(u.id)
-      && !nomiPresenti.has((u.nome ?? '').toUpperCase().trim())
-      && ((u.nome ?? '').toLowerCase().includes(q) || u.email.toLowerCase().includes(q)))
-      .slice(0, 6)
+    return utenti.filter(u => {
+      if (!u.attivo) return false
+      if (idPresenti.has(u.id)) return false
+      if (nomiPresenti.has((u.nome ?? '').toUpperCase().trim())) return false
+      const hay = ((u.nome ?? '') + ' ' + (u.email ?? '')).toLowerCase()
+      return tokens.every(t => hay.includes(t))
+    }).slice(0, 8)
   }, [searchTerm, utenti, localMedici])
 
   // Aggiunge un utente globale ESISTENTE come turnista del reparto.
