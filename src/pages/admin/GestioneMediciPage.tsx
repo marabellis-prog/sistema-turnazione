@@ -350,17 +350,37 @@ export function GestioneMediciPage() {
   }
 
   // ── Aggiungi turnista ────────────────────────────────────────
-  function nextOrdine() {
-    return localMedici.length > 0 ? Math.max(...localMedici.map(m => m.numero_ordine)) + 1 : 1
+  // Prossimo numero_ordine LIBERO, letto FRESCO dal DB: conta TUTTE le righe
+  // del reparto (anche inattive) perché il vincolo UNIQUE(reparto_id,
+  // numero_ordine) vale su tutte; gli ospiti hanno numero_ordine NULL. Leggere
+  // dallo stato locale (cache) causava collisioni tra un'aggiunta e l'altra.
+  async function nextOrdineFresh(): Promise<number> {
+    const { data, error } = await supabase.from('medici')
+      .select('numero_ordine')
+      .eq('reparto_id', repartoAttivo)
+      .not('numero_ordine', 'is', null)
+      .order('numero_ordine', { ascending: false })
+      .limit(1)
+    if (error) throw error
+    const max = (data && data.length ? data[0].numero_ordine : 0) ?? 0
+    return max + 1
+  }
+  // Stima sincrona solo per l'etichetta UI (il valore vero è nextOrdineFresh).
+  function prossimoOrdineStimato(): number {
+    const nums = localMedici.map(m => m.numero_ordine).filter((n): n is number => n != null)
+    return nums.length ? Math.max(...nums) + 1 : 1
   }
 
   // Cambia al volo il ruolo nel reparto (Turnista ↔ Ospite) di un medico.
   async function cambiaRuoloReparto(m: Medico, nuovo: 'turnista' | 'ospite') {
     // Ospite = fuori rotazione (numero_ordine NULL). Turnista = rientra in coda
-    // (numero_ordine = ultimo dei turnisti + 1).
-    const maxOrd = Math.max(0, ...medici.filter(x => x.ruolo_reparto !== 'ospite').map(x => x.numero_ordine))
-    const patch = { ruolo_reparto: nuovo, numero_ordine: nuovo === 'ospite' ? null : maxOrd + 1 }
-    const { error } = await supabase.from('medici').update(patch).eq('id', m.id)
+    // (ultimo numero_ordine del reparto + 1, letto fresco per evitare collisioni).
+    let numero_ordine: number | null = null
+    if (nuovo !== 'ospite') {
+      try { numero_ordine = await nextOrdineFresh() }
+      catch (e) { setErrore(e instanceof Error ? e.message : 'Errore nel calcolo ordine'); return }
+    }
+    const { error } = await supabase.from('medici').update({ ruolo_reparto: nuovo, numero_ordine }).eq('id', m.id)
     if (error) { setErrore(error.message); return }
     qc.invalidateQueries({ queryKey: ['medici-tutti', repartoAttivo] })
     qc.invalidateQueries({ queryKey: ['medici'] })
@@ -388,9 +408,12 @@ export function GestioneMediciPage() {
   // Aggiunge un utente globale ESISTENTE come turnista del reparto.
   async function aggiungiDaUtente(u: UtenteAutorizzato) {
     setErrore('')
+    let ordine: number | null
+    try { ordine = ruoloNuovo === 'ospite' ? null : await nextOrdineFresh() }
+    catch (e) { setErrore(e instanceof Error ? e.message : 'Errore nel calcolo ordine'); return }
     const { error } = await supabase.from('medici').insert({
       nome: u.nome || u.email, cognome: u.cognome ?? null, nome_proprio: u.nome_proprio ?? null,
-      numero_ordine: nextOrdine(), ruolo_reparto: ruoloNuovo,
+      numero_ordine: ordine, ruolo_reparto: ruoloNuovo,
       is_reperibilita: false, attivo: true, reparto_id: repartoAttivo, utente_id: u.id,
     })
     if (error) { setErrore(error.message); return }
@@ -417,9 +440,12 @@ export function GestioneMediciPage() {
     if (uErr) { setSaving(false); setErrore('Utente: ' + uErr.message); return }
     const { data: lista } = await supabase.rpc('get_all_utenti_autorizzati')
     const nuovo = ((lista ?? []) as UtenteAutorizzato[]).find(x => x.email === email)
+    let ordineNuovo: number | null
+    try { ordineNuovo = ruoloNuovo === 'ospite' ? null : await nextOrdineFresh() }
+    catch (e) { setSaving(false); setErrore(e instanceof Error ? e.message : 'Errore nel calcolo ordine'); return }
     const { error: mErr } = await supabase.from('medici').insert({
       nome, cognome, nome_proprio: nomeProprio,
-      numero_ordine: nextOrdine(), ruolo_reparto: ruoloNuovo,
+      numero_ordine: ordineNuovo, ruolo_reparto: ruoloNuovo,
       is_reperibilita: false, attivo: true,
       reparto_id: repartoAttivo, utente_id: nuovo?.id ?? null,
     })
@@ -753,7 +779,7 @@ export function GestioneMediciPage() {
           </div>
         )}
         <p className="text-[11px] text-stone-500">
-          Aggiunto come ultimo in rotazione (n° {nextOrdine()}). Trascina per riposizionarlo.
+          Aggiunto come ultimo in rotazione (n° {prossimoOrdineStimato()}). Trascina per riposizionarlo.
         </p>
       </div>
 
