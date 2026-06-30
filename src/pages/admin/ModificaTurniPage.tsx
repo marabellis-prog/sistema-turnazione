@@ -22,12 +22,12 @@
  * - Al salvataggio: upsert su `turni` con `modificato_manualmente` ricalcolato.
  */
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Calendar, Save, Layers, Rows3, RefreshCw, AlertTriangle, X, RotateCcw } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { useReparto } from '../../contexts/RepartoContext'
+import { useReparto, REPARTO_11N } from '../../contexts/RepartoContext'
 import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useMediciReparto } from '../../hooks/useMediciReparto'
 import { nomeBreve } from '../../lib/nomeTurnista'
@@ -37,6 +37,7 @@ import {
   type RicalcCell,
 } from '../../lib/algorithm'
 import { soglieForDay } from '../../lib/soglieImpostazioni'
+import { calcolaCoperturaGiorno, ambitoGiorno, type FabbisognoRiga, type CoperturaGiorno } from '../../lib/copertura'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { useConfirm } from '../../hooks/useConfirm'
 import { RiepilogoTurni, aggiustaConteggiRiepilogo } from '../../components/RiepilogoTurni'
@@ -75,6 +76,60 @@ const DAY_LETTERS = ['D', 'L', 'M', 'M', 'G', 'V', 'S']
 function dayLetter(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number)
   return DAY_LETTERS[new Date(y, m - 1, d).getDay()]
+}
+
+// ── Copertura dinamica: righe in fondo alla tabella (presente/richiesto) ──
+function fgPerSfondo(bg: string): string {
+  const h = (bg || '#cccccc').replace('#', '')
+  if (h.length < 6) return '#1f2937'
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16)
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#1f2937' : '#fff'
+}
+/** Cella copertura: "presente/richiesto", colore = stato (verde ok, rosso sotto,
+ *  ambra sopra, grigio = nessun fabbisogno). */
+function CellaCop({ p, r }: { p: number; r: number }) {
+  const color = r === 0 ? '#9ca3af' : p === r ? '#16a34a' : p < r ? '#dc2626' : '#d97706'
+  return <span style={{ fontWeight: 800, color, fontSize: 11 }}>{r > 0 ? `${p}/${r}` : (p || '')}</span>
+}
+function RigheCoperturaDinamica({ cols, copByData, proprieta }: {
+  cols: ColonnaCal[]
+  copByData: Map<string, CoperturaGiorno>
+  proprieta: { sigla: string; nome: string; colore_bg: string }[]
+}) {
+  const labelTd = (bg: string): CSSProperties => ({
+    width: 140, minWidth: 140, position: 'sticky', left: 0, zIndex: 1,
+    background: bg, color: fgPerSfondo(bg), fontSize: 10, fontWeight: 800,
+    padding: '3px 8px', border: '1px solid rgba(0,0,0,0.15)', whiteSpace: 'nowrap', letterSpacing: '0.04em',
+  })
+  const cellTd: CSSProperties = {
+    width: 32, minWidth: 32, height: 22, background: '#fff', textAlign: 'center',
+    verticalAlign: 'middle', border: '1px solid #e5e7eb', padding: 0,
+  }
+  const META = [['mattina', 'MATTINA'], ['pomeriggio', 'POMERIGGIO']] as const
+  return (
+    <>
+      {META.map(([meta, label]) => (
+        <Fragment key={meta}>
+          <tr>
+            <td style={labelTd('#5b6b73')}>{label}</td>
+            {cols.map(c => {
+              const m = copByData.get(c.data)?.[meta]
+              return <td key={c.data} style={cellTd}><CellaCop p={m?.totPresente ?? 0} r={m?.totRichiesto ?? 0} /></td>
+            })}
+          </tr>
+          {proprieta.map(p => (
+            <tr key={meta + p.sigla}>
+              <td style={labelTd(p.colore_bg)} title={p.nome}>· {p.sigla}</td>
+              {cols.map(c => {
+                const rr = copByData.get(c.data)?.[meta]?.righe.find(x => x.sigla === p.sigla)
+                return <td key={c.data} style={cellTd}><CellaCop p={rr?.presente ?? 0} r={rr?.richiesto ?? 0} /></td>
+              })}
+            </tr>
+          ))}
+        </Fragment>
+      ))}
+    </>
+  )
 }
 
 /** Formatta una data ISO "YYYY-MM-DD" in "24 lug" (formato breve italiano).
@@ -624,7 +679,7 @@ export function ModificaTurniPage() {
         for (const { di, df } of mesi) {
           const { data, error } = await supabase
             .from('turni')
-            .select('id, medico_id, data, turno_clinico, turno_ricerca, modificato_manualmente, is_ferie, is_sub, is_med, slot_mattina, slot_pomeriggio, turno_clinico_base, turno_ricerca_base, turno_clinico_originario, note, created_at, updated_at')
+            .select('id, medico_id, data, turno_clinico, turno_ricerca, modificato_manualmente, is_ferie, is_sub, is_med, slot_mattina, slot_pomeriggio, turno_clinico_base, turno_ricerca_base, turno_clinico_originario, note, proprieta, created_at, updated_at')
             .gte('data', di).lte('data', df)
           if (error) throw error
           all = [...all, ...((data ?? []) as Turno[])]
@@ -699,6 +754,69 @@ export function ModificaTurniPage() {
         }
       : { tc: '', tr: '', slot_mattina: null, slot_pomeriggio: null }
   }, [modifiche, turniByKey])
+
+  // ── COPERTURA DINAMICA (reparti non-11N) ───────────────────────────
+  // Confronta i turni col Fabbisogno dello schema, per metà-giornata e per
+  // OGNI proprietà configurata. 11N resta sulle soglie classiche (sotto).
+  const repartoDinamico = repartoAttivo !== REPARTO_11N
+  const schemaAttivoNum = config?.schema_attivo ?? 1
+  const { data: fabbisognoDin = [] } = useQuery<FabbisognoRiga[]>({
+    queryKey: ['mod-fabbisogno', repartoAttivo, schemaAttivoNum],
+    enabled: repartoDinamico && !!config,
+    staleTime: 0, refetchOnMount: 'always',
+    queryFn: async () => {
+      const { data, error } = await supabase.from('schema_fabbisogno')
+        .select('ambito, turno_sigla, totale, per_proprieta')
+        .eq('reparto_id', repartoAttivo).eq('schema_num', schemaAttivoNum)
+      if (error) throw error
+      return (data ?? []).map(r => ({
+        ambito: r.ambito as string,
+        meta: r.turno_sigla as 'mattina' | 'pomeriggio',
+        totale: (r.totale ?? 0) as number,
+        per_proprieta: (r.per_proprieta ?? {}) as Record<string, number>,
+      }))
+    },
+  })
+  const { data: proprietaDin = [] } = useQuery<{ sigla: string; nome: string; colore_bg: string; ordine: number }[]>({
+    queryKey: ['mod-proprieta', repartoAttivo, schemaAttivoNum],
+    enabled: repartoDinamico && !!config,
+    staleTime: 0, refetchOnMount: 'always',
+    queryFn: async () => {
+      const { data, error } = await supabase.from('proprieta_turno')
+        .select('sigla, nome, colore_bg, ordine')
+        .eq('reparto_id', repartoAttivo).eq('schema_num', schemaAttivoNum)
+      if (error) throw error
+      return (data ?? []) as { sigla: string; nome: string; colore_bg: string; ordine: number }[]
+    },
+  })
+  const proprietaOrd = useMemo(
+    () => [...proprietaDin].sort((a, b) => a.ordine - b.ordine),
+    [proprietaDin],
+  )
+  // Righe da mostrare = proprietà richieste nel fabbisogno o presenti in almeno
+  // un turno (così "Supporto" e nuove proprietà compaiono appena usate).
+  const proprietaDaMostrare = useMemo(() => {
+    const viste = new Set<string>()
+    for (const f of fabbisognoDin) for (const k of Object.keys(f.per_proprieta)) viste.add(k)
+    for (const t of turni) for (const p of (t.proprieta ?? [])) viste.add(p)
+    return proprietaOrd.filter(p => viste.has(p.sigla))
+  }, [fabbisognoDin, proprietaOrd, turni])
+  // Copertura per giorno: totale/coperti live (getCella) + proprietà dal DB.
+  const coperturaByData = useMemo(() => {
+    const map = new Map<string, CoperturaGiorno>()
+    if (!repartoDinamico) return map
+    const sigle = proprietaOrd.map(p => p.sigla)
+    for (const c of colonne) {
+      const amb = ambitoGiorno(c.data, !!(c.isFestivo || c.isDomenica))
+      const fabAmb = fabbisognoDin.filter(f => f.ambito === amb)
+      const turniGiorno = mediciVisibili.map(m => ({
+        turno_clinico: getCella(m.id, c.data).tc,
+        proprieta: turniByKey.get(`${m.id}|${c.data}`)?.proprieta ?? [],
+      }))
+      map.set(c.data, calcolaCoperturaGiorno(turniGiorno, sigle, fabAmb))
+    }
+    return map
+  }, [repartoDinamico, colonne, mediciVisibili, getCella, turniByKey, fabbisognoDin, proprietaOrd])
 
   const getOriginale = useCallback((medicoId: string, data: string): { tc: TurnoClinico; tr: TurnoRicerca } => {
     // Preferisci il "base" memorizzato sulla riga turni (robusto con schemi
@@ -1711,7 +1829,9 @@ export function ModificaTurniPage() {
               Tutti si aggiornano in tempo reale (getCella legge dal Map
               modifiche prima del DB). In un giorno bilanciato vale
               sub + med == tot, e idealmente sub ≈ med. */}
-          {tipo === 'clinica' && (
+          {tipo === 'clinica' && (repartoDinamico ? (
+            <RigheCoperturaDinamica cols={cols} copByData={coperturaByData} proprieta={proprietaDaMostrare} />
+          ) : (
             <>
               <tr>
                 <td style={{
@@ -1802,7 +1922,7 @@ export function ModificaTurniPage() {
                 })}
               </tr>
             </>
-          )}
+          ))}
         </tbody>
       </table>
     )
