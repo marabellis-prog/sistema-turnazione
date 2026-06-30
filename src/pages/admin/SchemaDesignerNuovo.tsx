@@ -504,13 +504,15 @@ export function SchemaDesignerNuovo() {
         <div className="flex gap-4 items-start">
         <div className="card p-3 space-y-3 min-w-0 overflow-x-auto">
           <div>
-            <div className="text-xs font-semibold text-stone-600 mb-1">Turnisti — trascina nei riquadri delle colonne-turno</div>
-            <div className="flex flex-wrap gap-1">
+            <div className="text-xs font-semibold text-stone-600 mb-1">Turnisti (legenda) — trascina il numero nei riquadri delle colonne-turno</div>
+            <div className="flex flex-wrap gap-1.5">
               {medici.map(m => (
                 <div key={m.id} draggable onDragStart={() => { dragNum.current = m.numero_ordine ?? null; dragSource.current = null }}
-                  className="px-2 py-1 rounded text-xs font-bold text-white cursor-grab shadow-sm select-none"
-                  style={{ background: coloreMedico(m.numero_ordine ?? 0) }} title={m.nome}>
-                  {m.numero_ordine}
+                  className="inline-flex items-center gap-1 pl-0.5 pr-2 py-0.5 rounded cursor-grab shadow-sm select-none text-xs text-white"
+                  style={{ background: coloreMedico(m.numero_ordine ?? 0) }} title={`Trascina il ${m.numero_ordine}`}>
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded shrink-0 text-[11px] font-bold"
+                    style={{ background: 'rgba(255,255,255,0.28)' }}>{m.numero_ordine}</span>
+                  <span className="font-semibold">{m.nome}</span>
                 </div>
               ))}
             </div>
@@ -524,7 +526,7 @@ export function SchemaDesignerNuovo() {
                   <th className="px-1 py-1.5 text-white text-[10px]" style={{ width: 26 }}>#</th>
                   {colonneOrdinate.map(c => (
                     <th key={c.id} className="px-2 py-1.5 text-center font-semibold"
-                      style={{ color: colHeader(c).fg, background: colHeader(c).bg, minWidth: c.tipo === 'turno' ? 104 : 46, borderLeft: '1px solid #1e2a16' }}>
+                      style={{ color: colHeader(c).fg, background: colHeader(c).bg, minWidth: 48, borderLeft: '1px solid #1e2a16' }}>
                       {c.sigla}
                     </th>
                   ))}
@@ -574,12 +576,8 @@ export function SchemaDesignerNuovo() {
                                   onDragStart={() => { dragNum.current = cel.numero; dragSource.current = { g, slot, sigla: c.sigla } }}
                                   onClick={() => svuotaNumero(g, slot, c.sigla)}
                                   title={`${cel.numero} · ${nomeBadge(cel.numero)} — trascina per spostare · clic per togliere`}
-                                  className="inline-flex items-center gap-1 rounded text-xs font-bold text-white cursor-grab pl-0.5 pr-1.5 py-0.5 max-w-full align-middle"
-                                  style={{ background: coloreMedico(cel.numero) }}>
-                                  <span className="inline-flex items-center justify-center w-5 h-5 rounded shrink-0 text-[11px]"
-                                    style={{ background: 'rgba(255,255,255,0.28)' }}>{cel.numero}</span>
-                                  <span className="truncate max-w-[78px]">{nomeBadge(cel.numero)}</span>
-                                </span>
+                                  className="inline-block w-7 h-7 leading-7 rounded text-xs font-bold text-white cursor-grab"
+                                  style={{ background: coloreMedico(cel.numero) }}>{cel.numero}</span>
                               : <span className="text-stone-300">–</span>}
                           </td>
                         )
