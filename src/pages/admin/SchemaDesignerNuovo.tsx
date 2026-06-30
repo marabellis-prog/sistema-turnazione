@@ -19,7 +19,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Table2, Tag, Flag, Trash2, GripVertical, Info, Plus, Copy, ListChecks, Eraser, Save } from 'lucide-react'
+import { Table2, Tag, Flag, Trash2, GripVertical, Info, Plus, Copy, ListChecks, Eraser, Save, Eye, EyeOff } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useReparto } from '../../contexts/RepartoContext'
 import { useMediciReparto } from '../../hooks/useMediciReparto'
@@ -27,7 +27,11 @@ import { useConfirm } from '../../hooks/useConfirm'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { TipiSection, ProprietaSection } from './TipiTurnoPage'
-import type { TipoTurno, ProprietaTurno } from '../../types'
+import type { TipoTurno, ProprietaTurno, Medico } from '../../types'
+
+// Costanti layout anteprima "Prova Schema" (come il vecchio designer).
+const PV_LABEL_W = 66   // px — colonna nome turnista
+const PV_CELL_W  = 22   // px — cella giorno
 
 // Colore stabile per numero turnista (come il vecchio designer).
 const COLORI_MEDICO = ['#e57373','#64b5f6','#81c784','#ffb74d','#ba68c8','#4db6ac','#f06292','#7986cb','#a1887f','#90a4ae','#dce775','#4fc3f7','#ff8a65','#9575cd']
@@ -76,6 +80,7 @@ export function SchemaDesignerNuovo() {
   const dragSource = useRef<{ g: number; slot: number; sigla: string } | null>(null)
   const [overKey, setOverKey] = useState<string | null>(null)   // cella evidenziata durante il drag
   const [picker, setPicker] = useState<{ g: number; slot: number; sigla: string; x: number; y: number } | null>(null)
+  const [showPreview, setShowPreview] = useState(false)   // "Prova Schema"
   const { data: medici = [] } = useMediciReparto()
   const { confirm, confirmState } = useConfirm()
 
@@ -505,6 +510,27 @@ export function SchemaDesignerNuovo() {
   }
   const puoFabbisogno = turniColonne.length > 0 && proprieta.some(p => colonne.some(c => c.tipo === 'flag' && c.sigla === p.sigla))
 
+  // ── Prova Schema: cicla la settimana per N turnisti (N×7 giorni), ruotando
+  //    di una settimana ogni settimana. Mostra SOLO i turni (non le proprietà). ──
+  const turnistiProva = medici.filter(m => m.numero_ordine != null)
+  const previewCells: (string | null)[][] | null = (() => {
+    if (!showPreview) return null
+    const N = turnistiProva.length
+    if (N === 0) return []
+    const giorniSet = new Set(giorni.map(g => g.giorno_settimana))
+    const turniSigle = new Set(turniColonne.map(c => c.sigla))
+    return turnistiProva.map((_, mi) =>
+      Array.from({ length: N * 7 }, (_, di) => {
+        const dayOfWk = (di % 7) + 1
+        const week    = Math.floor(di / 7)
+        const calcNum = ((mi + week) % N) + 1
+        if (!giorniSet.has(dayOfWk)) return null
+        const cel = celle.find(c => c.giorno_settimana === dayOfWk && c.numero === calcNum && turniSigle.has(c.colonna_sigla))
+        return cel ? cel.colonna_sigla : ''
+      })
+    )
+  })()
+
   return (
     <div className="flex flex-col gap-4">
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
@@ -706,6 +732,12 @@ export function SchemaDesignerNuovo() {
             style={{ background: dirty && !saving ? '#476540' : '#9ca3af' }}>
             <Save size={15} /> {saving ? 'Salvataggio…' : 'Salva schema'}
           </button>
+          <button onClick={() => setShowPreview(v => !v)} disabled={giorniDB.length === 0}
+            title={giorniDB.length === 0 ? 'Configura e salva almeno un giorno per provare lo schema' : 'Anteprima della rotazione (cicla la settimana per ogni turnista)'}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            style={showPreview ? { background: '#e0e8d8', borderColor: '#9ab488', color: '#2b3c24' } : { background: '#fff', borderColor: '#cdd9c4', color: '#476540' }}>
+            {showPreview ? <><EyeOff size={15} /> Chiudi prova</> : <><Eye size={15} /> Prova Schema</>}
+          </button>
           {dirty && (
             <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full"
               style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fbbf24' }}>
@@ -834,6 +866,10 @@ export function SchemaDesignerNuovo() {
           <FabbisognoPanel colsAmbito={colsAmbito} puoFabbisogno={puoFabbisogno}
             fab={fabbisogno} onSet={setValFab} onRemove={rimuoviAmbitoFab} />
         </div>
+        {showPreview && previewCells && (
+          <ProvaPanel previewCells={previewCells} turnisti={turnistiProva} tipiTurno={tipiTurno}
+            onClose={() => setShowPreview(false)} />
+        )}
         </div>
       )}
 
@@ -876,6 +912,87 @@ const GIORNI_AMBITO: Record<string, number[]> = {
   festivi:    [7],
 }
 const labelAmbito = (k: string) => k === 'normale' ? 'Normale' : (AMBITI_SPECIALI.find(a => a.key === k)?.label ?? k)
+
+// ── Prova Schema: anteprima lineare della rotazione (N settimane), va a capo
+//    per quante settimane intere entrano in larghezza (come il vecchio designer). ──
+function ProvaPanel({ previewCells, turnisti, tipiTurno, onClose }: {
+  previewCells: (string | null)[][]
+  turnisti: Medico[]
+  tipiTurno: TipoTurno[]
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [w, setW] = useState(560)
+  useEffect(() => {
+    const el = ref.current; if (!el) return
+    setW(el.clientWidth)
+    const ro = new ResizeObserver(([e]) => setW(e.contentRect.width))
+    ro.observe(el); return () => ro.disconnect()
+  }, [])
+  const colore = (sigla: string) => tipiTurno.find(t => t.sigla === sigla)
+  const cognomeDi = (t: Medico) => t.cognome || t.nome.split(' ')[0] || t.nome
+  const N = turnisti.length
+  const totalDays = N * 7
+  const weeksPerRow = Math.max(1, Math.floor((w - PV_LABEL_W - 8) / (7 * PV_CELL_W)))
+  const daysPerRow = weeksPerRow * 7
+  const numChunks = Math.max(1, Math.ceil(totalDays / daysPerRow))
+
+  return (
+    <div ref={ref} className="card overflow-hidden flex flex-col min-w-0 self-start" style={{ flex: '1 1 340px', minWidth: 300 }}>
+      <div className="px-3 pt-2 pb-1.5 border-b border-stone-200 flex items-center justify-between shrink-0">
+        <span className="text-sm font-bold text-stone-800 flex items-center gap-1.5">
+          <Eye size={15} style={{ color: '#476540' }} /> Prova Schema · {N} settiman{N === 1 ? 'a' : 'e'}
+        </span>
+        <button onClick={onClose} className="text-stone-400 hover:text-stone-700" title="Chiudi anteprima"><EyeOff size={15} /></button>
+      </div>
+      {N === 0 ? (
+        <p className="text-xs text-stone-400 italic p-3">Nessun turnista in rotazione.</p>
+      ) : (
+        <div className="p-2 flex flex-col gap-3 overflow-auto">
+          {Array.from({ length: numChunks }, (_, ci) => {
+            const startDay = ci * daysPerRow + 1
+            const endDay = Math.min(startDay + daysPerRow - 1, totalDays)
+            const days = Array.from({ length: endDay - startDay + 1 }, (_, i) => startDay + i)
+            return (
+              <div key={ci} style={{ border: '1px solid #e5e7eb', borderRadius: 6, overflow: 'hidden', width: 'fit-content' }}>
+                <div className="flex" style={{ borderBottom: '1px solid #d1d5db' }}>
+                  <div style={{ width: PV_LABEL_W, flexShrink: 0, background: '#2b3c24' }} />
+                  {days.map(day => {
+                    const we = ((day - 1) % 7) >= 5
+                    return (
+                      <div key={day} style={{ width: PV_CELL_W, flexShrink: 0, textAlign: 'center', fontSize: 9, fontWeight: 700, padding: '2px 0',
+                        background: we ? '#fee2e2' : '#f0f4ee', color: we ? '#9f1239' : '#2b3c24', borderLeft: '1px solid #e5e7eb' }}>{day}</div>
+                    )
+                  })}
+                </div>
+                {turnisti.map((t, mi) => (
+                  <div key={t.id} className="flex" style={{ borderBottom: '1px solid #f0f0f0' }}>
+                    <div style={{ width: PV_LABEL_W, flexShrink: 0, padding: '1px 4px', fontSize: 9, fontWeight: 700, background: '#f4f6f1', color: '#2b3c24',
+                      overflow: 'hidden', whiteSpace: 'nowrap', borderRight: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <span style={{ display: 'inline-block', width: 14, height: 14, borderRadius: 3, background: 'rgba(0,0,0,0.12)', textAlign: 'center', lineHeight: '14px', fontSize: 8, fontWeight: 900, flexShrink: 0 }}>{t.numero_ordine}</span>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{cognomeDi(t)}</span>
+                    </div>
+                    {days.map(day => {
+                      const cell = previewCells[mi]?.[day - 1] ?? null
+                      const we = ((day - 1) % 7) >= 5
+                      const tc = cell ? colore(cell) : null
+                      const bg = tc?.colore_bg ?? (cell === null ? (we ? '#f6f6f6' : '#fafafa') : (we ? '#fdf9f9' : '#fff'))
+                      const fg = tc?.colore_fg ?? '#9ca3af'
+                      return (
+                        <div key={day} title={`Giorno ${day} · ${t.nome}: ${cell || '—'}`} style={{ width: PV_CELL_W, flexShrink: 0, height: 20,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', background: bg, color: fg, fontSize: 9, fontWeight: 700, borderLeft: '1px solid #f0f0f0' }}>{cell || ''}</div>
+                      )
+                    })}
+                  </div>
+                ))}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 
 // Una griglia di fabbisogno per un ambito (Normale o uno speciale). Componente
 // a livello modulo (stabile): l'intestazione mostra SEMPRE il nome dell'ambito.
