@@ -294,9 +294,16 @@ export function GeneraCalendarioPage() {
   }, [config])
 
   // ── Riepilogo dinamico ───────────────────────────────────────
+  // "Slot schema" = quante celle compilate ha lo schema attivo. Per i reparti
+  // dinamici si contano le celle-turno del NUOVO schema (numero assegnato);
+  // per 11N/legacy si contano le righe del modello classico. Guard > 0 dei
+  // pulsanti Genera/Aggiorna in entrambi i mondi.
   const slotSchema = useMemo(
-    () => schemi.filter(s => s.schema_num === schemaNum).length,
-    [schemi, schemaNum]
+    () =>
+      usaNuovoMotore
+        ? nuovoCelle.filter(c => c.numero != null).length
+        : schemi.filter(s => s.schema_num === schemaNum).length,
+    [usaNuovoMotore, nuovoCelle, schemi, schemaNum]
   )
 
   const stimaTurni = useMemo(() => {
@@ -689,15 +696,25 @@ export function GeneraCalendarioPage() {
 
           {/* Area mini-tabelle: multi-colonna automatico se serve */}
           <div ref={tableRef} className="flex-1 px-3 pb-3" style={{ minHeight: 0 }}>
-            <AntepremaSchema
-              schemi={schemi}
-              medici={medici}
-              schemaNum={schemaNum}
-            />
+            {usaNuovoMotore ? (
+              <div className="h-full flex items-center justify-center text-center px-4">
+                <div className="text-[11px] leading-relaxed" style={{ color: '#7a7a6a' }}>
+                  Schema dinamico ⚗️<br />
+                  L'anteprima della rotazione è in<br />
+                  <strong style={{ color: '#476540' }}>Disegna Schema → Prova Schema</strong>.
+                </div>
+              </div>
+            ) : (
+              <AntepremaSchema
+                schemi={schemi}
+                medici={medici}
+                schemaNum={schemaNum}
+              />
+            )}
           </div>
 
-          {/* Footer cliccabile → pagina Disegna Schema */}
-          <Link to="/admin/schema"
+          {/* Footer cliccabile → pagina Disegna Schema (nuovo per i dinamici) */}
+          <Link to={usaNuovoMotore ? '/admin/schema-nuovo' : '/admin/schema'}
             className="block px-4 py-2 border-t text-center shrink-0 transition-colors"
             style={{ borderColor: '#e0e8d8', color: '#6b6b5a', textDecoration: 'none' }}
             onMouseEnter={e => (e.currentTarget.style.background = '#f0ece4')}
