@@ -20,6 +20,7 @@ import { CentroControlloPage }  from './pages/admin/CentroControlloPage'
 import { TipiTurnoPage }        from './pages/admin/TipiTurnoPage'
 import { ConfigPage }           from './pages/admin/ConfigPage'
 import { GestioneSchemaPage }   from './pages/admin/GestioneSchemaPage'
+import { SchemaDesignerNuovo }   from './pages/admin/SchemaDesignerNuovo'
 import { BackupRipristinoPage } from './pages/admin/BackupRipristinoPage'
 import { AnteprimaTurnazionePage } from './pages/admin/AnteprimaTurnazionePage'
 import { useAuth }                from './hooks/useAuth'
@@ -194,6 +195,7 @@ function AppShell({ loading, signInWithGoogle, signOut }: {
           <Route path="tipi-turno" element={<TipiTurnoPage />} />
           <Route path="config"  element={<ConfigPage />} />
           <Route path="schema"  element={<GestioneSchemaPage />} />
+          <Route path="schema-nuovo" element={<SchemaDesignerNuovo />} />
           <Route path="backup"  element={<BackupRipristinoPage />} />
           <Route path="turni"   element={<ModificaTurniPage />} />
           <Route path="anteprima-turnazione" element={<AnteprimaTurnazionePage />} />

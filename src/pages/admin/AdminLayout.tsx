@@ -19,6 +19,7 @@ const links = [
   { to: '/admin/tipi-turno', label: 'Tipi di turno',  Icon: Tag },
   { to: '/admin/config',  label: 'Festività',         Icon: CalendarDays },
   { to: '/admin/schema',  label: 'Disegna Schema',    Icon: Table2 },
+  { to: '/admin/schema-nuovo', label: 'Schema NUOVO ⚗️', Icon: Table2 },
   { to: '/admin/genera',  label: 'Genera Calendario', Icon: Zap },
   { to: '/admin/anteprima-turnazione', label: 'Anteprima turni', Icon: CalendarClock },
   { to: '/admin/turni',   label: 'Modifica Turni',    Icon: Calendar },
