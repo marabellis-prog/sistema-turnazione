@@ -702,11 +702,16 @@ export function SchemaDesignerNuovo() {
                 </tr>
               </thead>
               <tbody>
-                {giorni.map(row => {
+                {giorni.map((row, di) => {
                   const g = row.giorno_settimana
                   const slots = slotsDelGiorno(g)
+                  const giornoPari = di % 2 === 0   // tinta alternata per GIORNO
                   return slots.map((slot, si) => (
-                    <tr key={`${g}-${slot}`} style={{ background: si % 2 ? '#fff' : '#f7f9f4' }}>
+                    <tr key={`${g}-${slot}`} style={{
+                      background: giornoPari ? (si % 2 ? '#ffffff' : '#f6f9f3') : (si % 2 ? '#eef3e7' : '#e6efdd'),
+                      // bordo verde marcato all'inizio di ogni nuovo giorno → confine evidente
+                      ...(si === 0 && di > 0 ? { borderTop: '3px solid #5c7a4e' } : {}),
+                    }}>
                       {si === 0 && (
                         <td rowSpan={slots.length} className="px-2 py-1.5 align-top" style={{ background: '#5c7a4e' }}>
                           <div className="font-bold text-white leading-tight">{labelGiorno(g)}</div>
