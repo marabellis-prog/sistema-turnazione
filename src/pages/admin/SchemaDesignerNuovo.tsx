@@ -71,6 +71,9 @@ export function SchemaDesignerNuovo() {
   const [dragOver, setDragOver] = useState<string | null>(null)
   const dragNum = useRef<number | null>(null)
   const dragSource = useRef<{ g: number; slot: number; sigla: string } | null>(null)
+  const [overKey, setOverKey] = useState<string | null>(null)   // cella evidenziata durante il drag
+  const tableRef = useRef<HTMLTableElement>(null)
+  const [tableW, setTableW] = useState(0)   // larghezza reale della tabella turni (per la legenda)
   const { data: medici = [] } = useMediciReparto()
   const { confirm, confirmState } = useConfirm()
 
@@ -446,6 +449,17 @@ export function SchemaDesignerNuovo() {
   // si rischia di salvarlo sullo schema/reparto sbagliato.
   useEffect(() => { setDraft(null) }, [repartoAttivo, schemaNum])
 
+  // Misura la larghezza reale della tabella turni → la legenda va a capo
+  // entro quella larghezza (vedi maxWidth sotto).
+  useEffect(() => {
+    const el = tableRef.current
+    if (!el) { setTableW(0); return }
+    const ro = new ResizeObserver(() => setTableW(el.offsetWidth))
+    ro.observe(el)
+    setTableW(el.offsetWidth)
+    return () => ro.disconnect()
+  }, [giorni.length, colonne.length])
+
   // Guardia: modifiche non salvate bloccano la navigazione (menu admin), il
   // cambio reparto (selettore admin/headbar) e la chiusura/refresh della tab.
   useEffect(() => {
@@ -672,22 +686,22 @@ export function SchemaDesignerNuovo() {
         <div className="card p-3 space-y-2 min-w-0">
           <div className="text-xs font-semibold text-stone-600">Turnisti (legenda) — trascina il numero nei riquadri delle colonne-turno</div>
           <div className="overflow-x-auto">
-            {/* Legenda + tabella nello STESSO contenitore largo quanto la tabella:
-                la legenda va a capo entro quella larghezza → i chip restano sopra
-                le celle e il tragitto di trascinamento è il più corto possibile. */}
-            <div className="inline-block min-w-full align-top space-y-2">
-              <div className="flex flex-wrap gap-1.5">
-                {medici.map(m => (
-                  <div key={m.id} draggable onDragStart={() => { dragNum.current = m.numero_ordine ?? null; dragSource.current = null }}
-                    className="inline-flex items-center gap-1 pl-0.5 pr-2 py-0.5 rounded cursor-grab shadow-sm select-none text-xs text-white"
-                    style={{ background: coloreMedico(m.numero_ordine ?? 0) }} title={`Trascina il ${m.numero_ordine}`}>
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded shrink-0 text-[11px] font-bold"
-                      style={{ background: 'rgba(255,255,255,0.28)' }}>{m.numero_ordine}</span>
-                    <span className="font-semibold">{m.nome}</span>
-                  </div>
-                ))}
-              </div>
-              <table className="text-sm border-collapse">
+            {/* La legenda va a capo entro la LARGHEZZA REALE della tabella (misurata):
+                i chip restano sopra le celle → tragitto di trascinamento minimo. */}
+            <div className="flex flex-wrap gap-1.5 mb-2" style={{ maxWidth: tableW || undefined }}>
+              {medici.map(m => (
+                <div key={m.id} draggable
+                  onDragStart={() => { dragNum.current = m.numero_ordine ?? null; dragSource.current = null }}
+                  onDragEnd={() => setOverKey(null)}
+                  className="inline-flex items-center gap-1 pl-0.5 pr-2 py-0.5 rounded cursor-grab shadow-sm select-none text-xs text-white"
+                  style={{ background: coloreMedico(m.numero_ordine ?? 0) }} title={`Trascina il ${m.numero_ordine}`}>
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded shrink-0 text-[11px] font-bold"
+                    style={{ background: 'rgba(255,255,255,0.28)' }}>{m.numero_ordine}</span>
+                  <span className="font-semibold">{m.nome}</span>
+                </div>
+              ))}
+            </div>
+            <table ref={tableRef} className="text-sm border-collapse">
               <thead>
                 <tr style={{ background: '#2b3c24' }}>
                   <th className="px-2 py-1.5 text-white text-left" style={{ minWidth: 78 }}>Giorno</th>
@@ -741,12 +755,18 @@ export function SchemaDesignerNuovo() {
                           )
                         }
                         const cel = cella(g, slot, c.sigla)
+                        const cKey = `${g}|${slot}|${c.sigla}`
+                        const over = overKey === cKey
                         return (
-                          <td key={c.id} className="text-center border-l border-stone-100 px-1 py-1"
-                            onDragOver={e => e.preventDefault()} onDrop={() => dropNumero(g, slot, c.sigla)}>
+                          <td key={c.id} className="text-center border-l border-stone-100 px-1 py-1 transition-colors"
+                            onDragOver={e => { e.preventDefault(); if (overKey !== cKey) setOverKey(cKey) }}
+                            onDragLeave={() => setOverKey(k => k === cKey ? null : k)}
+                            onDrop={() => { dropNumero(g, slot, c.sigla); setOverKey(null) }}
+                            style={over ? { background: '#dbeccb', boxShadow: 'inset 0 0 0 2px #476540' } : undefined}>
                             {cel?.numero != null
                               ? <span draggable
                                   onDragStart={() => { dragNum.current = cel.numero; dragSource.current = { g, slot, sigla: c.sigla } }}
+                                  onDragEnd={() => setOverKey(null)}
                                   onClick={() => svuotaNumero(g, slot, c.sigla)}
                                   title={`${cel.numero} · ${nomeBadge(cel.numero)} — trascina per spostare · clic per togliere`}
                                   className="inline-block w-7 h-7 leading-7 rounded text-xs font-bold text-white cursor-grab"
@@ -765,7 +785,6 @@ export function SchemaDesignerNuovo() {
                 })}
               </tbody>
             </table>
-            </div>
           </div>
           <p className="text-[11px] text-stone-400">
             Un numero per riga (drag = sposta · clic = togli). Riempiendo l'ultimo slot ne compare un altro;
