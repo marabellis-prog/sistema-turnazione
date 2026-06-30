@@ -72,8 +72,6 @@ export function SchemaDesignerNuovo() {
   const dragNum = useRef<number | null>(null)
   const dragSource = useRef<{ g: number; slot: number; sigla: string } | null>(null)
   const [overKey, setOverKey] = useState<string | null>(null)   // cella evidenziata durante il drag
-  const tableRef = useRef<HTMLTableElement>(null)
-  const [tableW, setTableW] = useState(0)   // larghezza reale della tabella turni (per la legenda)
   const { data: medici = [] } = useMediciReparto()
   const { confirm, confirmState } = useConfirm()
 
@@ -449,17 +447,6 @@ export function SchemaDesignerNuovo() {
   // si rischia di salvarlo sullo schema/reparto sbagliato.
   useEffect(() => { setDraft(null) }, [repartoAttivo, schemaNum])
 
-  // Misura la larghezza reale della tabella turni → la legenda va a capo
-  // entro quella larghezza (vedi maxWidth sotto).
-  useEffect(() => {
-    const el = tableRef.current
-    if (!el) { setTableW(0); return }
-    const ro = new ResizeObserver(() => setTableW(el.offsetWidth))
-    ro.observe(el)
-    setTableW(el.offsetWidth)
-    return () => ro.disconnect()
-  }, [giorni.length, colonne.length])
-
   // Guardia: modifiche non salvate bloccano la navigazione (menu admin), il
   // cambio reparto (selettore admin/headbar) e la chiusura/refresh della tab.
   useEffect(() => {
@@ -549,17 +536,6 @@ export function SchemaDesignerNuovo() {
           onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
           placeholder={`Schema ${schemaNum} — dai un nome per riconoscerlo…`}
           className="flex-1 min-w-[140px] text-base font-bold bg-transparent border-b-2 border-stone-200 focus:border-[#476540] outline-none py-1 px-1 text-stone-800" />
-        {dirty && (
-          <span className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0"
-            style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fbbf24' }}>
-            ● Non salvato
-          </span>
-        )}
-        <button onClick={salvaSchema} disabled={!dirty || saving} title="Salva lo schema (struttura e turni)"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold text-white shadow transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
-          style={{ background: dirty && !saving ? '#476540' : '#9ca3af' }}>
-          <Save size={14} /> {saving ? 'Salvataggio…' : 'Salva schema'}
-        </button>
         <button onClick={azzeraSchema} title="Svuota lo schema (mantiene il titolo)"
           className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border border-amber-300 text-amber-700 hover:bg-amber-50 shrink-0">
           <Eraser size={13} /> Azzera
@@ -678,17 +654,33 @@ export function SchemaDesignerNuovo() {
           </table>
         </div>
       )}
+
+      {/* Salva schema — subito SOTTO la struttura e SOPRA la griglia turnisti. */}
+      {giorni.length > 0 && (
+        <div className="flex items-center gap-3">
+          <button onClick={salvaSchema} disabled={!dirty || saving} title="Salva lo schema (struttura e turni)"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white shadow transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ background: dirty && !saving ? '#476540' : '#9ca3af' }}>
+            <Save size={15} /> {saving ? 'Salvataggio…' : 'Salva schema'}
+          </button>
+          {dirty && (
+            <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full"
+              style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fbbf24' }}>
+              ● Modifiche non salvate
+            </span>
+          )}
+        </div>
+      )}
+
       {/* ── TABELLA TURNI (slot) a sinistra · FABBISOGNO sticky a destra ──
-          Sempre visibile (si aggiorna in tempo reale con la struttura).
-          Il pulsante "Salva schema" è nella riga del titolo, accanto ad Azzera. */}
+          Sempre visibile (si aggiorna in tempo reale con la struttura). */}
       {giorni.length > 0 && colonne.length > 0 && (
         <div className="flex gap-4 items-start">
         <div className="card p-3 space-y-2 min-w-0">
           <div className="text-xs font-semibold text-stone-600">Turnisti (legenda) — trascina il numero nei riquadri delle colonne-turno</div>
           <div className="overflow-x-auto">
-            {/* La legenda va a capo entro la LARGHEZZA REALE della tabella (misurata):
-                i chip restano sopra le celle → tragitto di trascinamento minimo. */}
-            <div className="flex flex-wrap gap-1.5 mb-2" style={{ maxWidth: tableW || undefined }}>
+            {/* Legenda: 4 badge per riga, poi a capo (regola fissa, niente calcoli). */}
+            <div className="grid grid-cols-[repeat(4,auto)] gap-1.5 mb-2 w-max justify-items-start">
               {medici.map(m => (
                 <div key={m.id} draggable
                   onDragStart={() => { dragNum.current = m.numero_ordine ?? null; dragSource.current = null }}
@@ -701,7 +693,7 @@ export function SchemaDesignerNuovo() {
                 </div>
               ))}
             </div>
-            <table ref={tableRef} className="text-sm border-collapse">
+            <table className="text-sm border-collapse">
               <thead>
                 <tr style={{ background: '#2b3c24' }}>
                   <th className="px-2 py-1.5 text-white text-left" style={{ minWidth: 78 }}>Giorno</th>
