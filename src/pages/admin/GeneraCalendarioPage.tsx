@@ -277,9 +277,34 @@ export function GeneraCalendarioPage() {
       if (error) throw error; return (data ?? []) as TipoTurno[]
     },
   })
+  // Elenco degli schemi che ESISTONO davvero per questo reparto (per il
+  // selettore dinamico): schema_num con struttura disegnata (schema_giorno),
+  // titolo da schema_meta, n. celle compilate. Niente 1/2/3 fissi. Non per 11N.
+  const { data: schemiDisponibili = [] } = useQuery<{ schema_num: number; titolo: string; nCelle: number }[]>({
+    queryKey: ['gen-schemi-disp', repartoAttivo],
+    enabled: repartoAttivo !== REPARTO_11N,
+    queryFn: async () => {
+      const [giorniR, celleR, metaR] = await Promise.all([
+        supabase.from('schema_giorno').select('schema_num').eq('reparto_id', repartoAttivo),
+        supabase.from('schema_cella').select('schema_num, numero').eq('reparto_id', repartoAttivo),
+        supabase.from('schema_meta').select('schema_num, titolo').eq('reparto_id', repartoAttivo),
+      ])
+      if (giorniR.error) throw giorniR.error
+      const nums = Array.from(new Set((giorniR.data ?? []).map(r => r.schema_num))).sort((a, b) => a - b)
+      const titoli = new Map((metaR.data ?? []).map(r => [r.schema_num, r.titolo as string]))
+      const conteggi = new Map<number, number>()
+      for (const c of (celleR.data ?? []) as { schema_num: number; numero: number | null }[]) {
+        if (c.numero != null) conteggi.set(c.schema_num, (conteggi.get(c.schema_num) ?? 0) + 1)
+      }
+      return nums.map(n => ({ schema_num: n, titolo: titoli.get(n) ?? `Schema ${n}`, nCelle: conteggi.get(n) ?? 0 }))
+    },
+  })
   // 11N ESCLUSO a forza (resta sul motore vecchio, intoccabile). Gli altri
   // reparti usano il nuovo motore se hanno uno schema dinamico per schemaNum.
   const usaNuovoMotore = repartoAttivo !== REPARTO_11N && nuovoGiorni.length > 0
+  // Reparto "dinamico" = non-11N: usa il selettore a lista reale (sopra),
+  // non i tre pulsanti fissi del modello classico.
+  const repartoDinamico = repartoAttivo !== REPARTO_11N
 
   // Inizializza i parametri dalla configurazione DB
   useEffect(() => {
@@ -292,6 +317,15 @@ export function GeneraCalendarioPage() {
     const gf = config.giorno_fine ?? new Date(config.anno_fine, config.mese_fine, 0).getDate()
     setDataFineStr(`${config.anno_fine}-${p2(config.mese_fine)}-${p2(gf)}`)
   }, [config])
+
+  // Reparto dinamico: se lo schema selezionato non esiste (es. default 1 ma
+  // c'è solo il 2), porta la selezione sul primo schema disponibile.
+  useEffect(() => {
+    if (!repartoDinamico || schemiDisponibili.length === 0) return
+    if (!schemiDisponibili.some(s => s.schema_num === schemaNum)) {
+      setSchemaNum(schemiDisponibili[0].schema_num)
+    }
+  }, [repartoDinamico, schemiDisponibili, schemaNum])
 
   // ── Riepilogo dinamico ───────────────────────────────────────
   // "Slot schema" = quante celle compilate ha lo schema attivo. Per i reparti
@@ -498,24 +532,34 @@ export function GeneraCalendarioPage() {
         {/* ── Selettore schema ── */}
         <div className="card p-4 space-y-3">
           <h3 className="text-sm font-semibold text-stone-700">Schema di rotazione</h3>
-          <div className="flex gap-2">
-            {[1,2,3].map(n => (
-              <button
-                key={n}
-                onClick={() => setSchemaNum(n)}
-                className={`flex-1 py-2 rounded-lg border text-sm font-semibold transition-colors
-                  ${schemaNum === n
-                    ? 'text-white shadow'
-                    : 'text-stone-600 border-stone-300 hover:bg-cream-200'}`}
-                style={schemaNum === n ? { background: '#476540', borderColor: '#456b3a' } : { background: '#faf8f3' }}
-              >
-                Schema {n}
-                <span className="block text-[10px] font-normal opacity-70 mt-0.5">
-                  {schemi.filter(s => s.schema_num === n).length} slot
-                </span>
-              </button>
-            ))}
-          </div>
+          {repartoDinamico && schemiDisponibili.length === 0 ? (
+            <div className="text-xs text-stone-500 py-2">
+              Nessuno schema disegnato per questo reparto. Crealo in{' '}
+              <Link to="/admin/schema-nuovo" style={{ color: '#476540', fontWeight: 600 }}>Disegna Schema</Link>.
+            </div>
+          ) : (
+            <div className="flex gap-2 flex-wrap">
+              {(repartoDinamico
+                ? schemiDisponibili.map(s => ({ n: s.schema_num, label: s.titolo, sub: `${s.nCelle} celle` }))
+                : [1, 2, 3].map(n => ({ n, label: `Schema ${n}`, sub: `${schemi.filter(s => s.schema_num === n).length} slot` }))
+              ).map(({ n, label, sub }) => (
+                <button
+                  key={n}
+                  onClick={() => setSchemaNum(n)}
+                  className={`flex-1 min-w-[120px] py-2 px-2 rounded-lg border text-sm font-semibold transition-colors
+                    ${schemaNum === n
+                      ? 'text-white shadow'
+                      : 'text-stone-600 border-stone-300 hover:bg-cream-200'}`}
+                  style={schemaNum === n ? { background: '#476540', borderColor: '#456b3a' } : { background: '#faf8f3' }}
+                >
+                  {label}
+                  <span className="block text-[10px] font-normal opacity-70 mt-0.5">
+                    {sub}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* ── Selettore periodo ── */}
