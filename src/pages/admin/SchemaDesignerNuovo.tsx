@@ -18,7 +18,7 @@
 
 import { useState, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Table2, Tag, Flag, Trash2, GripVertical, Info, Zap, Plus, ArrowLeft, Copy, ListChecks } from 'lucide-react'
+import { Table2, Tag, Flag, Trash2, GripVertical, Info, Zap, Plus, ArrowLeft, Copy, ListChecks, Eraser } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useReparto } from '../../contexts/RepartoContext'
 import { useMediciReparto } from '../../hooks/useMediciReparto'
@@ -78,7 +78,17 @@ export function SchemaDesignerNuovo() {
       return [...s]
     },
   })
-  const schemiList = [...new Set([1, 2, 3, ...schemiEsistenti, schemaNum])].sort((a, b) => a - b)
+  // Titoli degli schemi (per riconoscerli). Una riga marca anche lo schema come "esistente".
+  const { data: schemiMeta = [] } = useQuery<{ schema_num: number; titolo: string }[]>({
+    queryKey: ['schema-meta', repartoAttivo],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('schema_meta').select('schema_num, titolo').eq('reparto_id', repartoAttivo)
+      if (error) throw error
+      return data ?? []
+    },
+  })
+  const titoloDi = (n: number) => schemiMeta.find(m => m.schema_num === n)?.titolo ?? ''
+  const schemiList = [...new Set([1, 2, 3, ...schemiEsistenti, ...schemiMeta.map(m => m.schema_num), schemaNum])].sort((a, b) => a - b)
   const prossimoSchema = Math.max(...schemiList) + 1
 
   const { data: tipiTurno = [] } = useQuery<TipoTurno[]>({
@@ -305,9 +315,23 @@ export function SchemaDesignerNuovo() {
     invalida()
   }
 
-  // ── Schemi: aggiungi nuovo / copia da un altro schema ────────────
+  // ── Schemi: aggiungi / copia / titolo / azzera / elimina ─────────
+  function invalidaTutto() {
+    qc.invalidateQueries({ queryKey: ['tipi_turno', repartoAttivo] })
+    qc.invalidateQueries({ queryKey: ['proprieta_turno', repartoAttivo] })
+    qc.invalidateQueries({ queryKey: ['schema-fabbisogno', repartoAttivo] })
+    qc.invalidateQueries({ queryKey: ['schema-meta', repartoAttivo] })
+    invalida()
+  }
   function aggiungiSchema() {
+    setErr(null)
     setSchemaNum(prossimoSchema)
+    setGiornoSel(null)
+    setMode('matrice')
+  }
+  function vaiASchema(n: number) {
+    setErr(null)
+    setSchemaNum(n)
     setGiornoSel(null)
     setMode('matrice')
   }
@@ -323,10 +347,42 @@ export function SchemaDesignerNuovo() {
     setErr(null)
     const { error } = await supabase.rpc('copia_schema', { p_reparto: repartoAttivo, p_from: from, p_to: schemaNum })
     if (error) { setErr(error.message); return }
-    qc.invalidateQueries({ queryKey: ['tipi_turno', repartoAttivo] })
-    qc.invalidateQueries({ queryKey: ['proprieta_turno', repartoAttivo] })
-    qc.invalidateQueries({ queryKey: ['schema-fabbisogno', repartoAttivo] })
-    invalida()
+    invalidaTutto()
+  }
+  async function salvaTitolo(t: string) {
+    const { error } = await supabase.from('schema_meta').upsert(
+      { reparto_id: repartoAttivo, schema_num: schemaNum, titolo: t },
+      { onConflict: 'reparto_id,schema_num' })
+    if (error) { setErr(error.message); return }
+    invalidaSchemi()
+    qc.invalidateQueries({ queryKey: ['schema-meta', repartoAttivo] })
+  }
+  async function azzeraSchema() {
+    const nome = titoloDi(schemaNum) || `Schema ${schemaNum}`
+    const ok = await confirm({
+      title: `Azzera "${nome}"`,
+      message: 'Svuota completamente lo schema (turni, proprietà, giorni, colonne, celle e fabbisogno), ' +
+               'ma mantiene il titolo. Procedere?',
+      confirmLabel: 'Azzera', danger: true,
+    })
+    if (!ok) return
+    setErr(null)
+    const { error } = await supabase.rpc('azzera_schema', { p_reparto: repartoAttivo, p_num: schemaNum })
+    if (error) { setErr(error.message); return }
+    setGiornoSel(null); setMode('matrice'); invalidaTutto()
+  }
+  async function eliminaSchema() {
+    const nome = titoloDi(schemaNum) || `Schema ${schemaNum}`
+    const ok = await confirm({
+      title: `Elimina "${nome}"`,
+      message: 'Elimina definitivamente lo schema e rinumera gli altri (chiude il buco). Procedere?',
+      confirmLabel: 'Elimina', danger: true,
+    })
+    if (!ok) return
+    setErr(null)
+    const { error } = await supabase.rpc('elimina_schema', { p_reparto: repartoAttivo, p_num: schemaNum })
+    if (error) { setErr(error.message); return }
+    setSchemaNum(1); setGiornoSel(null); setMode('matrice'); invalidaTutto()
   }
 
   const giorniAttivi = giorni.map(g => g.giorno_settimana)
@@ -351,7 +407,8 @@ export function SchemaDesignerNuovo() {
       {tipiTurno.length === 0 && (
         <div className="flex gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
           <Info size={16} className="shrink-0 mt-0.5" />
-          Prima definisci almeno un <strong>Tipo di turno</strong>: sono i mattoni dello schema.
+          Questo schema è vuoto: definisci qui sotto i suoi <strong>Tipi di turno</strong> (i mattoni),
+          oppure usa <strong>“Copia da schema…”</strong> per partire da un altro.
         </div>
       )}
       {err && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{err}</div>}
@@ -360,7 +417,7 @@ export function SchemaDesignerNuovo() {
       <div className="flex items-center gap-2 text-sm flex-wrap">
         <span className="text-stone-500">Schema:</span>
         {schemiList.map(n => (
-          <button key={n} onClick={() => { setSchemaNum(n); setGiornoSel(null); setMode('matrice') }}
+          <button key={n} onClick={() => vaiASchema(n)} title={titoloDi(n) || `Schema ${n}`}
             className="px-3 py-1 rounded font-semibold text-sm border transition-colors"
             style={schemaNum === n ? { background: '#476540', color: '#fff', borderColor: '#2b3c24' } : { background: '#fff', color: '#476540', borderColor: '#cdd9c4' }}>
             {n}
@@ -376,10 +433,32 @@ export function SchemaDesignerNuovo() {
             <select value="" onChange={e => { if (e.target.value) { copiaDa(parseInt(e.target.value, 10)); e.target.value = '' } }}
               className="input text-xs py-1" title="Copia tutto (turni, struttura, fabbisogno) da un altro schema">
               <option value="" disabled>Copia da schema…</option>
-              {schemiList.filter(n => n !== schemaNum).map(n => <option key={n} value={n}>Schema {n}</option>)}
+              {schemiList.filter(n => n !== schemaNum).map(n => (
+                <option key={n} value={n}>Schema {n}{titoloDi(n) ? ` · ${titoloDi(n)}` : ''}</option>
+              ))}
             </select>
           </div>
         )}
+      </div>
+
+      {/* Titolo dello schema (editabile inline) + azioni schema */}
+      <div className="flex items-center gap-2">
+        <Tag size={16} className="shrink-0" style={{ color: '#476540' }} />
+        <input
+          key={`titolo-${schemaNum}-${titoloDi(schemaNum)}`}
+          defaultValue={titoloDi(schemaNum)}
+          onBlur={e => { const v = e.target.value.trim(); if (v !== titoloDi(schemaNum)) salvaTitolo(v) }}
+          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          placeholder={`Schema ${schemaNum} — dai un nome per riconoscerlo…`}
+          className="flex-1 text-base font-bold bg-transparent border-b-2 border-stone-200 focus:border-[#476540] outline-none py-1 px-1 text-stone-800" />
+        <button onClick={azzeraSchema} title="Svuota lo schema (mantiene il titolo)"
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border border-amber-300 text-amber-700 hover:bg-amber-50">
+          <Eraser size={13} /> Azzera
+        </button>
+        <button onClick={eliminaSchema} title="Elimina lo schema e rinumera gli altri"
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border border-red-300 text-red-700 hover:bg-red-50">
+          <Trash2 size={13} /> Elimina
+        </button>
       </div>
 
       {/* ① TIPI DI TURNO + PROPRIETÀ dello schema, affiancati (i mattoni: si definiscono per primi) */}
