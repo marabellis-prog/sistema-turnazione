@@ -707,6 +707,11 @@ export function GestioneMediciPage() {
                   className="text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 hover:opacity-90"
                   style={{ background: '#456b3a', color: '#fff' }}
                   title="Rendi turnista (in coda alla rotazione)">→ Turnista</button>
+                <button onClick={() => eliminaMedico(o)} disabled={saving}
+                  className="p-1 rounded text-stone-400 hover:text-red-600 hover:bg-red-50 shrink-0 transition-colors"
+                  title="Elimina dall'elenco">
+                  <Trash2 size={13} />
+                </button>
               </li>
             ))}
           </ul>
