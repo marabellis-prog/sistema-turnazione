@@ -526,7 +526,7 @@ export function SchemaDesignerNuovo() {
       </div>
 
       {/* Titolo dello schema (editabile inline) + azioni schema */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <Tag size={16} className="shrink-0" style={{ color: '#476540' }} />
         <input
           key={`titolo-${schemaNum}-${titoloDi(schemaNum)}`}
@@ -534,9 +534,20 @@ export function SchemaDesignerNuovo() {
           onBlur={e => { const v = e.target.value.trim(); if (v !== titoloDi(schemaNum)) salvaTitolo(v) }}
           onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
           placeholder={`Schema ${schemaNum} — dai un nome per riconoscerlo…`}
-          className="flex-1 text-base font-bold bg-transparent border-b-2 border-stone-200 focus:border-[#476540] outline-none py-1 px-1 text-stone-800" />
+          className="flex-1 min-w-[140px] text-base font-bold bg-transparent border-b-2 border-stone-200 focus:border-[#476540] outline-none py-1 px-1 text-stone-800" />
+        {dirty && (
+          <span className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0"
+            style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fbbf24' }}>
+            ● Non salvato
+          </span>
+        )}
+        <button onClick={salvaSchema} disabled={!dirty || saving} title="Salva la tabella turni dello schema"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold text-white shadow transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+          style={{ background: dirty && !saving ? '#476540' : '#9ca3af' }}>
+          <Save size={14} /> {saving ? 'Salvataggio…' : 'Salva schema'}
+        </button>
         <button onClick={azzeraSchema} title="Svuota lo schema (mantiene il titolo)"
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border border-amber-300 text-amber-700 hover:bg-amber-50">
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border border-amber-300 text-amber-700 hover:bg-amber-50 shrink-0">
           <Eraser size={13} /> Azzera
         </button>
         <button onClick={eliminaSchema} title="Elimina lo schema e rinumera gli altri"
@@ -653,26 +664,9 @@ export function SchemaDesignerNuovo() {
           </table>
         </div>
       )}
-      {/* Salva schema — la tabella turni NON è in autosave: il bottone si
-          attiva solo quando ci sono modifiche da salvare. */}
-      {giorni.length > 0 && colonne.length > 0 && (
-        <div className="flex items-center gap-3 self-start">
-          <button onClick={salvaSchema} disabled={!dirty || saving}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white shadow transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ background: dirty && !saving ? '#476540' : '#9ca3af' }}>
-            <Save size={15} /> {saving ? 'Salvataggio…' : 'Salva schema'}
-          </button>
-          {dirty && (
-            <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full"
-              style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fbbf24' }}>
-              ● Modifiche non salvate
-            </span>
-          )}
-        </div>
-      )}
-
       {/* ── TABELLA TURNI (slot) a sinistra · FABBISOGNO sticky a destra ──
-          Sempre visibile (si aggiorna in tempo reale con la struttura). */}
+          Sempre visibile (si aggiorna in tempo reale con la struttura).
+          Il pulsante "Salva schema" è nella riga del titolo, accanto ad Azzera. */}
       {giorni.length > 0 && colonne.length > 0 && (
         <div className="flex gap-4 items-start">
         <div className="card p-3 space-y-3 min-w-0 overflow-x-auto">
