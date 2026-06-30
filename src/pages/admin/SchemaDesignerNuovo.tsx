@@ -669,24 +669,25 @@ export function SchemaDesignerNuovo() {
           Il pulsante "Salva schema" è nella riga del titolo, accanto ad Azzera. */}
       {giorni.length > 0 && colonne.length > 0 && (
         <div className="flex gap-4 items-start">
-        <div className="card p-3 space-y-3 min-w-0 overflow-x-auto">
-          <div>
-            <div className="text-xs font-semibold text-stone-600 mb-1">Turnisti (legenda) — trascina il numero nei riquadri delle colonne-turno</div>
-            <div className="flex flex-wrap gap-1.5">
-              {medici.map(m => (
-                <div key={m.id} draggable onDragStart={() => { dragNum.current = m.numero_ordine ?? null; dragSource.current = null }}
-                  className="inline-flex items-center gap-1 pl-0.5 pr-2 py-0.5 rounded cursor-grab shadow-sm select-none text-xs text-white"
-                  style={{ background: coloreMedico(m.numero_ordine ?? 0) }} title={`Trascina il ${m.numero_ordine}`}>
-                  <span className="inline-flex items-center justify-center w-5 h-5 rounded shrink-0 text-[11px] font-bold"
-                    style={{ background: 'rgba(255,255,255,0.28)' }}>{m.numero_ordine}</span>
-                  <span className="font-semibold">{m.nome}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
+        <div className="card p-3 space-y-2 min-w-0">
+          <div className="text-xs font-semibold text-stone-600">Turnisti (legenda) — trascina il numero nei riquadri delle colonne-turno</div>
           <div className="overflow-x-auto">
-            <table className="text-sm border-collapse">
+            {/* Legenda + tabella nello STESSO contenitore largo quanto la tabella:
+                la legenda va a capo entro quella larghezza → i chip restano sopra
+                le celle e il tragitto di trascinamento è il più corto possibile. */}
+            <div className="inline-block min-w-full align-top space-y-2">
+              <div className="flex flex-wrap gap-1.5">
+                {medici.map(m => (
+                  <div key={m.id} draggable onDragStart={() => { dragNum.current = m.numero_ordine ?? null; dragSource.current = null }}
+                    className="inline-flex items-center gap-1 pl-0.5 pr-2 py-0.5 rounded cursor-grab shadow-sm select-none text-xs text-white"
+                    style={{ background: coloreMedico(m.numero_ordine ?? 0) }} title={`Trascina il ${m.numero_ordine}`}>
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded shrink-0 text-[11px] font-bold"
+                      style={{ background: 'rgba(255,255,255,0.28)' }}>{m.numero_ordine}</span>
+                    <span className="font-semibold">{m.nome}</span>
+                  </div>
+                ))}
+              </div>
+              <table className="text-sm border-collapse">
               <thead>
                 <tr style={{ background: '#2b3c24' }}>
                   <th className="px-2 py-1.5 text-white text-left" style={{ minWidth: 78 }}>Giorno</th>
@@ -759,6 +760,7 @@ export function SchemaDesignerNuovo() {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
           <p className="text-[11px] text-stone-400">
             Un numero per riga (drag = sposta · clic = togli). Riempiendo l'ultimo slot ne compare un altro;
