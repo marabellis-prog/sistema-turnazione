@@ -46,6 +46,14 @@ interface CellaRow { id: string; giorno_settimana: number; slot_idx: number; col
 // Cella nel DRAFT locale (la tabella turni non fa autosave): senza id, si
 // identifica per (giorno, slot, colonna). Persistita solo con "Salva schema".
 interface CellaDraft { giorno_settimana: number; slot_idx: number; colonna_sigla: string; numero: number | null; attivo: boolean }
+// DRAFT dell'INTERO schema (struttura + celle): nessun autosave, si persiste
+// solo con "Salva schema". checks = solo le caselle spuntate.
+interface SchemaDraft {
+  giorni:  { giorno_settimana: number }[]
+  colonne: { tipo: 'turno' | 'flag'; sigla: string }[]
+  checks:  { giorno_settimana: number; colonna_sigla: string }[]
+  celle:   CellaDraft[]
+}
 
 export function SchemaDesignerNuovo() {
   const qc = useQueryClient()
@@ -55,7 +63,7 @@ export function SchemaDesignerNuovo() {
   const [schemaNum, setSchemaNum] = useState(1)
   const [giornoSel, setGiornoSel] = useState<number | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const [draftCelle, setDraftCelle] = useState<CellaDraft[] | null>(null)  // null = nessuna modifica pendente
+  const [draft, setDraft] = useState<SchemaDraft | null>(null)  // null = nessuna modifica pendente (intero schema)
   const [saving, setSaving] = useState(false)
   const [navPending, setNavPending] = useState<string | null>(null)
   const [pendingReparto, setPendingReparto] = useState<string | null>(null)
@@ -117,7 +125,7 @@ export function SchemaDesignerNuovo() {
       if (error) throw error; return (data ?? []) as ProprietaTurno[]
     },
   })
-  const { data: giorni = [] } = useQuery<GiornoRow[]>({
+  const { data: giorniDB = [] } = useQuery<GiornoRow[]>({
     queryKey: [...key, 'giorni'],
     queryFn: async () => {
       const { data, error } = await supabase.from('schema_giorno').select('id, giorno_settimana, ordine')
@@ -125,7 +133,7 @@ export function SchemaDesignerNuovo() {
       if (error) throw error; return (data ?? []) as GiornoRow[]
     },
   })
-  const { data: colonne = [] } = useQuery<ColonnaRow[]>({
+  const { data: colonneDB = [] } = useQuery<ColonnaRow[]>({
     queryKey: [...key, 'colonne'],
     queryFn: async () => {
       const { data, error } = await supabase.from('schema_colonna').select('id, tipo, sigla, ordine')
@@ -133,7 +141,7 @@ export function SchemaDesignerNuovo() {
       if (error) throw error; return (data ?? []) as ColonnaRow[]
     },
   })
-  const { data: checks = [] } = useQuery<CheckRow[]>({
+  const { data: checksDB = [] } = useQuery<CheckRow[]>({
     queryKey: [...key, 'checks'],
     queryFn: async () => {
       const { data, error } = await supabase.from('schema_giorno_colonna').select('giorno_settimana, colonna_sigla, attivo')
@@ -141,8 +149,7 @@ export function SchemaDesignerNuovo() {
       if (error) throw error; return (data ?? []) as CheckRow[]
     },
   })
-
-  const { data: celle = [] } = useQuery<CellaRow[]>({
+  const { data: celleDB = [] } = useQuery<CellaRow[]>({
     queryKey: [...key, 'celle'],
     queryFn: async () => {
       const { data, error } = await supabase.from('schema_cella')
@@ -152,18 +159,29 @@ export function SchemaDesignerNuovo() {
     },
   })
 
-  // ── Tabella turni in DRAFT locale (niente autosave): le modifiche stanno
-  //    in draftCelle finché non si preme "Salva schema". ─────────────────
-  const baseDraft = (): CellaDraft[] => celle.map(c =>
-    ({ giorno_settimana: c.giorno_settimana, slot_idx: c.slot_idx, colonna_sigla: c.colonna_sigla, numero: c.numero, attivo: c.attivo }))
-  const celleEff: CellaDraft[] = draftCelle ?? baseDraft()
-  const dirty = draftCelle !== null
-  function mutaCelle(fn: (list: CellaDraft[]) => CellaDraft[]) {
-    setDraftCelle(prev => fn(prev ?? baseDraft()))
-  }
+  // ── DRAFT unico dell'intero schema (niente autosave): tutte le modifiche
+  //    (giorni, colonne, flag, slot, numeri) stanno in `draft` finché non si
+  //    preme "Salva schema". `draftEff` = draft oppure baseline dal DB. ─────
+  const baseline = (): SchemaDraft => ({
+    giorni:  giorniDB.map(g => ({ giorno_settimana: g.giorno_settimana })),
+    colonne: colonneDB.map(c => ({ tipo: c.tipo, sigla: c.sigla })),
+    checks:  checksDB.filter(c => c.attivo).map(c => ({ giorno_settimana: c.giorno_settimana, colonna_sigla: c.colonna_sigla })),
+    celle:   celleDB.map(c => ({ giorno_settimana: c.giorno_settimana, slot_idx: c.slot_idx, colonna_sigla: c.colonna_sigla, numero: c.numero, attivo: c.attivo })),
+  })
+  const draftEff = draft ?? baseline()
+  const dirty = draft !== null
+  function muta(fn: (d: SchemaDraft) => SchemaDraft) { setDraft(prev => fn(prev ?? baseline())) }
+  function mutaCelle(fn: (list: CellaDraft[]) => CellaDraft[]) { muta(d => ({ ...d, celle: fn(d.celle) })) }
+
+  // Viste con id sintetici (stessi nomi/shape usati dalla JSX).
+  const giorni = [...draftEff.giorni].sort((a, b) => a.giorno_settimana - b.giorno_settimana)
+    .map((g, i) => ({ id: `g${g.giorno_settimana}`, giorno_settimana: g.giorno_settimana, ordine: i }))
+  const colonne = draftEff.colonne.map((c, i) => ({ id: `col-${c.sigla}`, tipo: c.tipo, sigla: c.sigla, ordine: i }))
+  const checks = draftEff.checks
+  const celle = draftEff.celle
 
   const isChecked = (g: number, sigla: string) =>
-    checks.some(c => c.giorno_settimana === g && c.colonna_sigla === sigla && c.attivo)
+    checks.some(c => c.giorno_settimana === g && c.colonna_sigla === sigla)
   const colColor = (sigla: string) => tipiTurno.find(t => t.sigla === sigla)
   // Colore intestazione colonna: turno → colori del tipo; flag → colore proprietà.
   const colHeader = (c: { tipo: 'turno' | 'flag'; sigla: string }) => {
@@ -176,12 +194,12 @@ export function SchemaDesignerNuovo() {
   }
   // slot_idx presenti per un giorno (almeno 0)
   const slotsDelGiorno = (g: number) => {
-    const idxs = new Set<number>(celleEff.filter(c => c.giorno_settimana === g).map(c => c.slot_idx))
+    const idxs = new Set<number>(celle.filter(c => c.giorno_settimana === g).map(c => c.slot_idx))
     idxs.add(0)
     return [...idxs].sort((a, b) => a - b)
   }
   const cella = (g: number, slot: number, sigla: string) =>
-    celleEff.find(c => c.giorno_settimana === g && c.slot_idx === slot && c.colonna_sigla === sigla)
+    celle.find(c => c.giorno_settimana === g && c.slot_idx === slot && c.colonna_sigla === sigla)
   // Nome breve da mostrare nel badge accanto al numero (cognome, o 1ª parola).
   const nomeBadge = (n: number | null) => {
     if (n == null) return ''
@@ -189,78 +207,66 @@ export function SchemaDesignerNuovo() {
     return (m?.cognome || m?.nome?.split(' ')[0] || '') as string
   }
 
-  async function aggiungiGiorno(g: number) {
+  function aggiungiGiorno(g: number) {
     setErr(null)
-    if (giorni.some(x => x.giorno_settimana === g)) { setGiornoSel(g); return }
-    const ordine = giorni.length
-    const { error } = await supabase.from('schema_giorno')
-      .insert({ reparto_id: repartoAttivo, schema_num: schemaNum, giorno_settimana: g, ordine })
-    if (error) { setErr(error.message); return }
-    setGiornoSel(g); invalida()
+    if (draftEff.giorni.some(x => x.giorno_settimana === g)) { setGiornoSel(g); return }
+    muta(d => ({ ...d, giorni: [...d.giorni, { giorno_settimana: g }] }))
+    setGiornoSel(g)
   }
-  async function rimuoviGiorno(g: number) {
+  function rimuoviGiorno(g: number) {
     setErr(null)
-    await supabase.from('schema_giorno_colonna').delete()
-      .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum).eq('giorno_settimana', g)
-    const { error } = await supabase.from('schema_giorno').delete()
-      .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum).eq('giorno_settimana', g)
-    if (error) { setErr(error.message); return }
+    muta(d => ({
+      ...d,
+      giorni: d.giorni.filter(x => x.giorno_settimana !== g),
+      checks: d.checks.filter(c => c.giorno_settimana !== g),
+      celle:  d.celle.filter(c => c.giorno_settimana !== g),
+    }))
     if (giornoSel === g) setGiornoSel(null)
-    invalida()
   }
-  async function aggiungiColonna(tipo: 'turno' | 'flag', sigla: string) {
-    setErr(null)
+  function aggiungiColonna(tipo: 'turno' | 'flag', sigla: string) {
     if (giornoSel === null) { setErr('Seleziona prima un giorno (clicca sulla sua riga), poi aggiungi turni/flag.'); return }
-    if (!colonne.some(c => c.sigla === sigla)) {
-      const ordine = colonne.length
-      const { error } = await supabase.from('schema_colonna')
-        .insert({ reparto_id: repartoAttivo, schema_num: schemaNum, tipo, sigla, ordine })
-      if (error) { setErr(error.message); return }
-    }
-    // spunta la checkbox per il giorno selezionato
-    const { error: e2 } = await supabase.from('schema_giorno_colonna')
-      .upsert({ reparto_id: repartoAttivo, schema_num: schemaNum, giorno_settimana: giornoSel, colonna_sigla: sigla, attivo: true },
-        { onConflict: 'reparto_id,schema_num,giorno_settimana,colonna_sigla' })
-    if (e2) { setErr(e2.message); return }
-    invalida()
-  }
-  async function rimuoviColonna(sigla: string) {
     setErr(null)
-    await supabase.from('schema_giorno_colonna').delete()
-      .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum).eq('colonna_sigla', sigla)
-    const { error } = await supabase.from('schema_colonna').delete()
-      .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum).eq('sigla', sigla)
-    if (error) { setErr(error.message); return }
-    invalida()
+    const g = giornoSel
+    muta(d => ({
+      ...d,
+      colonne: d.colonne.some(c => c.sigla === sigla) ? d.colonne : [...d.colonne, { tipo, sigla }],
+      checks:  d.checks.some(c => c.giorno_settimana === g && c.colonna_sigla === sigla)
+        ? d.checks : [...d.checks, { giorno_settimana: g, colonna_sigla: sigla }],
+    }))
   }
-  async function toggleCheck(g: number, sigla: string) {
+  function rimuoviColonna(sigla: string) {
     setErr(null)
-    const nuovo = !isChecked(g, sigla)
-    const { error } = await supabase.from('schema_giorno_colonna')
-      .upsert({ reparto_id: repartoAttivo, schema_num: schemaNum, giorno_settimana: g, colonna_sigla: sigla, attivo: nuovo },
-        { onConflict: 'reparto_id,schema_num,giorno_settimana,colonna_sigla' })
-    if (error) { setErr(error.message); return }
-    invalida()
+    muta(d => ({
+      ...d,
+      colonne: d.colonne.filter(c => c.sigla !== sigla),
+      checks:  d.checks.filter(c => c.colonna_sigla !== sigla),
+      celle:   d.celle.filter(c => c.colonna_sigla !== sigla),
+    }))
+  }
+  function toggleCheck(g: number, sigla: string) {
+    setErr(null)
+    muta(d => {
+      const has = d.checks.some(c => c.giorno_settimana === g && c.colonna_sigla === sigla)
+      return { ...d, checks: has
+        ? d.checks.filter(c => !(c.giorno_settimana === g && c.colonna_sigla === sigla))
+        : [...d.checks, { giorno_settimana: g, colonna_sigla: sigla }] }
+    })
   }
 
-  // ── Drag & drop colonne (riordino) ───────────────────────────────
-  async function dropColonna(targetSigla: string) {
+  // ── Drag & drop colonne (riordino) — solo nel draft ──────────────
+  function dropColonna(targetSigla: string) {
     const fromSigla = dragCol.current
     dragCol.current = null; setDragOver(null)
     if (!fromSigla || fromSigla === targetSigla) return
-    const ordered = [...colonne]
-    const fromIdx = ordered.findIndex(c => c.sigla === fromSigla)
-    const toIdx   = ordered.findIndex(c => c.sigla === targetSigla)
-    if (fromIdx < 0 || toIdx < 0) return
-    const [moved] = ordered.splice(fromIdx, 1)
-    ordered.splice(toIdx, 0, moved)
-    // riscrive ordine 0..n
-    for (let i = 0; i < ordered.length; i++) {
-      if (ordered[i].ordine !== i) {
-        await supabase.from('schema_colonna').update({ ordine: i }).eq('id', ordered[i].id)
-      }
-    }
-    invalida()
+    muta(d => {
+      const arr = [...d.colonne]
+      const fromIdx = arr.findIndex(c => c.sigla === fromSigla)
+      const toIdx   = arr.findIndex(c => c.sigla === targetSigla)
+      if (fromIdx < 0 || toIdx < 0) return d
+      const [moved] = arr.splice(fromIdx, 1)
+      arr.splice(toIdx, 0, moved)
+      return { ...d, colonne: arr }
+    })
   }
 
   // ── Slot / numeri (tabella turni) — solo DRAFT locale, niente DB ───
@@ -328,29 +334,23 @@ export function SchemaDesignerNuovo() {
       return next
     })
   }
-  // ── Salva schema (flush del draft sul DB) + scarto ────────────────
+  // ── Salva schema: invia l'INTERO draft (struttura + celle) alla RPC che
+  //    sostituisce il contenuto dello schema in modo atomico. ─────────────
   async function salvaSchema() {
-    if (!draftCelle) return
+    if (!draft) return
     setErr(null); setSaving(true)
-    const k = (c: { giorno_settimana: number; slot_idx: number; colonna_sigla: string }) => `${c.giorno_settimana}|${c.slot_idx}|${c.colonna_sigla}`
-    const draftKeys = new Set(draftCelle.map(k))
-    const daEliminare = celle.filter(c => !draftKeys.has(k(c))).map(c => c.id)
     try {
-      if (daEliminare.length) {
-        const { error } = await supabase.from('schema_cella').delete().in('id', daEliminare)
-        if (error) throw error
-      }
-      if (draftCelle.length) {
-        const rows = draftCelle.map(c => ({
-          reparto_id: repartoAttivo, schema_num: schemaNum,
-          giorno_settimana: c.giorno_settimana, slot_idx: c.slot_idx, colonna_sigla: c.colonna_sigla,
-          numero: c.numero, attivo: c.attivo,
-        }))
-        const { error } = await supabase.from('schema_cella').upsert(rows, { onConflict: 'reparto_id,schema_num,giorno_settimana,slot_idx,colonna_sigla' })
-        if (error) throw error
-      }
-      setDraftCelle(null)
-      invalida()
+      const p_giorni  = [...draft.giorni].sort((a, b) => a.giorno_settimana - b.giorno_settimana)
+        .map((g, i) => ({ giorno_settimana: g.giorno_settimana, ordine: i }))
+      const p_colonne = draft.colonne.map((c, i) => ({ tipo: c.tipo, sigla: c.sigla, ordine: i }))
+      const p_checks  = draft.checks.map(c => ({ giorno_settimana: c.giorno_settimana, colonna_sigla: c.colonna_sigla }))
+      const p_celle   = draft.celle
+      const { error } = await supabase.rpc('salva_schema_struttura', {
+        p_reparto: repartoAttivo, p_num: schemaNum, p_giorni, p_colonne, p_checks, p_celle,
+      })
+      if (error) throw error
+      setDraft(null)
+      invalida(); invalidaSchemi()
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Errore nel salvataggio')
     } finally {
@@ -362,11 +362,11 @@ export function SchemaDesignerNuovo() {
     if (!dirty) return true
     const ok = await confirm({
       title: 'Modifiche non salvate',
-      message: 'La tabella turni ha modifiche non salvate. Se procedi andranno perse. Continuare?',
+      message: 'Lo schema ha modifiche non salvate. Se procedi andranno perse. Continuare?',
       confirmLabel: 'Procedi senza salvare', danger: true,
     })
     if (!ok) return false
-    setDraftCelle(null)
+    setDraft(null)
     return true
   }
 
@@ -403,7 +403,7 @@ export function SchemaDesignerNuovo() {
     setErr(null)
     const { error } = await supabase.rpc('copia_schema', { p_reparto: repartoAttivo, p_from: from, p_to: schemaNum })
     if (error) { setErr(error.message); return }
-    setDraftCelle(null); invalidaTutto()
+    setDraft(null); invalidaTutto()
   }
   async function salvaTitolo(t: string) {
     const { error } = await supabase.from('schema_meta').upsert(
@@ -425,7 +425,7 @@ export function SchemaDesignerNuovo() {
     setErr(null)
     const { error } = await supabase.rpc('azzera_schema', { p_reparto: repartoAttivo, p_num: schemaNum })
     if (error) { setErr(error.message); return }
-    setDraftCelle(null); setGiornoSel(null); invalidaTutto()
+    setDraft(null); setGiornoSel(null); invalidaTutto()
   }
   async function eliminaSchema() {
     const nome = titoloDi(schemaNum) || `Schema ${schemaNum}`
@@ -438,13 +438,13 @@ export function SchemaDesignerNuovo() {
     setErr(null)
     const { error } = await supabase.rpc('elimina_schema', { p_reparto: repartoAttivo, p_num: schemaNum })
     if (error) { setErr(error.message); return }
-    setDraftCelle(null); setSchemaNum(1); setGiornoSel(null); invalidaTutto()
+    setDraft(null); setSchemaNum(1); setGiornoSel(null); invalidaTutto()
   }
 
   // Rete di sicurezza: se cambia reparto o schema (anche da percorsi non
   // guardati, es. selettore reparto in headbar) si scarta il draft, così non
   // si rischia di salvarlo sullo schema/reparto sbagliato.
-  useEffect(() => { setDraftCelle(null) }, [repartoAttivo, schemaNum])
+  useEffect(() => { setDraft(null) }, [repartoAttivo, schemaNum])
 
   // Guardia: modifiche non salvate bloccano la navigazione (menu admin), il
   // cambio reparto (selettore admin/headbar) e la chiusura/refresh della tab.
@@ -467,15 +467,15 @@ export function SchemaDesignerNuovo() {
         onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
       <ConfirmModal open={navPending != null}
         title="Modifiche non salvate"
-        message="La tabella turni ha modifiche non salvate. Se esci ora andranno perse."
+        message="Lo schema ha modifiche non salvate. Se esci ora andranno perse."
         confirmLabel="Esci senza salvare" cancelLabel="Rimani" danger
-        onConfirm={() => { const to = navPending; setDraftCelle(null); setNavPending(null); if (to) navigate(to) }}
+        onConfirm={() => { const to = navPending; setDraft(null); setNavPending(null); if (to) navigate(to) }}
         onCancel={() => setNavPending(null)} />
       <ConfirmModal open={pendingReparto != null}
         title="Modifiche non salvate"
-        message="La tabella turni ha modifiche non salvate. Cambiando reparto andranno perse."
+        message="Lo schema ha modifiche non salvate. Cambiando reparto andranno perse."
         confirmLabel="Cambia senza salvare" cancelLabel="Rimani" danger
-        onConfirm={() => { const n = pendingReparto; setDraftCelle(null); setPendingReparto(null); registerRepartoGuard(null); if (n) setRepartoAttivo(n) }}
+        onConfirm={() => { const n = pendingReparto; setDraft(null); setPendingReparto(null); registerRepartoGuard(null); if (n) setRepartoAttivo(n) }}
         onCancel={() => setPendingReparto(null)} />
       <div>
         <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
@@ -541,7 +541,7 @@ export function SchemaDesignerNuovo() {
             ● Non salvato
           </span>
         )}
-        <button onClick={salvaSchema} disabled={!dirty || saving} title="Salva la tabella turni dello schema"
+        <button onClick={salvaSchema} disabled={!dirty || saving} title="Salva lo schema (struttura e turni)"
           className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold text-white shadow transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
           style={{ background: dirty && !saving ? '#476540' : '#9ca3af' }}>
           <Save size={14} /> {saving ? 'Salvataggio…' : 'Salva schema'}
