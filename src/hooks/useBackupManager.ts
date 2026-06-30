@@ -22,55 +22,26 @@
  */
 
 import { useEffect, useRef } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
-import type { ImpostazioniGlobali, Turno, TurnoBackup } from '../types'
+import type { Turno } from '../types'
 
 const CHUNK = 500   // batch size per INSERT bulk in restore (PostgREST limit)
 
-// ── Helper: snapshot dei turni di UN REPARTO in un nuovo record backup ────
-export async function createBackup(repartoId: string, descrizione: string): Promise<TurnoBackup> {
-  // Snapshot dei soli turni del reparto indicato (backup per-reparto).
-  const all: Turno[] = []
-  let offset = 0
-  const PAGE = 1000
-  while (true) {
-    const { data, error } = await supabase.from('turni').select('*')
-      .eq('reparto_id', repartoId)
-      .order('data').range(offset, offset + PAGE - 1)
-    if (error) throw error
-    if (!data || data.length === 0) break
-    all.push(...data as Turno[])
-    if (data.length < PAGE) break
-    offset += PAGE
-  }
-
-  // Insert nel turni_backup (taggato col reparto)
-  const { data: inserted, error: insErr } = await supabase.from('turni_backup')
-    .insert({
-      reparto_id: repartoId,
-      descrizione,
-      num_turni: all.length,
-      snapshot:  { turni: all },
-    })
-    .select()
-    .single()
-  if (insErr) throw insErr
-  return inserted as TurnoBackup
+// ── Backup di UN REPARTO — snapshot SERVER-SIDE (RPC backup_reparto) ───────
+// Il database fa snapshot + rotazione (impostazioni_globali.backup_da_tenere)
+// in un'unica operazione: immune a cambio pagina / tab chiuso / concorrenza.
+export async function createBackup(repartoId: string, descrizione: string): Promise<{ id: string; num_turni: number }> {
+  const { data, error } = await supabase.rpc('backup_reparto', {
+    p_reparto_id: repartoId, p_descrizione: descrizione,
+  })
+  if (error) throw error
+  return (data ?? { id: '', num_turni: 0 }) as { id: string; num_turni: number }
 }
 
-// ── Rotazione: mantieni solo gli ultimi N backup DEL REPARTO ─────────
-export async function ruotaBackup(repartoId: string, daTenere: number): Promise<number> {
-  if (daTenere < 1) return 0
-  const { data: list, error } = await supabase.from('turni_backup')
-    .select('id').eq('reparto_id', repartoId).order('created_at', { ascending: false })
-  if (error) throw error
-  if (!list || list.length <= daTenere) return 0
-  const toDelete = list.slice(daTenere).map(x => x.id)
-  const { error: delErr } = await supabase.from('turni_backup')
-    .delete().in('id', toDelete)
-  if (delErr) throw delErr
-  return toDelete.length
+// Deprecata: la rotazione ora la fa il server dentro backup_reparto. No-op.
+export async function ruotaBackup(_repartoId: string, _daTenere: number): Promise<number> {
+  return 0
 }
 
 // ── Restore: applica il backup ────────────────────────────────────────
@@ -126,76 +97,23 @@ export async function deleteBackup(backupId: string): Promise<void> {
   if (error) throw error
 }
 
-// ── Hook auto-backup (chiamato da AdminLayout al mount) ──────────────
-// Controlla la data dell'ultimo backup; se piu` vecchia dell'intervallo
-// configurato (`configurazione.backup_intervallo_giorni`), crea un
-// auto-backup e applica la rotazione. Usa una ref per evitare doppi
-// trigger in caso di Strict Mode o re-mount.
+// ── Hook auto-backup (montato in AdminLayout) ────────────────────────
+// Fire-and-forget: chiama la RPC `auto_backup_reparto`, che lato SERVER fa
+// il due-check (policy globale) + snapshot + rotazione, in modo atomico e
+// idempotente. Il browser non aspetta: il backup completa nel database anche
+// se l'utente cambia pagina/reparto o chiude il tab. La garanzia "comunque
+// eseguito" è data dal cron giornaliero `auto_backup_tutti` (migr. 033).
 export function useAutoBackup(repartoId: string) {
   const qc = useQueryClient()
   const triggered = useRef<string | null>(null)
 
-  // Policy GLOBALE (intervallo + retention): impostata in Centro di Controllo.
-  const { data: policy } = useQuery<ImpostazioniGlobali | null>({
-    queryKey: ['impostazioni-globali'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('impostazioni_globali').select('*').limit(1).maybeSingle()
-      if (error) throw error
-      return data as ImpostazioniGlobali | null
-    },
-    staleTime: 60_000,
-  })
-
-  // Ultimo backup DI QUESTO REPARTO. `isFetched` evita un backup spurio
-  // mentre la query è ancora in loading (data === undefined).
-  const { data: lastBackup, isFetched: backupFetched } = useQuery<TurnoBackup | null>({
-    queryKey: ['turni-backup', 'latest', repartoId],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('turni_backup')
-        .select('id, created_at, descrizione, num_turni')
-        .eq('reparto_id', repartoId)
-        .order('created_at', { ascending: false })
-        .limit(1).maybeSingle()
-      if (error) throw error
-      return data as TurnoBackup | null
-    },
-    staleTime: 5 * 60_000,
-  })
-
   useEffect(() => {
-    // Riarma quando cambia il reparto attivo (un auto-backup per reparto).
-    if (triggered.current === repartoId) return
-    if (!policy) return
-    if (!backupFetched) return
-    if (lastBackup === undefined) return
-
-    const interval = policy.backup_intervallo_giorni ?? 7
-    if (interval <= 0) return    // 0 = disattiva auto-backup
-    const retention = policy.backup_da_tenere ?? 10
-
-    let serve = false
-    if (lastBackup === null) {
-      serve = true
-    } else {
-      const diffDays = (Date.now() - new Date(lastBackup.created_at).getTime()) / (1000 * 60 * 60 * 24)
-      if (diffDays >= interval) serve = true
-    }
-    if (!serve) return
-
+    if (!repartoId || triggered.current === repartoId) return
     triggered.current = repartoId
-    ;(async () => {
-      try {
-        const descr = `Auto-backup ${new Date().toLocaleString('it-IT', {
-          day: '2-digit', month: '2-digit', year: 'numeric',
-          hour: '2-digit', minute: '2-digit',
-        })}`
-        await createBackup(repartoId, descr)
-        await ruotaBackup(repartoId, retention)
+    supabase.rpc('auto_backup_reparto', { p_reparto_id: repartoId })
+      .then(({ error }) => {
+        if (error) { console.error('[autoBackup]', error.message); return }
         qc.invalidateQueries({ queryKey: ['turni-backup'] })
-      } catch (e) {
-        console.error('[autoBackup]', (e as Error).message)
-      }
-    })()
-  }, [policy, lastBackup, backupFetched, qc, repartoId])
+      })
+  }, [repartoId, qc])
 }

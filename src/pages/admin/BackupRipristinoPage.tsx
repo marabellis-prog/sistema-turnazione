@@ -23,7 +23,7 @@ import { useMediciReparto } from '../../hooks/useMediciReparto'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import {
-  createBackup, restoreBackup, deleteBackup, ruotaBackup,
+  createBackup, restoreBackup, deleteBackup,
 } from '../../hooks/useBackupManager'
 import { BackupTurniPreview } from '../../components/BackupTurniPreview'
 import { useFestivitaCustom } from '../../hooks/useFestivitaCustom'
@@ -48,7 +48,7 @@ export function BackupRipristinoPage() {
   const qc = useQueryClient()
   const { confirm, confirmState } = useConfirm()
   const [busyId,        setBusyId]        = useState<string | null>(null)
-  const [creating,      setCreating]      = useState(false)
+  const [backupModal,   setBackupModal]   = useState<null | 'running' | { num_turni: number }>(null)
   const [descrManuale,  setDescrManuale]  = useState('')
   const [msg,           setMsg]           = useState<string | null>(null)
   const [err,           setErr]           = useState<string | null>(null)
@@ -96,27 +96,21 @@ export function BackupRipristinoPage() {
   // ── Policy backup GLOBALE (intervallo + retention) — da Centro di Controllo ──
   const { data: policy } = useImpostazioniGlobali()
 
-  // ── Crea backup manuale ────────────────────────────────────────────
+  // ── Crea backup manuale (server-side, con modal di avanzamento) ─────
   async function handleCreaBackup() {
-    setCreating(true); setErr(null); setMsg(null)
+    setErr(null); setMsg(null)
+    setBackupModal('running')
     try {
       const descr = descrManuale.trim() ||
         `Backup manuale ${new Date().toLocaleString('it-IT')}`
+      // Server-side: snapshot + rotazione in un'unica operazione atomica.
       const bk = await createBackup(repartoAttivo, descr)
-      // Rotazione automatica anche per i backup manuali (retention globale)
-      const retention = policy?.backup_da_tenere ?? 10
-      const rotati = await ruotaBackup(repartoAttivo, retention)
-      setMsg(
-        `Backup creato (${bk.num_turni ?? 0} turni)` +
-        (rotati > 0 ? ` — ${rotati} backup vecchi rimossi per rotazione.` : '.')
-      )
       setDescrManuale('')
       qc.invalidateQueries({ queryKey: ['turni-backup'] })
-      setTimeout(() => setMsg(null), 5000)
+      setBackupModal({ num_turni: bk.num_turni ?? 0 })
     } catch (e) {
+      setBackupModal(null)
       setErr('Errore creazione backup: ' + (e as Error).message)
-    } finally {
-      setCreating(false)
     }
   }
 
@@ -222,10 +216,10 @@ export function BackupRipristinoPage() {
           </label>
           <button
             onClick={handleCreaBackup}
-            disabled={creating}
+            disabled={backupModal === 'running'}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold text-white shadow disabled:opacity-50 transition-colors"
             style={{ background: '#476540' }}>
-            {creating ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+            {backupModal === 'running' ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
             Backup ora
           </button>
         </div>
@@ -352,6 +346,42 @@ export function BackupRipristinoPage() {
               Snapshot vuoto o non disponibile.
             </div>
           )}
+        </div>
+      )}
+
+      {/* Modal avanzamento backup manuale (il backup gira sul server) */}
+      {backupModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-5 space-y-4">
+            <h3 className="font-bold text-stone-800 flex items-center gap-2">
+              <Archive size={18} style={{ color: '#476540' }} />
+              {backupModal === 'running' ? 'Backup in corso…' : 'Backup completato'}
+            </h3>
+            {backupModal === 'running' ? (
+              <>
+                <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: '#e5e7eb' }}>
+                  <div className="h-full rounded-full animate-pulse" style={{ width: '75%', background: '#476540' }} />
+                </div>
+                <p className="text-sm text-stone-600">
+                  Sto salvando lo snapshot dei turni sul server.
+                  <strong> Non chiudere né cambiare pagina</strong> finché non finisce.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 text-sm font-medium" style={{ color: '#2e5a28' }}>
+                  <CheckCircle2 size={18} /> Backup salvato — {backupModal.num_turni} turni.
+                </div>
+                <div className="flex justify-end">
+                  <button onClick={() => setBackupModal(null)}
+                    className="px-4 py-1.5 rounded text-sm font-semibold text-white shadow"
+                    style={{ background: '#476540' }}>
+                    Chiudi
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
 
