@@ -500,13 +500,20 @@ export function SchemaDesignerNuovo() {
 
   // Fabbisogno per ambito: mostra SOLO i turni/proprietà attivi (spuntati) nei
   // giorni di quell'ambito → es. la domenica non chiede la mattina se non c'è.
-  const colsAmbito = (amb: string): { turni: ColonnaRow[]; proprieta: ProprietaTurno[] } => {
+  const colsAmbito = (amb: string): { meta: string[]; proprieta: ProprietaTurno[] } => {
     const gg = GIORNI_AMBITO[amb] ?? [1, 2, 3, 4, 5, 6, 7]
     const attivo = (sigla: string) => gg.some(g => isChecked(g, sigla))
-    return {
-      turni:     colonne.filter(c => c.tipo === 'turno' && attivo(c.sigla)),
-      proprieta: proprieta.filter(p => attivo(p.sigla)),   // solo proprietà-flag configurate e spuntate
-    }
+    // Turni ATTIVI (escluse reperibilità) in questo ambito → quali metà-giornata
+    // coprono. La Lunga copre sia mattina sia pomeriggio; la reperibilità nessuna.
+    const turniAtt = turniColonne
+      .filter(c => attivo(c.sigla))
+      .map(c => tipiTurno.find(t => t.sigla === c.sigla))
+      .filter((t): t is TipoTurno => !!t && !t.is_reperibilita)
+    const meta: string[] = [
+      ...(turniAtt.some(t => t.copre_mattina)    ? ['mattina']    : []),
+      ...(turniAtt.some(t => t.copre_pomeriggio) ? ['pomeriggio'] : []),
+    ]
+    return { meta, proprieta: proprieta.filter(p => attivo(p.sigla)) }   // solo proprietà-flag spuntate
   }
   const puoFabbisogno = turniColonne.length > 0 && proprieta.some(p => colonne.some(c => c.tipo === 'flag' && c.sigla === p.sigla))
 
@@ -911,6 +918,8 @@ const GIORNI_AMBITO: Record<string, number[]> = {
   sabato:     [6],
   festivi:    [7],
 }
+// Il fabbisogno è per METÀ-GIORNATA (la reperibilità non conta nel conteggio).
+const HALF_DAY_LABEL: Record<string, string> = { mattina: 'Mattina', pomeriggio: 'Pomeriggio' }
 const labelAmbito = (k: string) => k === 'normale' ? 'Normale' : (AMBITI_SPECIALI.find(a => a.key === k)?.label ?? k)
 
 // ── Prova Schema: anteprima lineare della rotazione (N settimane), va a capo
@@ -998,18 +1007,18 @@ function ProvaPanel({ previewCells, turnisti, tipiTurno, onClose }: {
 // a livello modulo (stabile): l'intestazione mostra SEMPRE il nome dell'ambito.
 function GrigliaAmbito({ amb, colsAmbito, fab, onSet, onRemove }: {
   amb: string
-  colsAmbito: (amb: string) => { turni: ColonnaRow[]; proprieta: ProprietaTurno[] }
+  colsAmbito: (amb: string) => { meta: string[]; proprieta: ProprietaTurno[] }
   fab: FabRow[]
   onSet: (amb: string, turno: string, prop: string, n: number) => void
   onRemove?: (amb: string) => void
 }) {
-  const { turni, proprieta } = colsAmbito(amb)   // solo turni/proprietà attivi in questo ambito
+  const { meta, proprieta } = colsAmbito(amb)   // metà-giornata coperte + proprietà attive
   const valore = (turno: string, prop: string) =>
     fab.find(f => f.ambito === amb && f.turno_sigla === turno)?.per_proprieta?.[prop] ?? 0
   const totaleTurno = (turno: string) =>
     fab.find(f => f.ambito === amb && f.turno_sigla === turno)?.totale ?? 0
   const speciale = amb !== 'normale'
-  const vuoto = turni.length === 0 || proprieta.length === 0
+  const vuoto = meta.length === 0 || proprieta.length === 0
   return (
     <div className="border rounded-lg p-2" style={{ borderColor: speciale ? '#e3d4ad' : '#e7e5e4', background: speciale ? '#fbf7ee' : '#fff' }}>
       <div className="flex items-center justify-between mb-1">
@@ -1036,20 +1045,20 @@ function GrigliaAmbito({ amb, colsAmbito, fab, onSet, onRemove }: {
           </tr>
         </thead>
         <tbody>
-          {turni.map(t => (
-            <tr key={t.sigla}>
-              <td className="pr-1 font-bold" style={{ color: '#476540' }}>{t.sigla}</td>
+          {meta.map(m => (
+            <tr key={m}>
+              <td className="pr-1 font-bold whitespace-nowrap" style={{ color: '#476540' }}>{HALF_DAY_LABEL[m] ?? m}</td>
               {proprieta.map(p => (
                 <td key={p.sigla} className="px-0.5 py-0.5 text-center">
                   <input type="number" min={0} max={99}
-                    key={`${amb}|${t.sigla}|${p.sigla}|${valore(t.sigla, p.sigla)}`}
-                    defaultValue={valore(t.sigla, p.sigla) || ''}
-                    onBlur={e => onSet(amb, t.sigla, p.sigla, parseInt(e.target.value || '0', 10))}
+                    key={`${amb}|${m}|${p.sigla}|${valore(m, p.sigla)}`}
+                    defaultValue={valore(m, p.sigla) || ''}
+                    onBlur={e => onSet(amb, m, p.sigla, parseInt(e.target.value || '0', 10))}
                     onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                     className="w-8 text-center rounded border border-stone-200 py-0.5" />
                 </td>
               ))}
-              <td className="px-0.5 text-center font-bold text-stone-500">{totaleTurno(t.sigla) || '·'}</td>
+              <td className="px-0.5 text-center font-bold text-stone-500">{totaleTurno(m) || '·'}</td>
             </tr>
           ))}
         </tbody>
@@ -1060,7 +1069,7 @@ function GrigliaAmbito({ amb, colsAmbito, fab, onSet, onRemove }: {
 }
 
 function FabbisognoPanel({ colsAmbito, puoFabbisogno, fab, onSet, onRemove }: {
-  colsAmbito: (amb: string) => { turni: ColonnaRow[]; proprieta: ProprietaTurno[] }
+  colsAmbito: (amb: string) => { meta: string[]; proprieta: ProprietaTurno[] }
   puoFabbisogno: boolean
   fab: FabRow[]
   onSet: (amb: string, turno: string, prop: string, n: number) => void
@@ -1103,8 +1112,8 @@ function FabbisognoPanel({ colsAmbito, puoFabbisogno, fab, onSet, onRemove }: {
             </div>
           )}
           <p className="text-[10px] text-stone-400 leading-tight">
-            Conteggio visivo: quanti turnisti servono per turno e proprietà. I fabbisogni speciali
-            sovrascrivono il Normale. Non cambia la generazione.
+            Quanti turnisti servono di mattina e pomeriggio (per proprietà). La Lunga vale 1 mattina +
+            1 pomeriggio; la reperibilità non conta. Gli speciali sovrascrivono il Normale.
           </p>
         </>
       )}
