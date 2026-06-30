@@ -41,6 +41,8 @@ export interface RepartoResponsabile {
 export interface TipoTurno {
   id:               string
   reparto_id:       string
+  /** Schema a cui appartiene il tipo (ogni schema ha i suoi turni). Default 1. */
+  schema_num?:      number
   sigla:            string
   nome:             string
   ora_inizio:       string | null
@@ -59,6 +61,8 @@ export interface TipoTurno {
 export interface ProprietaTurno {
   id:         string
   reparto_id: string
+  /** Schema a cui appartiene la proprietà (ogni schema ha i suoi flag). Default 1. */
+  schema_num?: number
   sigla:      string
   nome:       string
   colore_bg:  string

@@ -18,10 +18,13 @@
 
 import { useState, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Table2, Tag, Flag, Trash2, GripVertical, Info, Zap, Plus, ArrowLeft } from 'lucide-react'
+import { Table2, Tag, Flag, Trash2, GripVertical, Info, Zap, Plus, ArrowLeft, Copy, ListChecks } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useReparto } from '../../contexts/RepartoContext'
 import { useMediciReparto } from '../../hooks/useMediciReparto'
+import { useConfirm } from '../../hooks/useConfirm'
+import { ConfirmModal } from '../../components/ConfirmModal'
+import { TipiSection, ProprietaSection } from './TipiTurnoPage'
 import type { TipoTurno, ProprietaTurno } from '../../types'
 
 // Colore stabile per numero turnista (come il vecchio designer).
@@ -51,21 +54,46 @@ export function SchemaDesignerNuovo() {
   const dragNum = useRef<number | null>(null)
   const dragSource = useRef<{ g: number; slot: number; sigla: string } | null>(null)
   const { data: medici = [] } = useMediciReparto()
+  const { confirm, confirmState } = useConfirm()
 
   const key = ['schema-matrice', repartoAttivo, schemaNum]
-  const invalida = () => qc.invalidateQueries({ queryKey: key })
+  const invalida = () => {
+    qc.invalidateQueries({ queryKey: key })
+    qc.invalidateQueries({ queryKey: ['schemi-esistenti', repartoAttivo] })
+  }
+  const invalidaSchemi = () => qc.invalidateQueries({ queryKey: ['schemi-esistenti', repartoAttivo] })
+
+  // Schemi che "esistono" = hanno almeno un tipo di turno o un giorno. Il
+  // selettore mostra sempre 1/2/3 + quelli esistenti + quello corrente, con "+".
+  const { data: schemiEsistenti = [] } = useQuery<number[]>({
+    queryKey: ['schemi-esistenti', repartoAttivo],
+    queryFn: async () => {
+      const [a, b] = await Promise.all([
+        supabase.from('tipi_turno').select('schema_num').eq('reparto_id', repartoAttivo),
+        supabase.from('schema_giorno').select('schema_num').eq('reparto_id', repartoAttivo),
+      ])
+      const s = new Set<number>()
+      ;(a.data ?? []).forEach((r: { schema_num: number }) => s.add(r.schema_num))
+      ;(b.data ?? []).forEach((r: { schema_num: number }) => s.add(r.schema_num))
+      return [...s]
+    },
+  })
+  const schemiList = [...new Set([1, 2, 3, ...schemiEsistenti, schemaNum])].sort((a, b) => a - b)
+  const prossimoSchema = Math.max(...schemiList) + 1
 
   const { data: tipiTurno = [] } = useQuery<TipoTurno[]>({
-    queryKey: ['tipi_turno', repartoAttivo],
+    queryKey: ['tipi_turno', repartoAttivo, schemaNum],
     queryFn: async () => {
-      const { data, error } = await supabase.from('tipi_turno').select('*').eq('reparto_id', repartoAttivo).order('ordine')
+      const { data, error } = await supabase.from('tipi_turno').select('*')
+        .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum).order('ordine')
       if (error) throw error; return (data ?? []) as TipoTurno[]
     },
   })
   const { data: proprieta = [] } = useQuery<ProprietaTurno[]>({
-    queryKey: ['proprieta_turno', repartoAttivo],
+    queryKey: ['proprieta_turno', repartoAttivo, schemaNum],
     queryFn: async () => {
-      const { data, error } = await supabase.from('proprieta_turno').select('*').eq('reparto_id', repartoAttivo).order('ordine')
+      const { data, error } = await supabase.from('proprieta_turno').select('*')
+        .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum).order('ordine')
       if (error) throw error; return (data ?? []) as ProprietaTurno[]
     },
   })
@@ -277,11 +305,38 @@ export function SchemaDesignerNuovo() {
     invalida()
   }
 
+  // ── Schemi: aggiungi nuovo / copia da un altro schema ────────────
+  function aggiungiSchema() {
+    setSchemaNum(prossimoSchema)
+    setGiornoSel(null)
+    setMode('matrice')
+  }
+  async function copiaDa(from: number) {
+    if (from === schemaNum) return
+    const ok = await confirm({
+      title: `Copia da Schema ${from}`,
+      message: `Sovrascrive lo Schema ${schemaNum} con una copia completa dello Schema ${from} ` +
+               `(tipi di turno, proprietà, giorni, colonne, celle e fabbisogno). Procedere?`,
+      confirmLabel: 'Copia', danger: true,
+    })
+    if (!ok) return
+    setErr(null)
+    const { error } = await supabase.rpc('copia_schema', { p_reparto: repartoAttivo, p_from: from, p_to: schemaNum })
+    if (error) { setErr(error.message); return }
+    qc.invalidateQueries({ queryKey: ['tipi_turno', repartoAttivo] })
+    qc.invalidateQueries({ queryKey: ['proprieta_turno', repartoAttivo] })
+    qc.invalidateQueries({ queryKey: ['schema-fabbisogno', repartoAttivo] })
+    invalida()
+  }
+
   const giorniAttivi = giorni.map(g => g.giorno_settimana)
   const colonneOrdinate = colonne   // già ordinate per 'ordine'
+  const turniColonne = colonne.filter(c => c.tipo === 'turno')
 
   return (
     <div className="flex flex-col gap-4">
+      <ConfirmModal {...confirmState.opts} open={confirmState.open}
+        onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
       <div>
         <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
           <Table2 size={20} style={{ color: '#476540' }} />
@@ -301,17 +356,35 @@ export function SchemaDesignerNuovo() {
       )}
       {err && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{err}</div>}
 
-      {/* Selettore schema */}
-      <div className="flex items-center gap-2 text-sm">
+      {/* Selettore schema (dinamico) + aggiungi + copia da schema */}
+      <div className="flex items-center gap-2 text-sm flex-wrap">
         <span className="text-stone-500">Schema:</span>
-        {[1, 2, 3].map(n => (
-          <button key={n} onClick={() => { setSchemaNum(n); setGiornoSel(null) }}
+        {schemiList.map(n => (
+          <button key={n} onClick={() => { setSchemaNum(n); setGiornoSel(null); setMode('matrice') }}
             className="px-3 py-1 rounded font-semibold text-sm border transition-colors"
             style={schemaNum === n ? { background: '#476540', color: '#fff', borderColor: '#2b3c24' } : { background: '#fff', color: '#476540', borderColor: '#cdd9c4' }}>
             {n}
           </button>
         ))}
+        <button onClick={aggiungiSchema} title="Aggiungi un nuovo schema"
+          className="px-2 py-1 rounded font-bold text-sm border border-dashed border-[#9ab488] text-[#476540] hover:bg-[#eef3e8]">
+          <Plus size={14} className="inline -mt-0.5" />
+        </button>
+        {schemiList.length > 1 && (
+          <div className="ml-auto flex items-center gap-1.5">
+            <Copy size={13} className="text-stone-400" />
+            <select value="" onChange={e => { if (e.target.value) { copiaDa(parseInt(e.target.value, 10)); e.target.value = '' } }}
+              className="input text-xs py-1" title="Copia tutto (turni, struttura, fabbisogno) da un altro schema">
+              <option value="" disabled>Copia da schema…</option>
+              {schemiList.filter(n => n !== schemaNum).map(n => <option key={n} value={n}>Schema {n}</option>)}
+            </select>
+          </div>
+        )}
       </div>
+
+      {/* ① TIPI DI TURNO + PROPRIETÀ dello schema (i mattoni: si definiscono per primi) */}
+      <TipiSection reparto={repartoAttivo} schemaNum={schemaNum} onChanged={invalidaSchemi} />
+      <ProprietaSection reparto={repartoAttivo} schemaNum={schemaNum} onChanged={invalidaSchemi} />
 
       {/* Picker: Giorni + Turni/Proprietà */}
       <div className="grid sm:grid-cols-2 gap-3">
@@ -424,9 +497,10 @@ export function SchemaDesignerNuovo() {
         </button>
       )}
 
-      {/* ── TABELLA TURNI (slot): trascina i turnisti nei riquadri ── */}
+      {/* ── TABELLA TURNI (slot) a sinistra · FABBISOGNO sticky a destra ── */}
       {mode === 'tabella' && (
-        <div className="card p-3 space-y-3">
+        <div className="flex gap-4 items-start">
+        <div className="card p-3 space-y-3 min-w-0 overflow-x-auto">
           <div>
             <div className="text-xs font-semibold text-stone-600 mb-1">Turnisti — trascina nei riquadri delle colonne-turno</div>
             <div className="flex flex-wrap gap-1">
@@ -524,6 +598,139 @@ export function SchemaDesignerNuovo() {
             il <Trash2 size={11} className="inline -mt-0.5" /> elimina lo slot. Le proprietà <strong>esclusive</strong> 🔒 escludono le altre sullo stesso slot.
           </p>
         </div>
+        <div className="shrink-0 sticky top-4 self-start">
+          <FabbisognoPanel reparto={repartoAttivo} schemaNum={schemaNum}
+            turni={turniColonne} proprieta={proprieta} />
+        </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Pannello Fabbisogno (conteggio dichiarato per ambito × turno × proprietà) ──
+interface FabRow { ambito: string; turno_sigla: string; totale: number; per_proprieta: Record<string, number> }
+const AMBITI_SPECIALI: { key: string; label: string }[] = [
+  { key: 'prefestivo', label: 'Prefestivo' },
+  { key: 'sabato',     label: 'Sabato' },
+  { key: 'festivi',    label: 'Domenica / Festivi' },
+]
+const labelAmbito = (k: string) => k === 'normale' ? 'Normale' : (AMBITI_SPECIALI.find(a => a.key === k)?.label ?? k)
+
+function FabbisognoPanel({ reparto, schemaNum, turni, proprieta }: {
+  reparto: string; schemaNum: number; turni: ColonnaRow[]; proprieta: ProprietaTurno[]
+}) {
+  const qc = useQueryClient()
+  const [extra, setExtra] = useState<string[]>([])   // ambiti speciali aperti localmente
+
+  const fkey = ['schema-fabbisogno', reparto, schemaNum]
+  const { data: fab = [] } = useQuery<FabRow[]>({
+    queryKey: fkey,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('schema_fabbisogno')
+        .select('ambito, turno_sigla, totale, per_proprieta')
+        .eq('reparto_id', reparto).eq('schema_num', schemaNum)
+      if (error) throw error
+      return (data ?? []) as FabRow[]
+    },
+  })
+  const reload = () => qc.invalidateQueries({ queryKey: fkey })
+
+  const valore = (amb: string, turno: string, prop: string) =>
+    fab.find(f => f.ambito === amb && f.turno_sigla === turno)?.per_proprieta?.[prop] ?? 0
+  const totaleTurno = (amb: string, turno: string) =>
+    fab.find(f => f.ambito === amb && f.turno_sigla === turno)?.totale ?? 0
+
+  async function setVal(amb: string, turno: string, prop: string, n: number) {
+    const row = fab.find(f => f.ambito === amb && f.turno_sigla === turno)
+    const pp: Record<string, number> = { ...(row?.per_proprieta ?? {}) }
+    if (n > 0) pp[prop] = n; else delete pp[prop]
+    const totale = Object.values(pp).reduce((a, b) => a + (b || 0), 0)
+    const { error } = await supabase.from('schema_fabbisogno').upsert(
+      { reparto_id: reparto, schema_num: schemaNum, ambito: amb, turno_sigla: turno, totale, per_proprieta: pp },
+      { onConflict: 'reparto_id,schema_num,ambito,turno_sigla' })
+    if (!error) reload()
+  }
+  async function rimuoviAmbito(amb: string) {
+    await supabase.from('schema_fabbisogno').delete()
+      .eq('reparto_id', reparto).eq('schema_num', schemaNum).eq('ambito', amb)
+    setExtra(x => x.filter(a => a !== amb)); reload()
+  }
+
+  // Ambiti mostrati: Normale sempre + quelli con dati + quelli aperti localmente.
+  const conDati = [...new Set(fab.map(f => f.ambito))].filter(a => a !== 'normale')
+  const specialiAperti = [...new Set([...conDati, ...extra])]
+  const daAggiungere = AMBITI_SPECIALI.filter(a => !specialiAperti.includes(a.key))
+
+  function GrigliaAmbito({ amb }: { amb: string }) {
+    return (
+      <div className="border border-stone-200 rounded-lg p-2">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs font-bold text-stone-700">{labelAmbito(amb)}</span>
+          {amb !== 'normale' && (
+            <button onClick={() => rimuoviAmbito(amb)} className="text-stone-300 hover:text-red-500" title="Rimuovi questo fabbisogno speciale">
+              <Trash2 size={12} />
+            </button>
+          )}
+        </div>
+        <table className="text-[11px] border-collapse w-full">
+          <thead>
+            <tr className="text-stone-500">
+              <th className="text-left font-semibold pr-1"> </th>
+              {proprieta.map(p => (
+                <th key={p.sigla} className="px-0.5 font-semibold text-center" title={p.nome}>{p.sigla}</th>
+              ))}
+              <th className="px-0.5 font-semibold text-center text-stone-400">Tot</th>
+            </tr>
+          </thead>
+          <tbody>
+            {turni.map(t => (
+              <tr key={t.sigla}>
+                <td className="pr-1 font-bold" style={{ color: '#476540' }}>{t.sigla}</td>
+                {proprieta.map(p => (
+                  <td key={p.sigla} className="px-0.5 py-0.5 text-center">
+                    <input type="number" min={0} max={99}
+                      key={`${amb}|${t.sigla}|${p.sigla}|${valore(amb, t.sigla, p.sigla)}`}
+                      defaultValue={valore(amb, t.sigla, p.sigla) || ''}
+                      onBlur={e => setVal(amb, t.sigla, p.sigla, parseInt(e.target.value || '0', 10))}
+                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                      className="w-8 text-center rounded border border-stone-200 py-0.5" />
+                  </td>
+                ))}
+                <td className="px-0.5 text-center font-bold text-stone-500">{totaleTurno(amb, t.sigla) || '·'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  return (
+    <div className="card p-3 w-64 space-y-2">
+      <h3 className="text-sm font-bold text-stone-800 flex items-center gap-1.5">
+        <ListChecks size={15} style={{ color: '#476540' }} /> Fabbisogno
+      </h3>
+      {turni.length === 0 || proprieta.length === 0 ? (
+        <p className="text-[11px] text-stone-400 italic">
+          Definisci almeno un turno e una proprietà per impostare il fabbisogno.
+        </p>
+      ) : (
+        <>
+          <GrigliaAmbito amb="normale" />
+          {specialiAperti.map(amb => <GrigliaAmbito key={amb} amb={amb} />)}
+          {daAggiungere.length > 0 && (
+            <select value="" onChange={e => { if (e.target.value) { setExtra(x => [...x, e.target.value]); e.target.value = '' } }}
+              className="input text-[11px] py-1 w-full">
+              <option value="" disabled>+ Aggiungi fabbisogno speciale…</option>
+              {daAggiungere.map(a => <option key={a.key} value={a.key}>{a.label}</option>)}
+            </select>
+          )}
+          <p className="text-[10px] text-stone-400 leading-tight">
+            Conteggio visivo: quanti turnisti servono per turno e proprietà. I fabbisogni speciali
+            sovrascrivono il Normale. Non cambia la generazione.
+          </p>
+        </>
       )}
     </div>
   )

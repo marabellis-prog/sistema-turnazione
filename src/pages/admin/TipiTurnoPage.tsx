@@ -25,7 +25,7 @@ const EMPTY_TIPO: DraftTipo = {
   colore_bg: '#dde8d5', colore_fg: '#2e4a28', ordine: 0,
 }
 
-function TipiSection({ reparto }: { reparto: string }) {
+export function TipiSection({ reparto, schemaNum, onChanged }: { reparto: string; schemaNum: number; onChanged?: () => void }) {
   const qc = useQueryClient()
   const { confirm, confirmState } = useConfirm()
   const [draft, setDraft]   = useState<DraftTipo>(EMPTY_TIPO)
@@ -33,15 +33,15 @@ function TipiSection({ reparto }: { reparto: string }) {
   const [err, setErr]       = useState('')
 
   const { data: tipi = [] } = useQuery<TipoTurno[]>({
-    queryKey: ['tipi_turno', reparto],
+    queryKey: ['tipi_turno', reparto, schemaNum],
     queryFn: async () => {
       const { data, error } = await supabase.from('tipi_turno').select('*')
-        .eq('reparto_id', reparto).order('ordine')
+        .eq('reparto_id', reparto).eq('schema_num', schemaNum).order('ordine')
       if (error) throw error
       return (data ?? []) as TipoTurno[]
     },
   })
-  const reload = () => qc.invalidateQueries({ queryKey: ['tipi_turno', reparto] })
+  const reload = () => { qc.invalidateQueries({ queryKey: ['tipi_turno', reparto] }); onChanged?.() }
 
   function startNew() { setEditId(null); setDraft({ ...EMPTY_TIPO, ordine: tipi.length + 1 }) }
   function startEdit(t: TipoTurno) {
@@ -54,7 +54,7 @@ function TipiSection({ reparto }: { reparto: string }) {
     const sigla = draft.sigla.trim().toUpperCase()
     if (!sigla) { setErr('Sigla obbligatoria.'); return }
     setErr('')
-    const payload = { ...draft, sigla, reparto_id: reparto,
+    const payload = { ...draft, sigla, reparto_id: reparto, schema_num: schemaNum,
       ora_inizio: draft.ora_inizio || null, ora_fine: draft.ora_fine || null }
     const res = editId
       ? await supabase.from('tipi_turno').update(payload).eq('id', editId)
@@ -165,7 +165,7 @@ function TipiSection({ reparto }: { reparto: string }) {
   )
 }
 
-function ProprietaSection({ reparto }: { reparto: string }) {
+export function ProprietaSection({ reparto, schemaNum, onChanged }: { reparto: string; schemaNum: number; onChanged?: () => void }) {
   const qc = useQueryClient()
   const { confirm, confirmState } = useConfirm()
   const [sigla, setSigla]   = useState('')
@@ -175,22 +175,22 @@ function ProprietaSection({ reparto }: { reparto: string }) {
   const [err, setErr]       = useState('')
 
   const { data: props = [] } = useQuery<ProprietaTurno[]>({
-    queryKey: ['proprieta_turno', reparto],
+    queryKey: ['proprieta_turno', reparto, schemaNum],
     queryFn: async () => {
       const { data, error } = await supabase.from('proprieta_turno').select('*')
-        .eq('reparto_id', reparto).order('ordine')
+        .eq('reparto_id', reparto).eq('schema_num', schemaNum).order('ordine')
       if (error) throw error
       return (data ?? []) as ProprietaTurno[]
     },
   })
-  const reload = () => qc.invalidateQueries({ queryKey: ['proprieta_turno', reparto] })
+  const reload = () => { qc.invalidateQueries({ queryKey: ['proprieta_turno', reparto] }); onChanged?.() }
 
   async function aggiungi() {
     const s = sigla.trim().toUpperCase()
     if (!s) return
     setErr('')
     const { error } = await supabase.from('proprieta_turno')
-      .insert({ reparto_id: reparto, sigla: s, nome: nome.trim(), colore_bg: colore, esclusiva, ordine: props.length + 1 })
+      .insert({ reparto_id: reparto, schema_num: schemaNum, sigla: s, nome: nome.trim(), colore_bg: colore, esclusiva, ordine: props.length + 1 })
     if (error) { setErr(error.message); return }
     setSigla(''); setNome(''); setEsclusiva(false); reload()
   }
@@ -268,8 +268,8 @@ export function TipiTurnoPage() {
           e le proprietà (sub/med/supporto), con colori, orari e peso.
         </p>
       </div>
-      <TipiSection reparto={repartoAttivo} />
-      <ProprietaSection reparto={repartoAttivo} />
+      <TipiSection reparto={repartoAttivo} schemaNum={1} />
+      <ProprietaSection reparto={repartoAttivo} schemaNum={1} />
     </div>
   )
 }
