@@ -3,7 +3,7 @@ import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 import { Users, Calendar, Zap, Table2, AlertCircle, ArrowRightLeft, CalendarDays, Archive, CalendarClock, ChevronRight, ChevronDown, SlidersHorizontal, Tag } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
-import { useReparto } from '../../contexts/RepartoContext'
+import { useReparto, REPARTO_11N } from '../../contexts/RepartoContext'
 import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
 import { useCambiTurnoRealtime } from '../../hooks/useCambiTurnoRealtime'
@@ -17,8 +17,8 @@ const links = [
   { to: '/admin/centro-controllo', label: 'Centro di controllo', Icon: SlidersHorizontal },
   { to: '/admin/medici',  label: 'Turnisti',          Icon: Users },
   { to: '/admin/config',  label: 'Festività',         Icon: CalendarDays },
-  { to: '/admin/schema',  label: 'Disegna Schema',    Icon: Table2 },
-  { to: '/admin/schema-nuovo', label: 'Schema NUOVO ⚗️', Icon: Tag },
+  { to: '/admin/schema-nuovo', label: 'Disegna Schema ⚗️', Icon: Table2 },
+  { to: '/admin/schema',  label: 'Schema classico (11N)', Icon: Tag },   // legacy: solo 11N, rimosso a fine migrazione
   { to: '/admin/genera',  label: 'Genera Calendario', Icon: Zap },
   { to: '/admin/anteprima-turnazione', label: 'Anteprima turni', Icon: CalendarClock },
   { to: '/admin/turni',   label: 'Modifica Turni',    Icon: Calendar },
@@ -151,7 +151,12 @@ export function AdminLayout() {
           </select>
         </div>
 
-        {links.filter(l => isSuperAdmin || l.to !== '/admin/centro-controllo').map(({ to, label, Icon }) => {
+        {links
+          .filter(l => isSuperAdmin || l.to !== '/admin/centro-controllo')
+          // Lo "Schema classico" (vecchio designer) si vede solo su 11N: gli altri
+          // reparti usano solo il nuovo "Disegna Schema". Niente confusione.
+          .filter(l => l.to !== '/admin/schema' || repartoAttivo === REPARTO_11N)
+          .map(({ to, label, Icon }) => {
           const isActive = location.pathname.startsWith(to)
           return (
             <button
