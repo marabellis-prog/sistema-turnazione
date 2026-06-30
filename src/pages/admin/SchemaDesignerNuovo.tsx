@@ -18,10 +18,15 @@
 
 import { useState, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Table2, Tag, Flag, Trash2, GripVertical, Info } from 'lucide-react'
+import { Table2, Tag, Flag, Trash2, GripVertical, Info, Zap, Plus, ArrowLeft } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useReparto } from '../../contexts/RepartoContext'
+import { useMediciReparto } from '../../hooks/useMediciReparto'
 import type { TipoTurno, ProprietaTurno } from '../../types'
+
+// Colore stabile per numero turnista (come il vecchio designer).
+const COLORI_MEDICO = ['#e57373','#64b5f6','#81c784','#ffb74d','#ba68c8','#4db6ac','#f06292','#7986cb','#a1887f','#90a4ae','#dce775','#4fc3f7','#ff8a65','#9575cd']
+const coloreMedico = (n: number) => COLORI_MEDICO[(n - 1) % COLORI_MEDICO.length]
 
 const GIORNI = [
   { n: 1, label: 'LUN' }, { n: 2, label: 'MAR' }, { n: 3, label: 'MER' },
@@ -32,15 +37,19 @@ const labelGiorno = (n: number) => GIORNI.find(g => g.n === n)?.label ?? '?'
 interface GiornoRow { id: string; giorno_settimana: number; ordine: number }
 interface ColonnaRow { id: string; tipo: 'turno' | 'flag'; sigla: string; ordine: number }
 interface CheckRow { giorno_settimana: number; colonna_sigla: string; attivo: boolean }
+interface CellaRow { id: string; giorno_settimana: number; slot_idx: number; colonna_sigla: string; numero: number | null; attivo: boolean }
 
 export function SchemaDesignerNuovo() {
   const qc = useQueryClient()
   const { repartoAttivo, repartoCorrente } = useReparto()
   const [schemaNum, setSchemaNum] = useState(1)
   const [giornoSel, setGiornoSel] = useState<number | null>(null)
+  const [mode, setMode] = useState<'matrice' | 'tabella'>('matrice')
   const [err, setErr] = useState<string | null>(null)
   const dragCol = useRef<string | null>(null)
   const [dragOver, setDragOver] = useState<string | null>(null)
+  const dragNum = useRef<number | null>(null)
+  const { data: medici = [] } = useMediciReparto()
 
   const key = ['schema-matrice', repartoAttivo, schemaNum]
   const invalida = () => qc.invalidateQueries({ queryKey: key })
@@ -63,7 +72,7 @@ export function SchemaDesignerNuovo() {
     queryKey: [...key, 'giorni'],
     queryFn: async () => {
       const { data, error } = await supabase.from('schema_giorno').select('id, giorno_settimana, ordine')
-        .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum).order('ordine')
+        .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum).order('giorno_settimana')
       if (error) throw error; return (data ?? []) as GiornoRow[]
     },
   })
@@ -84,9 +93,27 @@ export function SchemaDesignerNuovo() {
     },
   })
 
+  const { data: celle = [] } = useQuery<CellaRow[]>({
+    queryKey: [...key, 'celle'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('schema_cella')
+        .select('id, giorno_settimana, slot_idx, colonna_sigla, numero, attivo')
+        .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum)
+      if (error) throw error; return (data ?? []) as CellaRow[]
+    },
+  })
+
   const isChecked = (g: number, sigla: string) =>
     checks.some(c => c.giorno_settimana === g && c.colonna_sigla === sigla && c.attivo)
   const colColor = (sigla: string) => tipiTurno.find(t => t.sigla === sigla)
+  // slot_idx presenti per un giorno (almeno 0)
+  const slotsDelGiorno = (g: number) => {
+    const idxs = new Set<number>(celle.filter(c => c.giorno_settimana === g).map(c => c.slot_idx))
+    idxs.add(0)
+    return [...idxs].sort((a, b) => a - b)
+  }
+  const cella = (g: number, slot: number, sigla: string) =>
+    celle.find(c => c.giorno_settimana === g && c.slot_idx === slot && c.colonna_sigla === sigla)
 
   async function aggiungiGiorno(g: number) {
     setErr(null)
@@ -162,7 +189,47 @@ export function SchemaDesignerNuovo() {
     invalida()
   }
 
+  // ── Slot / numeri (tabella turni) ────────────────────────────────
+  async function aggiungiSlot(g: number) {
+    const next = Math.max(-1, ...slotsDelGiorno(g)) + 1
+    // crea una cella "segnaposto" sulla prima colonna-turno del giorno così lo slot esiste
+    const primaTurno = colonne.find(c => c.tipo === 'turno' && isChecked(g, c.sigla))
+    if (!primaTurno) { setErr('Aggiungi prima almeno una colonna-turno a questo giorno (nella matrice).'); return }
+    const { error } = await supabase.from('schema_cella')
+      .upsert({ reparto_id: repartoAttivo, schema_num: schemaNum, giorno_settimana: g, slot_idx: next, colonna_sigla: primaTurno.sigla, numero: null, attivo: false },
+        { onConflict: 'reparto_id,schema_num,giorno_settimana,slot_idx,colonna_sigla' })
+    if (error) { setErr(error.message); return }
+    invalida()
+  }
+  async function dropNumero(g: number, slot: number, sigla: string) {
+    const num = dragNum.current; dragNum.current = null
+    if (num == null) return
+    setErr(null)
+    // "un solo numero per riga": svuota le altre colonne-turno dello stesso slot
+    const altre = celle.filter(c => c.giorno_settimana === g && c.slot_idx === slot && c.colonna_sigla !== sigla && c.numero != null)
+    for (const c of altre) await supabase.from('schema_cella').update({ numero: null }).eq('id', c.id)
+    const { error } = await supabase.from('schema_cella')
+      .upsert({ reparto_id: repartoAttivo, schema_num: schemaNum, giorno_settimana: g, slot_idx: slot, colonna_sigla: sigla, numero: num },
+        { onConflict: 'reparto_id,schema_num,giorno_settimana,slot_idx,colonna_sigla' })
+    if (error) { setErr(error.message); return }
+    invalida()
+  }
+  async function svuotaNumero(g: number, slot: number, sigla: string) {
+    const c = cella(g, slot, sigla); if (!c) return
+    await supabase.from('schema_cella').update({ numero: null }).eq('id', c.id)
+    invalida()
+  }
+  async function toggleCellaFlag(g: number, slot: number, sigla: string) {
+    const c = cella(g, slot, sigla)
+    const { error } = await supabase.from('schema_cella')
+      .upsert({ reparto_id: repartoAttivo, schema_num: schemaNum, giorno_settimana: g, slot_idx: slot, colonna_sigla: sigla, attivo: !(c?.attivo) },
+        { onConflict: 'reparto_id,schema_num,giorno_settimana,slot_idx,colonna_sigla' })
+    if (error) { setErr(error.message); return }
+    invalida()
+  }
+
   const giorniAttivi = giorni.map(g => g.giorno_settimana)
+  const colonneOrdinate = colonne   // già ordinate per 'ordine'
 
   return (
     <div className="flex flex-col gap-4">
@@ -299,9 +366,96 @@ export function SchemaDesignerNuovo() {
           </table>
         </div>
       )}
-      <p className="text-[11px] text-stone-400">
-        Prossime tappe: slot/numeri dei medici dentro le colonne-turno + pannello Fabbisogno.
-      </p>
+      {/* Bottone Genera Tabella turni (solo con ≥1 giorno e ≥1 colonna) */}
+      {giorni.length > 0 && colonne.length > 0 && (
+        <button onClick={() => setMode(m => m === 'tabella' ? 'matrice' : 'tabella')}
+          className="self-start flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white shadow"
+          style={{ background: mode === 'tabella' ? '#7a5a2f' : '#476540' }}>
+          {mode === 'tabella' ? <><ArrowLeft size={15} /> Torna alla struttura</> : <><Zap size={15} /> Genera Tabella turni</>}
+        </button>
+      )}
+
+      {/* ── TABELLA TURNI (slot): trascina i turnisti nei riquadri ── */}
+      {mode === 'tabella' && (
+        <div className="card p-3 space-y-3">
+          <div>
+            <div className="text-xs font-semibold text-stone-600 mb-1">Turnisti — trascina nei riquadri delle colonne-turno</div>
+            <div className="flex flex-wrap gap-1">
+              {medici.map(m => (
+                <div key={m.id} draggable onDragStart={() => { dragNum.current = m.numero_ordine ?? null }}
+                  className="px-2 py-1 rounded text-xs font-bold text-white cursor-grab shadow-sm select-none"
+                  style={{ background: coloreMedico(m.numero_ordine ?? 0) }} title={m.nome}>
+                  {m.numero_ordine}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="text-sm border-collapse">
+              <thead>
+                <tr style={{ background: '#2b3c24' }}>
+                  <th className="px-2 py-1.5 text-white text-left" style={{ minWidth: 78 }}>Giorno</th>
+                  <th className="px-1 py-1.5 text-white text-[10px]" style={{ width: 26 }}>#</th>
+                  {colonneOrdinate.map(c => (
+                    <th key={c.id} className="px-2 py-1.5 text-center font-semibold"
+                      style={{
+                        color: c.tipo === 'turno' ? (colColor(c.sigla)?.colore_fg ?? '#fff') : '#e0e8d8',
+                        background: c.tipo === 'turno' ? (colColor(c.sigla)?.colore_bg ?? '#3a4f30') : '#3a4f30',
+                        minWidth: 48, borderLeft: '1px solid #1e2a16',
+                      }}>{c.sigla}</th>
+                  ))}
+                  <th style={{ background: '#2b3c24', width: 30 }} />
+                </tr>
+              </thead>
+              <tbody>
+                {giorni.map(row => {
+                  const g = row.giorno_settimana
+                  const slots = slotsDelGiorno(g)
+                  return slots.map((slot, si) => (
+                    <tr key={`${g}-${slot}`} style={{ background: si % 2 ? '#fff' : '#f7f9f4' }}>
+                      {si === 0 && (
+                        <td rowSpan={slots.length} className="px-2 py-1 font-bold text-white align-top" style={{ background: '#5c7a4e' }}>
+                          {labelGiorno(g)}
+                        </td>
+                      )}
+                      <td className="px-1 text-center text-[10px] text-stone-400">{slot + 1}</td>
+                      {colonneOrdinate.map(c => {
+                        if (!isChecked(g, c.sigla)) return <td key={c.id} className="border-l border-stone-100" style={{ background: '#f0f0f0' }} />
+                        if (c.tipo === 'flag') {
+                          return (
+                            <td key={c.id} className="text-center border-l border-stone-100 px-2 py-1">
+                              <input type="checkbox" checked={!!cella(g, slot, c.sigla)?.attivo}
+                                onChange={() => toggleCellaFlag(g, slot, c.sigla)} className="w-4 h-4 accent-[#476540]" />
+                            </td>
+                          )
+                        }
+                        const cel = cella(g, slot, c.sigla)
+                        return (
+                          <td key={c.id} className="text-center border-l border-stone-100 px-1 py-1"
+                            onDragOver={e => e.preventDefault()} onDrop={() => dropNumero(g, slot, c.sigla)}>
+                            {cel?.numero != null
+                              ? <span onClick={() => svuotaNumero(g, slot, c.sigla)} title="Clic per togliere"
+                                  className="inline-block w-7 h-7 leading-7 rounded text-xs font-bold text-white cursor-pointer"
+                                  style={{ background: coloreMedico(cel.numero) }}>{cel.numero}</span>
+                              : <span className="text-stone-300">–</span>}
+                          </td>
+                        )
+                      })}
+                      {si === 0 && (
+                        <td rowSpan={slots.length} className="px-1 text-center align-top">
+                          <button onClick={() => aggiungiSlot(g)} className="text-[10px] font-bold" style={{ color: '#476540' }} title="Aggiungi slot">+slot</button>
+                        </td>
+                      )}
+                    </tr>
+                  ))
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[11px] text-stone-400">Un numero per riga (drag = sposta). Clic sul quadratino per toglierlo. Prossima tappa: il Fabbisogno.</p>
+        </div>
+      )}
     </div>
   )
 }
