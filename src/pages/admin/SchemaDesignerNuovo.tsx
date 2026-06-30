@@ -619,6 +619,63 @@ const AMBITI_SPECIALI: { key: string; label: string }[] = [
 ]
 const labelAmbito = (k: string) => k === 'normale' ? 'Normale' : (AMBITI_SPECIALI.find(a => a.key === k)?.label ?? k)
 
+// Una griglia di fabbisogno per un ambito (Normale o uno speciale). Componente
+// a livello modulo (stabile): l'intestazione mostra SEMPRE il nome dell'ambito.
+function GrigliaAmbito({ amb, turni, proprieta, fab, onSet, onRemove }: {
+  amb: string; turni: ColonnaRow[]; proprieta: ProprietaTurno[]; fab: FabRow[]
+  onSet: (amb: string, turno: string, prop: string, n: number) => void
+  onRemove?: (amb: string) => void
+}) {
+  const valore = (turno: string, prop: string) =>
+    fab.find(f => f.ambito === amb && f.turno_sigla === turno)?.per_proprieta?.[prop] ?? 0
+  const totaleTurno = (turno: string) =>
+    fab.find(f => f.ambito === amb && f.turno_sigla === turno)?.totale ?? 0
+  const speciale = amb !== 'normale'
+  return (
+    <div className="border rounded-lg p-2" style={{ borderColor: speciale ? '#e3d4ad' : '#e7e5e4', background: speciale ? '#fbf7ee' : '#fff' }}>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs font-bold" style={{ color: speciale ? '#7a5a2f' : '#476540' }}>
+          {labelAmbito(amb)}{speciale && <span className="font-normal text-[10px] text-stone-400"> · override</span>}
+        </span>
+        {onRemove && (
+          <button onClick={() => onRemove(amb)} className="text-stone-300 hover:text-red-500" title="Rimuovi questo fabbisogno speciale">
+            <Trash2 size={12} />
+          </button>
+        )}
+      </div>
+      <table className="text-[11px] border-collapse w-full">
+        <thead>
+          <tr className="text-stone-500">
+            <th className="text-left font-semibold pr-1"> </th>
+            {proprieta.map(p => (
+              <th key={p.sigla} className="px-0.5 font-semibold text-center" title={p.nome}>{p.sigla}</th>
+            ))}
+            <th className="px-0.5 font-semibold text-center text-stone-400">Tot</th>
+          </tr>
+        </thead>
+        <tbody>
+          {turni.map(t => (
+            <tr key={t.sigla}>
+              <td className="pr-1 font-bold" style={{ color: '#476540' }}>{t.sigla}</td>
+              {proprieta.map(p => (
+                <td key={p.sigla} className="px-0.5 py-0.5 text-center">
+                  <input type="number" min={0} max={99}
+                    key={`${amb}|${t.sigla}|${p.sigla}|${valore(t.sigla, p.sigla)}`}
+                    defaultValue={valore(t.sigla, p.sigla) || ''}
+                    onBlur={e => onSet(amb, t.sigla, p.sigla, parseInt(e.target.value || '0', 10))}
+                    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                    className="w-8 text-center rounded border border-stone-200 py-0.5" />
+                </td>
+              ))}
+              <td className="px-0.5 text-center font-bold text-stone-500">{totaleTurno(t.sigla) || '·'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function FabbisognoPanel({ reparto, schemaNum, turni, proprieta }: {
   reparto: string; schemaNum: number; turni: ColonnaRow[]; proprieta: ProprietaTurno[]
 }) {
@@ -637,11 +694,6 @@ function FabbisognoPanel({ reparto, schemaNum, turni, proprieta }: {
     },
   })
   const reload = () => qc.invalidateQueries({ queryKey: fkey })
-
-  const valore = (amb: string, turno: string, prop: string) =>
-    fab.find(f => f.ambito === amb && f.turno_sigla === turno)?.per_proprieta?.[prop] ?? 0
-  const totaleTurno = (amb: string, turno: string) =>
-    fab.find(f => f.ambito === amb && f.turno_sigla === turno)?.totale ?? 0
 
   async function setVal(amb: string, turno: string, prop: string, n: number) {
     const row = fab.find(f => f.ambito === amb && f.turno_sigla === turno)
@@ -664,50 +716,6 @@ function FabbisognoPanel({ reparto, schemaNum, turni, proprieta }: {
   const specialiAperti = [...new Set([...conDati, ...extra])]
   const daAggiungere = AMBITI_SPECIALI.filter(a => !specialiAperti.includes(a.key))
 
-  function GrigliaAmbito({ amb }: { amb: string }) {
-    return (
-      <div className="border border-stone-200 rounded-lg p-2">
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-xs font-bold text-stone-700">{labelAmbito(amb)}</span>
-          {amb !== 'normale' && (
-            <button onClick={() => rimuoviAmbito(amb)} className="text-stone-300 hover:text-red-500" title="Rimuovi questo fabbisogno speciale">
-              <Trash2 size={12} />
-            </button>
-          )}
-        </div>
-        <table className="text-[11px] border-collapse w-full">
-          <thead>
-            <tr className="text-stone-500">
-              <th className="text-left font-semibold pr-1"> </th>
-              {proprieta.map(p => (
-                <th key={p.sigla} className="px-0.5 font-semibold text-center" title={p.nome}>{p.sigla}</th>
-              ))}
-              <th className="px-0.5 font-semibold text-center text-stone-400">Tot</th>
-            </tr>
-          </thead>
-          <tbody>
-            {turni.map(t => (
-              <tr key={t.sigla}>
-                <td className="pr-1 font-bold" style={{ color: '#476540' }}>{t.sigla}</td>
-                {proprieta.map(p => (
-                  <td key={p.sigla} className="px-0.5 py-0.5 text-center">
-                    <input type="number" min={0} max={99}
-                      key={`${amb}|${t.sigla}|${p.sigla}|${valore(amb, t.sigla, p.sigla)}`}
-                      defaultValue={valore(amb, t.sigla, p.sigla) || ''}
-                      onBlur={e => setVal(amb, t.sigla, p.sigla, parseInt(e.target.value || '0', 10))}
-                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                      className="w-8 text-center rounded border border-stone-200 py-0.5" />
-                  </td>
-                ))}
-                <td className="px-0.5 text-center font-bold text-stone-500">{totaleTurno(amb, t.sigla) || '·'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    )
-  }
-
   return (
     <div className="card p-3 w-64 space-y-2">
       <h3 className="text-sm font-bold text-stone-800 flex items-center gap-1.5">
@@ -719,14 +727,21 @@ function FabbisognoPanel({ reparto, schemaNum, turni, proprieta }: {
         </p>
       ) : (
         <>
-          <GrigliaAmbito amb="normale" />
-          {specialiAperti.map(amb => <GrigliaAmbito key={amb} amb={amb} />)}
+          <GrigliaAmbito amb="normale" turni={turni} proprieta={proprieta} fab={fab} onSet={setVal} />
+          {specialiAperti.map(amb => (
+            <GrigliaAmbito key={amb} amb={amb} turni={turni} proprieta={proprieta} fab={fab} onSet={setVal} onRemove={rimuoviAmbito} />
+          ))}
           {daAggiungere.length > 0 && (
-            <select value="" onChange={e => { if (e.target.value) { setExtra(x => [...x, e.target.value]); e.target.value = '' } }}
-              className="input text-[11px] py-1 w-full">
-              <option value="" disabled>+ Aggiungi fabbisogno speciale…</option>
-              {daAggiungere.map(a => <option key={a.key} value={a.key}>{a.label}</option>)}
-            </select>
+            <div className="flex flex-wrap gap-1 pt-0.5">
+              <span className="w-full text-[10px] text-stone-400">+ Aggiungi fabbisogno speciale:</span>
+              {daAggiungere.map(a => (
+                <button key={a.key} onClick={() => setExtra(x => [...x, a.key])}
+                  className="text-[10px] px-1.5 py-0.5 rounded border border-dashed hover:bg-[#f6efe0]"
+                  style={{ borderColor: '#bfa46a', color: '#7a5a2f' }}>
+                  + {a.label}
+                </button>
+              ))}
+            </div>
           )}
           <p className="text-[10px] text-stone-400 leading-tight">
             Conteggio visivo: quanti turnisti servono per turno e proprietà. I fabbisogni speciali
