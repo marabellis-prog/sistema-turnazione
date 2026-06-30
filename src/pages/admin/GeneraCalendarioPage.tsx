@@ -240,6 +240,7 @@ export function GeneraCalendarioPage() {
   // ── NUOVO motore dinamico: dati dello schema (reparto + schema scelto). ──
   const { data: nuovoGiorni = [] } = useQuery<{ giorno_settimana: number }[]>({
     queryKey: ['gen-schema-giorni', repartoAttivo, schemaNum],
+    staleTime: 0, refetchOnMount: 'always',
     queryFn: async () => {
       const { data, error } = await supabase.from('schema_giorno').select('giorno_settimana')
         .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum)
@@ -248,6 +249,7 @@ export function GeneraCalendarioPage() {
   })
   const { data: nuovoColonne = [] } = useQuery<{ tipo: 'turno' | 'flag'; sigla: string }[]>({
     queryKey: ['gen-schema-colonne', repartoAttivo, schemaNum],
+    staleTime: 0, refetchOnMount: 'always',
     queryFn: async () => {
       const { data, error } = await supabase.from('schema_colonna').select('tipo, sigla')
         .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum)
@@ -256,6 +258,7 @@ export function GeneraCalendarioPage() {
   })
   const { data: nuovoChecks = [] } = useQuery<{ giorno_settimana: number; colonna_sigla: string }[]>({
     queryKey: ['gen-schema-checks', repartoAttivo, schemaNum],
+    staleTime: 0, refetchOnMount: 'always',
     queryFn: async () => {
       const { data, error } = await supabase.from('schema_giorno_colonna').select('giorno_settimana, colonna_sigla')
         .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum).eq('attivo', true)
@@ -264,6 +267,7 @@ export function GeneraCalendarioPage() {
   })
   const { data: nuovoCelle = [] } = useQuery<{ giorno_settimana: number; slot_idx: number; colonna_sigla: string; numero: number | null; attivo: boolean }[]>({
     queryKey: ['gen-schema-celle', repartoAttivo, schemaNum],
+    staleTime: 0, refetchOnMount: 'always',
     queryFn: async () => {
       const { data, error } = await supabase.from('schema_cella').select('giorno_settimana, slot_idx, colonna_sigla, numero, attivo')
         .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum)
@@ -272,6 +276,7 @@ export function GeneraCalendarioPage() {
   })
   const { data: nuovoTipi = [] } = useQuery<TipoTurno[]>({
     queryKey: ['gen-tipi-turno', repartoAttivo, schemaNum],
+    staleTime: 0, refetchOnMount: 'always',
     queryFn: async () => {
       const { data, error } = await supabase.from('tipi_turno').select('*')
         .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum)
@@ -284,6 +289,7 @@ export function GeneraCalendarioPage() {
   const { data: schemiDisponibili = [] } = useQuery<{ schema_num: number; titolo: string; nCelle: number }[]>({
     queryKey: ['gen-schemi-disp', repartoAttivo],
     enabled: repartoAttivo !== REPARTO_11N,
+    staleTime: 0, refetchOnMount: 'always',
     queryFn: async () => {
       const [giorniR, celleR, metaR] = await Promise.all([
         supabase.from('schema_giorno').select('schema_num').eq('reparto_id', repartoAttivo),
@@ -388,7 +394,7 @@ export function GeneraCalendarioPage() {
     // Conferma rafforzata
     const ok = await confirm({
       title:        '⚠️ Conferma generazione',
-      message:      `Stai per generare il calendario con Schema ${schemaNum} per il periodo ${periodoLabel}.\n\nTutte le modifiche manuali ai turni esistenti in questo periodo andranno DEFINITIVAMENTE perse e non potranno essere recuperate.\n\nProcedere?`,
+      message:      `Stai per generare il calendario con ${schemaLabel} per il periodo ${periodoLabel}.\n\nTutte le modifiche manuali ai turni esistenti in questo periodo andranno DEFINITIVAMENTE perse e non potranno essere recuperate.\n\nProcedere?`,
       confirmLabel: 'Sì, genera',
       danger:       true,
     })
@@ -504,7 +510,7 @@ export function GeneraCalendarioPage() {
       }
 
       setStato('ok')
-      setMessaggio(`✓ Generati ${turniGenerati.length} turni · Schema ${schemaNum} · ${periodoLabel}`)
+      setMessaggio(`✓ Generati ${turniGenerati.length} turni · ${schemaLabel} · ${periodoLabel}`)
       // Invalida tutte le cache che ora sono stale dopo la rigenerazione:
       // - 'turni'         → CalendarioPage fetch manuale (key invalidata
       //                     come segnale, in pratica la pagina pubblica

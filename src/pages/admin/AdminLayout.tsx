@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { useReparto, REPARTO_11N } from '../../contexts/RepartoContext'
 import { useConfigReparto } from '../../hooks/useConfigReparto'
+import { useSchemaLabeler } from '../../hooks/useSchemaLabel'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
 import { useCambiTurnoRealtime } from '../../hooks/useCambiTurnoRealtime'
 import { useAutoBackup } from '../../hooks/useBackupManager'
@@ -84,6 +85,7 @@ export function AdminLayout() {
 
   // Config: schema attivo + cronologia switch (per la sezione in fondo).
   const { data: config } = useConfigReparto()
+  const labelSchema     = useSchemaLabeler(repartoAttivo)
   const schemaStorico   = config?.schema_storico ?? []
   const schemaAggiornato = schemaStorico.length >= 2   // >= 1 switch oltre la generazione
   const fmtData = (iso: string) => {
@@ -193,7 +195,7 @@ export function AdminLayout() {
                 Schema Attivo:
               </p>
               <p className="text-sm font-bold mt-0.5" style={{ color: '#e8f0e0' }}>
-                {config?.schema_attivo != null ? `Schema ${config.schema_attivo}` : '—'}
+                {config?.schema_attivo != null ? labelSchema(config.schema_attivo) : '—'}
               </p>
             </>
           ) : (
@@ -214,7 +216,7 @@ export function AdminLayout() {
                 <ol className="mt-1.5 ml-1.5 space-y-1">
                   {schemaStorico.map((e, i) => (
                     <li key={i} className="text-[11px] leading-tight" style={{ color: '#c0d0b0' }}>
-                      <span className="font-bold">Schema {e.schema}</span>
+                      <span className="font-bold">{labelSchema(e.schema)}</span>
                       <span style={{ color: '#9ab488' }}> — dal {fmtData(e.dal)}</span>
                     </li>
                   ))}

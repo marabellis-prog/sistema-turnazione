@@ -17,6 +17,7 @@ import { useMioReparto } from '../contexts/MioRepartoContext'
 import { useFerieRealtime } from '../hooks/useFerieRealtime'
 import { useTurniRealtime } from '../hooks/useTurniRealtime'
 import { useFestivitaCustom, useFestivitaCustomRealtime } from '../hooks/useFestivitaCustom'
+import { useSchemaLabeler } from '../hooks/useSchemaLabel'
 import type {
   Medico, Turno, Ferie, Configurazione, ColonnaCal,
   TurnoClinico, TurnoRicerca, SlotPlacement,
@@ -181,6 +182,7 @@ export function CalendarioPage() {
   // Utente loggato + stato modal "Richiedi Ferie" e "Riepilogo turni"
   const { effectiveUser: user } = useDebug()
   const { repartoVista } = useMioReparto()
+  const labelSchema = useSchemaLabeler(repartoVista)
   const qc = useQueryClient()
   const [showRichiediFerie, setShowRichiediFerie] = useState(false)
   const [showRichiediCambio, setShowRichiediCambio] = useState(false)
@@ -857,7 +859,7 @@ export function CalendarioPage() {
         </h1>
         {/* Info turni — nascosta sotto lg per non gonfiare la toolbar */}
         <span className="text-xs hidden lg:inline" style={{ color: '#6b6b5a' }}>
-          {medici.length} medici · Schema {config.schema_attivo} ·{' '}
+          {medici.length} medici · {labelSchema(config.schema_attivo)} ·{' '}
           {turni.length.toLocaleString('it-IT')} turni
         </span>
         {/* I bottoni su mobile mostrano SOLO icona, su lg+ anche testo.
