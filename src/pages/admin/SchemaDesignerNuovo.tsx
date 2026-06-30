@@ -72,6 +72,7 @@ export function SchemaDesignerNuovo() {
   const dragNum = useRef<number | null>(null)
   const dragSource = useRef<{ g: number; slot: number; sigla: string } | null>(null)
   const [overKey, setOverKey] = useState<string | null>(null)   // cella evidenziata durante il drag
+  const [picker, setPicker] = useState<{ g: number; slot: number; sigla: string; x: number; y: number } | null>(null)
   const { data: medici = [] } = useMediciReparto()
   const { confirm, confirmState } = useConfirm()
 
@@ -750,13 +751,15 @@ export function SchemaDesignerNuovo() {
                         const cKey = `${g}|${slot}|${c.sigla}`
                         const over = overKey === cKey
                         return (
-                          <td key={c.id} className="text-center border-l border-stone-100 px-1 py-1 transition-colors"
+                          <td key={c.id} className="text-center border-l border-stone-100 px-1 py-1 transition-colors cursor-pointer"
                             onDragOver={e => { e.preventDefault(); if (overKey !== cKey) setOverKey(cKey) }}
                             onDragLeave={() => setOverKey(k => k === cKey ? null : k)}
                             onDrop={() => { dropNumero(g, slot, c.sigla); setOverKey(null) }}
+                            onClick={e => { if ((e.target as HTMLElement).closest('[data-chip]')) return; setPicker({ g, slot, sigla: c.sigla, x: e.clientX, y: e.clientY }) }}
+                            title="Clic o trascina per inserire un turnista"
                             style={over ? { background: '#dbeccb', boxShadow: 'inset 0 0 0 2px #476540' } : undefined}>
                             {cel?.numero != null
-                              ? <span draggable
+                              ? <span draggable data-chip
                                   onDragStart={() => { dragNum.current = cel.numero; dragSource.current = { g, slot, sigla: c.sigla } }}
                                   onDragEnd={() => setOverKey(null)}
                                   onClick={() => svuotaNumero(g, slot, c.sigla)}
@@ -788,6 +791,28 @@ export function SchemaDesignerNuovo() {
             turni={turniColonne} proprieta={proprieta} />
         </div>
         </div>
+      )}
+
+      {/* Mini-elenco vicino al puntatore: clic su una cella-turno → scegli il
+          turnista da inserire (alternativa al trascinamento). */}
+      {picker && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setPicker(null)} />
+          <div className="fixed z-50 card p-1.5 shadow-2xl"
+            style={{ left: Math.max(8, Math.min(picker.x, window.innerWidth - 210)), top: Math.max(8, Math.min(picker.y, window.innerHeight - 320)), width: 200, maxHeight: 300, overflow: 'auto' }}
+            onClick={e => e.stopPropagation()}>
+            <p className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-1" style={{ color: '#476540' }}>＋ {picker.sigla} · scegli turnista</p>
+            {medici.length ? medici.map(m => (
+              <button key={m.id}
+                onClick={() => { dragNum.current = m.numero_ordine ?? null; dragSource.current = null; dropNumero(picker.g, picker.slot, picker.sigla); setPicker(null) }}
+                className="flex items-center gap-1.5 w-full text-left px-1.5 py-1 rounded hover:bg-stone-100 text-xs">
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded shrink-0 text-[11px] font-bold text-white"
+                  style={{ background: coloreMedico(m.numero_ordine ?? 0) }}>{m.numero_ordine}</span>
+                <span className="truncate flex-1">{m.nome}</span>
+              </button>
+            )) : <p className="text-xs text-stone-400 px-1.5 py-1">Nessun turnista nel reparto.</p>}
+          </div>
+        </>
       )}
     </div>
   )
