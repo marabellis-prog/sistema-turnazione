@@ -172,6 +172,7 @@ export function ProprietaSection({ reparto, schemaNum, onChanged }: { reparto: s
   const [nome, setNome]     = useState('')
   const [colore, setColore] = useState('#d4d4d4')
   const [esclusiva, setEsclusiva] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
   const [err, setErr]       = useState('')
 
   const { data: props = [] } = useQuery<ProprietaTurno[]>({
@@ -185,14 +186,23 @@ export function ProprietaSection({ reparto, schemaNum, onChanged }: { reparto: s
   })
   const reload = () => { qc.invalidateQueries({ queryKey: ['proprieta_turno', reparto] }); onChanged?.() }
 
-  async function aggiungi() {
+  function annulla() { setEditId(null); setSigla(''); setNome(''); setColore('#d4d4d4'); setEsclusiva(false); setErr('') }
+  function startEdit(p: ProprietaTurno) {
+    setEditId(p.id); setSigla(p.sigla); setNome(p.nome); setColore(p.colore_bg); setEsclusiva(!!p.esclusiva); setErr('')
+  }
+  async function salva() {
     const s = sigla.trim().toUpperCase()
     if (!s) return
     setErr('')
-    const { error } = await supabase.from('proprieta_turno')
-      .insert({ reparto_id: reparto, schema_num: schemaNum, sigla: s, nome: nome.trim(), colore_bg: colore, esclusiva, ordine: props.length + 1 })
-    if (error) { setErr(error.message); return }
-    setSigla(''); setNome(''); setEsclusiva(false); reload()
+    // In modifica la SIGLA resta invariata (è referenziata da colonne/celle/
+    // fabbisogno): per rinominare si elimina e si ricrea.
+    const res = editId
+      ? await supabase.from('proprieta_turno')
+          .update({ nome: nome.trim(), colore_bg: colore, esclusiva }).eq('id', editId)
+      : await supabase.from('proprieta_turno')
+          .insert({ reparto_id: reparto, schema_num: schemaNum, sigla: s, nome: nome.trim(), colore_bg: colore, esclusiva, ordine: props.length + 1 })
+    if (res.error) { setErr(res.error.message); return }
+    annulla(); reload()
   }
   async function elimina(p: ProprietaTurno) {
     setErr('')
@@ -223,19 +233,21 @@ export function ProprietaSection({ reparto, schemaNum, onChanged }: { reparto: s
       {err && <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">{err}</div>}
       <div className="flex flex-wrap gap-2">
         {props.map(p => (
-          <span key={p.id} className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-full"
+          <span key={p.id} onClick={() => startEdit(p)} title="Clicca per modificare"
+            className={`inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-full cursor-pointer transition-shadow ${editId === p.id ? 'ring-2 ring-offset-1 ring-[#476540]' : 'hover:ring-1 hover:ring-stone-300'}`}
             style={{ background: p.colore_bg, color: '#1f2937' }}>
             <strong>{p.sigla}</strong> {p.nome}
             {p.esclusiva && <span title="mutualmente esclusiva — non coesiste con altre proprietà">🔒</span>}
-            <button onClick={() => elimina(p)} className="hover:text-red-700"><X size={12} /></button>
+            <button onClick={e => { e.stopPropagation(); elimina(p) }} className="hover:text-red-700"><X size={12} /></button>
           </span>
         ))}
         {props.length === 0 && <span className="text-xs text-stone-400 italic">Nessuna proprietà.</span>}
       </div>
-      <div className="flex items-end gap-2 border-t border-stone-100 pt-3">
+      <div className="flex items-end gap-2 border-t border-stone-100 pt-3 flex-wrap">
         <label className="text-xs">Sigla
-          <input value={sigla} onChange={e => setSigla(e.target.value.toUpperCase())}
-            className="input text-sm py-1 w-20 uppercase" placeholder="SUB" /></label>
+          <input value={sigla} disabled={!!editId} onChange={e => setSigla(e.target.value.toUpperCase())}
+            title={editId ? 'Per rinominare, elimina e ricrea la proprietà' : ''}
+            className="input text-sm py-1 w-20 uppercase disabled:bg-stone-100 disabled:text-stone-400" placeholder="SUB" /></label>
         <label className="text-xs flex-1">Nome
           <input value={nome} onChange={e => setNome(e.target.value)} className="input text-sm py-1" placeholder="Sub-intensiva" /></label>
         <label className="text-xs">Colore
@@ -246,9 +258,14 @@ export function ProprietaSection({ reparto, schemaNum, onChanged }: { reparto: s
           <input type="checkbox" checked={esclusiva} onChange={e => setEsclusiva(e.target.checked)} className="accent-[#476540] w-4 h-4" />
           esclusiva
         </label>
-        <button onClick={aggiungi} disabled={!sigla.trim()} className="btn-primary py-1 px-3 text-xs gap-1">
-          <Plus size={12} /> Aggiungi
+        <button onClick={salva} disabled={!sigla.trim()} className="btn-primary py-1 px-3 text-xs gap-1">
+          {editId ? <><Save size={12} /> Salva</> : <><Plus size={12} /> Aggiungi</>}
         </button>
+        {editId && (
+          <button onClick={annulla} className="btn-secondary py-1 px-2 text-xs gap-1">
+            <X size={12} /> Annulla
+          </button>
+        )}
       </div>
     </div>
   )
