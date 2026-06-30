@@ -251,6 +251,12 @@ export interface Turno {
   //   is_med = slot_mattina === 'MED' || slot_pomeriggio === 'MED'
   is_sub: boolean
   is_med: boolean
+  /** Modello DINAMICO (nuovo schema): il turno "vero" (sigla del tipo di turno,
+   *  es. 'M','L','Swing') e le proprietà attive (es. ['SUB']). Popolati dalla
+   *  generazione dal nuovo schema; null/[] sui turni del vecchio motore. Le
+   *  colonne vecchie (turno_clinico, slot_*) restano derivate per compat. */
+  turno_sigla?: string | null
+  proprieta?:   string[]
   /** Turno teorico (rotazione) della cella, settato a generazione/aggiornamento.
    *  "modificato_manualmente" ⇔ turno_clinico/ricerca != base. null = legacy
    *  (turni generati prima della feature → fallback ricalcolo). */
