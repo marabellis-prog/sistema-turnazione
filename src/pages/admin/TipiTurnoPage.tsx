@@ -171,6 +171,7 @@ function ProprietaSection({ reparto }: { reparto: string }) {
   const [sigla, setSigla]   = useState('')
   const [nome, setNome]     = useState('')
   const [colore, setColore] = useState('#d4d4d4')
+  const [esclusiva, setEsclusiva] = useState(false)
   const [err, setErr]       = useState('')
 
   const { data: props = [] } = useQuery<ProprietaTurno[]>({
@@ -189,9 +190,9 @@ function ProprietaSection({ reparto }: { reparto: string }) {
     if (!s) return
     setErr('')
     const { error } = await supabase.from('proprieta_turno')
-      .insert({ reparto_id: reparto, sigla: s, nome: nome.trim(), colore_bg: colore, ordine: props.length + 1 })
+      .insert({ reparto_id: reparto, sigla: s, nome: nome.trim(), colore_bg: colore, esclusiva, ordine: props.length + 1 })
     if (error) { setErr(error.message); return }
-    setSigla(''); setNome(''); reload()
+    setSigla(''); setNome(''); setEsclusiva(false); reload()
   }
   async function elimina(p: ProprietaTurno) {
     setErr('')
@@ -225,6 +226,7 @@ function ProprietaSection({ reparto }: { reparto: string }) {
           <span key={p.id} className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-full"
             style={{ background: p.colore_bg, color: '#1f2937' }}>
             <strong>{p.sigla}</strong> {p.nome}
+            {p.esclusiva && <span title="mutualmente esclusiva — non coesiste con altre proprietà">🔒</span>}
             <button onClick={() => elimina(p)} className="hover:text-red-700"><X size={12} /></button>
           </span>
         ))}
@@ -239,6 +241,11 @@ function ProprietaSection({ reparto }: { reparto: string }) {
         <label className="text-xs">Colore
           <input type="color" value={colore} onChange={e => setColore(e.target.value)}
             className="w-12 h-8 rounded border border-stone-300 block" /></label>
+        <label className="text-xs flex items-center gap-1 pb-1.5 cursor-pointer"
+          title="Se attivo, questa proprietà non può coesistere con altre sullo stesso slot (mutualmente esclusiva).">
+          <input type="checkbox" checked={esclusiva} onChange={e => setEsclusiva(e.target.checked)} className="accent-[#476540] w-4 h-4" />
+          esclusiva
+        </label>
         <button onClick={aggiungi} disabled={!sigla.trim()} className="btn-primary py-1 px-3 text-xs gap-1">
           <Plus size={12} /> Aggiungi
         </button>

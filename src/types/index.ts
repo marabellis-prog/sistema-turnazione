@@ -63,6 +63,8 @@ export interface ProprietaTurno {
   nome:       string
   colore_bg:  string
   ordine:     number
+  /** true = mutualmente esclusiva (non coesiste con altre proprietà sullo slot). */
+  esclusiva?: boolean
   created_at: string
 }
 

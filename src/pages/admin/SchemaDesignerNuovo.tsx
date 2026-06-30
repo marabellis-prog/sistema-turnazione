@@ -124,6 +124,12 @@ export function SchemaDesignerNuovo() {
   }
   const cella = (g: number, slot: number, sigla: string) =>
     celle.find(c => c.giorno_settimana === g && c.slot_idx === slot && c.colonna_sigla === sigla)
+  // Nome breve da mostrare nel badge accanto al numero (cognome, o 1ª parola).
+  const nomeBadge = (n: number | null) => {
+    if (n == null) return ''
+    const m = medici.find(x => (x.numero_ordine ?? -1) === n)
+    return (m?.cognome || m?.nome?.split(' ')[0] || '') as string
+  }
 
   async function aggiungiGiorno(g: number) {
     setErr(null)
@@ -230,6 +236,19 @@ export function SchemaDesignerNuovo() {
       .upsert({ reparto_id: repartoAttivo, schema_num: schemaNum, giorno_settimana: g, slot_idx: slot, colonna_sigla: sigla, numero: num },
         { onConflict: 'reparto_id,schema_num,giorno_settimana,slot_idx,colonna_sigla' })
     if (error) { setErr(error.message); return }
+    // Comodità: riempiendo dalla strip l'ULTIMO slot, ne aggiunge uno vuoto.
+    if (src == null && slot === Math.max(0, ...slotsDelGiorno(g))) {
+      const primaTurno = colonne.find(c => c.tipo === 'turno' && isChecked(g, c.sigla))
+      if (primaTurno) await supabase.from('schema_cella')
+        .upsert({ reparto_id: repartoAttivo, schema_num: schemaNum, giorno_settimana: g, slot_idx: slot + 1, colonna_sigla: primaTurno.sigla, numero: null, attivo: false },
+          { onConflict: 'reparto_id,schema_num,giorno_settimana,slot_idx,colonna_sigla' })
+    }
+    invalida()
+  }
+  async function rimuoviSlot(g: number, slot: number) {
+    setErr(null)
+    await supabase.from('schema_cella').delete()
+      .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum).eq('giorno_settimana', g).eq('slot_idx', slot)
     invalida()
   }
   async function svuotaNumero(g: number, slot: number, sigla: string) {
@@ -239,8 +258,20 @@ export function SchemaDesignerNuovo() {
   }
   async function toggleCellaFlag(g: number, slot: number, sigla: string) {
     const c = cella(g, slot, sigla)
+    const nuovo = !(c?.attivo)
+    setErr(null)
+    if (nuovo) {
+      // Esclusione mutua: proprietà attive (flag) sullo stesso slot, escluso questo.
+      const flagAttivi = celle.filter(x => x.giorno_settimana === g && x.slot_idx === slot && x.attivo && x.colonna_sigla !== sigla
+        && colonne.some(col => col.sigla === x.colonna_sigla && col.tipo === 'flag'))
+      const prop = proprieta.find(p => p.sigla === sigla)
+      const daSpegnere = prop?.esclusiva
+        ? flagAttivi                                                                       // questa è esclusiva → spegni tutte le altre
+        : flagAttivi.filter(x => proprieta.find(p => p.sigla === x.colonna_sigla)?.esclusiva) // coesiste → spegni solo le esclusive
+      for (const x of daSpegnere) await supabase.from('schema_cella').update({ attivo: false }).eq('id', x.id)
+    }
     const { error } = await supabase.from('schema_cella')
-      .upsert({ reparto_id: repartoAttivo, schema_num: schemaNum, giorno_settimana: g, slot_idx: slot, colonna_sigla: sigla, attivo: !(c?.attivo) },
+      .upsert({ reparto_id: repartoAttivo, schema_num: schemaNum, giorno_settimana: g, slot_idx: slot, colonna_sigla: sigla, attivo: nuovo },
         { onConflict: 'reparto_id,schema_num,giorno_settimana,slot_idx,colonna_sigla' })
     if (error) { setErr(error.message); return }
     invalida()
@@ -417,7 +448,7 @@ export function SchemaDesignerNuovo() {
                   <th className="px-1 py-1.5 text-white text-[10px]" style={{ width: 26 }}>#</th>
                   {colonneOrdinate.map(c => (
                     <th key={c.id} className="px-2 py-1.5 text-center font-semibold"
-                      style={{ color: colHeader(c).fg, background: colHeader(c).bg, minWidth: 48, borderLeft: '1px solid #1e2a16' }}>
+                      style={{ color: colHeader(c).fg, background: colHeader(c).bg, minWidth: c.tipo === 'turno' ? 104 : 46, borderLeft: '1px solid #1e2a16' }}>
                       {c.sigla}
                     </th>
                   ))}
@@ -431,8 +462,13 @@ export function SchemaDesignerNuovo() {
                   return slots.map((slot, si) => (
                     <tr key={`${g}-${slot}`} style={{ background: si % 2 ? '#fff' : '#f7f9f4' }}>
                       {si === 0 && (
-                        <td rowSpan={slots.length} className="px-2 py-1 font-bold text-white align-top" style={{ background: '#5c7a4e' }}>
-                          {labelGiorno(g)}
+                        <td rowSpan={slots.length} className="px-2 py-1.5 align-top" style={{ background: '#5c7a4e' }}>
+                          <div className="font-bold text-white leading-tight">{labelGiorno(g)}</div>
+                          <button onClick={() => aggiungiSlot(g)}
+                            className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-bold rounded px-1 py-0.5"
+                            style={{ background: 'rgba(255,255,255,0.18)', color: '#fff' }} title="Aggiungi uno slot a questo giorno">
+                            <Plus size={10} /> slot
+                          </button>
                         </td>
                       )}
                       <td className="px-1 text-center text-[10px] text-stone-400">{slot + 1}</td>
@@ -461,25 +497,32 @@ export function SchemaDesignerNuovo() {
                               ? <span draggable
                                   onDragStart={() => { dragNum.current = cel.numero; dragSource.current = { g, slot, sigla: c.sigla } }}
                                   onClick={() => svuotaNumero(g, slot, c.sigla)}
-                                  title="Trascina per spostare · clic per togliere"
-                                  className="inline-block w-7 h-7 leading-7 rounded text-xs font-bold text-white cursor-grab"
-                                  style={{ background: coloreMedico(cel.numero) }}>{cel.numero}</span>
+                                  title={`${cel.numero} · ${nomeBadge(cel.numero)} — trascina per spostare · clic per togliere`}
+                                  className="inline-flex items-center gap-1 rounded text-xs font-bold text-white cursor-grab pl-0.5 pr-1.5 py-0.5 max-w-full align-middle"
+                                  style={{ background: coloreMedico(cel.numero) }}>
+                                  <span className="inline-flex items-center justify-center w-5 h-5 rounded shrink-0 text-[11px]"
+                                    style={{ background: 'rgba(255,255,255,0.28)' }}>{cel.numero}</span>
+                                  <span className="truncate max-w-[78px]">{nomeBadge(cel.numero)}</span>
+                                </span>
                               : <span className="text-stone-300">–</span>}
                           </td>
                         )
                       })}
-                      {si === 0 && (
-                        <td rowSpan={slots.length} className="px-1 text-center align-top">
-                          <button onClick={() => aggiungiSlot(g)} className="text-[10px] font-bold" style={{ color: '#476540' }} title="Aggiungi slot">+slot</button>
-                        </td>
-                      )}
+                      <td className="px-1 text-center border-l border-stone-100">
+                        <button onClick={() => rimuoviSlot(g, slot)} className="text-stone-300 hover:text-red-500" title="Elimina questo slot">
+                          <Trash2 size={13} />
+                        </button>
+                      </td>
                     </tr>
                   ))
                 })}
               </tbody>
             </table>
           </div>
-          <p className="text-[11px] text-stone-400">Un numero per riga (drag = sposta). Clic sul quadratino per toglierlo. Prossima tappa: il Fabbisogno.</p>
+          <p className="text-[11px] text-stone-400">
+            Un numero per riga (drag = sposta · clic = togli). Riempiendo l'ultimo slot ne compare un altro;
+            il <Trash2 size={11} className="inline -mt-0.5" /> elimina lo slot. Le proprietà <strong>esclusive</strong> 🔒 escludono le altre sullo stesso slot.
+          </p>
         </div>
       )}
     </div>
