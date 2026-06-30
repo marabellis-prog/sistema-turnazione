@@ -106,6 +106,15 @@ export function SchemaDesignerNuovo() {
   const isChecked = (g: number, sigla: string) =>
     checks.some(c => c.giorno_settimana === g && c.colonna_sigla === sigla && c.attivo)
   const colColor = (sigla: string) => tipiTurno.find(t => t.sigla === sigla)
+  // Colore intestazione colonna: turno → colori del tipo; flag → colore proprietà.
+  const colHeader = (c: { tipo: 'turno' | 'flag'; sigla: string }) => {
+    if (c.tipo === 'turno') {
+      const t = tipiTurno.find(x => x.sigla === c.sigla)
+      return { bg: t?.colore_bg ?? '#3a4f30', fg: t?.colore_fg ?? '#fff' }
+    }
+    const p = proprieta.find(x => x.sigla === c.sigla)
+    return { bg: p?.colore_bg ?? '#3a4f30', fg: '#fff' }
+  }
   // slot_idx presenti per un giorno (almeno 0)
   const slotsDelGiorno = (g: number) => {
     const idxs = new Set<number>(celle.filter(c => c.giorno_settimana === g).map(c => c.slot_idx))
@@ -320,8 +329,8 @@ export function SchemaDesignerNuovo() {
                     onDrop={() => dropColonna(c.sigla)}
                     className="px-2 py-1.5 text-center font-semibold cursor-grab select-none"
                     style={{
-                      color: c.tipo === 'turno' ? (colColor(c.sigla)?.colore_fg ?? '#fff') : '#e0e8d8',
-                      background: dragOver === c.sigla ? '#577a45' : (c.tipo === 'turno' ? (colColor(c.sigla)?.colore_bg ?? '#3a4f30') : '#3a4f30'),
+                      color: colHeader(c).fg,
+                      background: dragOver === c.sigla ? '#577a45' : colHeader(c).bg,
                       minWidth: 52, borderLeft: '1px solid #1e2a16',
                     }}>
                     <div className="flex items-center justify-center gap-1">
@@ -399,11 +408,9 @@ export function SchemaDesignerNuovo() {
                   <th className="px-1 py-1.5 text-white text-[10px]" style={{ width: 26 }}>#</th>
                   {colonneOrdinate.map(c => (
                     <th key={c.id} className="px-2 py-1.5 text-center font-semibold"
-                      style={{
-                        color: c.tipo === 'turno' ? (colColor(c.sigla)?.colore_fg ?? '#fff') : '#e0e8d8',
-                        background: c.tipo === 'turno' ? (colColor(c.sigla)?.colore_bg ?? '#3a4f30') : '#3a4f30',
-                        minWidth: 48, borderLeft: '1px solid #1e2a16',
-                      }}>{c.sigla}</th>
+                      style={{ color: colHeader(c).fg, background: colHeader(c).bg, minWidth: 48, borderLeft: '1px solid #1e2a16' }}>
+                      {c.sigla}
+                    </th>
                   ))}
                   <th style={{ background: '#2b3c24', width: 30 }} />
                 </tr>
@@ -423,10 +430,17 @@ export function SchemaDesignerNuovo() {
                       {colonneOrdinate.map(c => {
                         if (!isChecked(g, c.sigla)) return <td key={c.id} className="border-l border-stone-100" style={{ background: '#f0f0f0' }} />
                         if (c.tipo === 'flag') {
+                          const attivo = !!cella(g, slot, c.sigla)?.attivo
+                          const col = proprieta.find(p => p.sigla === c.sigla)?.colore_bg ?? '#476540'
                           return (
-                            <td key={c.id} className="text-center border-l border-stone-100 px-2 py-1">
-                              <input type="checkbox" checked={!!cella(g, slot, c.sigla)?.attivo}
-                                onChange={() => toggleCellaFlag(g, slot, c.sigla)} className="w-4 h-4 accent-[#476540]" />
+                            <td key={c.id} className="text-center border-l border-stone-100 px-1 py-1">
+                              <button onClick={() => toggleCellaFlag(g, slot, c.sigla)} title={c.sigla}
+                                className="inline-block w-7 h-7 leading-7 rounded text-[10px] font-bold transition-all"
+                                style={attivo
+                                  ? { background: col, color: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.25)' }
+                                  : { background: '#fff', color: col, border: `1.5px dashed ${col}` }}>
+                                {attivo ? c.sigla : ''}
+                              </button>
                             </td>
                           )
                         }
