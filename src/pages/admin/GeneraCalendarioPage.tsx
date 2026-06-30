@@ -3,15 +3,16 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Zap, AlertTriangle, CheckCircle, Info, RefreshCw } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
-import { useReparto } from '../../contexts/RepartoContext'
+import { useReparto, REPARTO_11N } from '../../contexts/RepartoContext'
 import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useMediciReparto } from '../../hooks/useMediciReparto'
 import { calcolaCalendarioCompleto, primoLunediDelPeriodo, MESI_IT } from '../../lib/algorithm'
+import { generaSchemaNuovo } from '../../lib/generaSchemaNuovo'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { AggiornaTurnazioneModal } from '../../components/AggiornaTurnazioneModal'
-import type { Configurazione, Medico, SchemaModello } from '../../types'
+import type { Configurazione, Medico, SchemaModello, TipoTurno } from '../../types'
 
 // Colori pastello coerenti con la pagina Schema
 const PASTEL: { bg: string; fg: string }[] = [
@@ -235,6 +236,51 @@ export function GeneraCalendarioPage() {
     },
   })
 
+  // ── NUOVO motore dinamico: dati dello schema (reparto + schema scelto). ──
+  const { data: nuovoGiorni = [] } = useQuery<{ giorno_settimana: number }[]>({
+    queryKey: ['gen-schema-giorni', repartoAttivo, schemaNum],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('schema_giorno').select('giorno_settimana')
+        .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum)
+      if (error) throw error; return data ?? []
+    },
+  })
+  const { data: nuovoColonne = [] } = useQuery<{ tipo: 'turno' | 'flag'; sigla: string }[]>({
+    queryKey: ['gen-schema-colonne', repartoAttivo, schemaNum],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('schema_colonna').select('tipo, sigla')
+        .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum)
+      if (error) throw error; return (data ?? []) as { tipo: 'turno' | 'flag'; sigla: string }[]
+    },
+  })
+  const { data: nuovoChecks = [] } = useQuery<{ giorno_settimana: number; colonna_sigla: string }[]>({
+    queryKey: ['gen-schema-checks', repartoAttivo, schemaNum],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('schema_giorno_colonna').select('giorno_settimana, colonna_sigla')
+        .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum).eq('attivo', true)
+      if (error) throw error; return data ?? []
+    },
+  })
+  const { data: nuovoCelle = [] } = useQuery<{ giorno_settimana: number; slot_idx: number; colonna_sigla: string; numero: number | null; attivo: boolean }[]>({
+    queryKey: ['gen-schema-celle', repartoAttivo, schemaNum],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('schema_cella').select('giorno_settimana, slot_idx, colonna_sigla, numero, attivo')
+        .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum)
+      if (error) throw error; return data ?? []
+    },
+  })
+  const { data: nuovoTipi = [] } = useQuery<TipoTurno[]>({
+    queryKey: ['gen-tipi-turno', repartoAttivo, schemaNum],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('tipi_turno').select('*')
+        .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum)
+      if (error) throw error; return (data ?? []) as TipoTurno[]
+    },
+  })
+  // 11N ESCLUSO a forza (resta sul motore vecchio, intoccabile). Gli altri
+  // reparti usano il nuovo motore se hanno uno schema dinamico per schemaNum.
+  const usaNuovoMotore = repartoAttivo !== REPARTO_11N && nuovoGiorni.length > 0
+
   // Inizializza i parametri dalla configurazione DB
   useEffect(() => {
     if (!config) return
@@ -342,15 +388,26 @@ export function GeneraCalendarioPage() {
         backup_da_tenere:         config?.backup_da_tenere         ?? 10,
         updated_at: new Date().toISOString(),
       }
-      const turniGen = calcolaCalendarioCompleto(cfgObj, schemi, medici)
+      // NUOVO motore dinamico (reparti con schema dinamico) oppure motore
+      // classico (11N e legacy). Stessa rotazione, risoluzione diversa.
+      const turniGen = usaNuovoMotore
+        ? generaSchemaNuovo({
+            anno_inizio: annoInizio, mese_inizio: meseInizio, giorno_inizio: giornoInizio,
+            anno_fine:   annoFine,   mese_fine:   meseFine,   giorno_fine:   giornoFine,
+            medici, celle: nuovoCelle, colonne: nuovoColonne, checks: nuovoChecks, tipiTurno: nuovoTipi,
+          })
+        : calcolaCalendarioCompleto(cfgObj, schemi, medici)
       // Popola il "turno base" = valore generato (originario azzerato): una
-      // generazione completa riparte pulita, niente celle "rosse".
+      // generazione completa riparte pulita, niente celle "rosse". I campi
+      // dinamici (turno_sigla/proprieta) ci sono solo dal nuovo motore.
       const turniGenerati = turniGen.map(t => ({
         ...t,
         reparto_id:               repartoAttivo,
         turno_clinico_base:       t.turno_clinico,
         turno_ricerca_base:       t.turno_ricerca,
         turno_clinico_originario: null,
+        turno_sigla:              (t as { turno_sigla?: string | null }).turno_sigla ?? null,
+        proprieta:                (t as { proprieta?: string[] }).proprieta ?? [],
       }))
 
       // Cancella turni esistenti per il periodo
@@ -492,6 +549,11 @@ export function GeneraCalendarioPage() {
             Riepilogo
           </h3>
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+            <span className="text-stone-600">Motore:</span>
+            <span className="font-semibold" style={{ color: usaNuovoMotore ? '#476540' : '#7a5a2f' }}>
+              {usaNuovoMotore ? 'Nuovo (schema dinamico) ⚗️' : 'Classico (M/P/L/REP)'}
+            </span>
+
             <span className="text-stone-600">Schema attivo:</span>
             <span className="font-semibold text-stone-800">Schema {schemaNum}</span>
 
