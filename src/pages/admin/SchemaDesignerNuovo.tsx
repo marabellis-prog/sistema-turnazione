@@ -677,8 +677,10 @@ export function SchemaDesignerNuovo() {
           Sempre visibile (si aggiorna in tempo reale con la struttura). */}
       {giorni.length > 0 && colonne.length > 0 && (
         <div className="flex gap-4 items-start">
-        <div className="card p-3 space-y-2 min-w-0">
-          <div className="text-xs font-semibold text-stone-600">Turnisti (legenda) — trascina il numero nei riquadri delle colonne-turno</div>
+        <div className="card p-3 space-y-2 w-fit max-w-full">
+          {/* width:0 + minWidth:100% → l'etichetta riempie la card ma NON la
+              allarga: la card si adatta alla larghezza di legenda/tabella. */}
+          <div className="text-xs font-semibold text-stone-600" style={{ width: 0, minWidth: '100%' }}>Turnisti (legenda) — trascina il numero nei riquadri delle colonne-turno</div>
           <div className="overflow-x-auto">
             {/* Legenda: 4 badge per riga, poi a capo (regola fissa, niente calcoli). */}
             <div className="grid grid-cols-[repeat(4,auto)] gap-1.5 mb-2 w-max justify-items-start">
@@ -781,7 +783,7 @@ export function SchemaDesignerNuovo() {
               </tbody>
             </table>
           </div>
-          <p className="text-[11px] text-stone-400">
+          <p className="text-[11px] text-stone-400" style={{ width: 0, minWidth: '100%' }}>
             Un numero per riga (drag = sposta · clic = togli). Riempiendo l'ultimo slot ne compare un altro;
             il <Trash2 size={11} className="inline -mt-0.5" /> elimina lo slot. Le proprietà <strong>esclusive</strong> 🔒 escludono le altre sullo stesso slot.
           </p>
