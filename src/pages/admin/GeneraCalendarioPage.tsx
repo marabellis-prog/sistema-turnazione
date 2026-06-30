@@ -12,6 +12,7 @@ import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { AggiornaTurnazioneModal } from '../../components/AggiornaTurnazioneModal'
+import { ProvaSchemaPreview, computePreviewCells } from '../../components/ProvaSchemaPreview'
 import type { Configurazione, Medico, SchemaModello, TipoTurno } from '../../types'
 
 // Colori pastello coerenti con la pagina Schema
@@ -305,6 +306,32 @@ export function GeneraCalendarioPage() {
   // Reparto "dinamico" = non-11N: usa il selettore a lista reale (sopra),
   // non i tre pulsanti fissi del modello classico.
   const repartoDinamico = repartoAttivo !== REPARTO_11N
+
+  // Titolo + etichetta "Nome (Schema N)" dello schema attivo (regola: mai il
+  // solo numero per i dinamici).
+  const schemaTitolo = useMemo(
+    () => schemiDisponibili.find(s => s.schema_num === schemaNum)?.titolo ?? `Schema ${schemaNum}`,
+    [schemiDisponibili, schemaNum]
+  )
+  const schemaLabel = repartoDinamico ? `${schemaTitolo} (Schema ${schemaNum})` : `Schema ${schemaNum}`
+
+  // Anteprima della rotazione (stessa logica di "Prova Schema") per il pannello
+  // destro: turnisti ordinati + matrice [turnista][giorno].
+  const turnistiGen = useMemo(
+    () => medici.filter(m => m.numero_ordine != null).sort((a, b) => (a.numero_ordine ?? 0) - (b.numero_ordine ?? 0)),
+    [medici]
+  )
+  const previewCellsGen = useMemo(
+    () => usaNuovoMotore
+      ? computePreviewCells({
+          giorniSettimana: nuovoGiorni.map(g => g.giorno_settimana),
+          celle: nuovoCelle,
+          turniSiglas: nuovoColonne.filter(c => c.tipo === 'turno').map(c => c.sigla),
+          turnisti: turnistiGen,
+        })
+      : null,
+    [usaNuovoMotore, nuovoGiorni, nuovoCelle, nuovoColonne, turnistiGen]
+  )
 
   // Inizializza i parametri dalla configurazione DB
   useEffect(() => {
@@ -606,7 +633,7 @@ export function GeneraCalendarioPage() {
             </span>
 
             <span className="text-stone-600">Schema attivo:</span>
-            <span className="font-semibold text-stone-800">Schema {schemaNum}</span>
+            <span className="font-semibold text-stone-800">{schemaLabel}</span>
 
             <span className="text-stone-600">Periodo:</span>
             <span className="font-semibold text-stone-800">{periodoLabel}</span>
@@ -725,33 +752,46 @@ export function GeneraCalendarioPage() {
         style={{ height: 'calc(100vh - 96px)', position: 'sticky', top: 0 }}>
         <div className="card flex flex-col" style={{ height: '100%' }}>
 
-          {/* Header fisso */}
+          {/* Header fisso — nome schema + (Schema N) per i dinamici */}
           <div className="px-4 pt-4 pb-2 shrink-0">
-            <h3 className="text-sm font-bold mb-1" style={{ color: '#2b3c24' }}>
-              Anteprima Schema {schemaNum}
-            </h3>
-            <div className="text-[10px] flex gap-3 flex-wrap" style={{ color: '#7a7a6a' }}>
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded inline-block"
-                  style={{ background: '#fee2e2', border: '1px solid #f0c0c0' }} />
-                REP
-              </span>
-              <span>Num. = posizione rotazione</span>
-              <span><strong style={{ color: '#dc2626' }}>S</strong> = sub-intensiva</span>
-              <span><strong style={{ color: '#0284c7' }}>M</strong> = medicina</span>
-            </div>
+            {repartoDinamico ? (
+              <>
+                <h3 className="text-sm font-bold leading-tight" style={{ color: '#2b3c24' }}>{schemaTitolo}</h3>
+                <div className="text-[11px] font-semibold" style={{ color: '#7a7a6a' }}>(Schema {schemaNum})</div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-sm font-bold mb-1" style={{ color: '#2b3c24' }}>
+                  Anteprima Schema {schemaNum}
+                </h3>
+                <div className="text-[10px] flex gap-3 flex-wrap" style={{ color: '#7a7a6a' }}>
+                  <span className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded inline-block"
+                      style={{ background: '#fee2e2', border: '1px solid #f0c0c0' }} />
+                    REP
+                  </span>
+                  <span>Num. = posizione rotazione</span>
+                  <span><strong style={{ color: '#dc2626' }}>S</strong> = sub-intensiva</span>
+                  <span><strong style={{ color: '#0284c7' }}>M</strong> = medicina</span>
+                </div>
+              </>
+            )}
           </div>
 
-          {/* Area mini-tabelle: multi-colonna automatico se serve */}
-          <div ref={tableRef} className="flex-1 px-3 pb-3" style={{ minHeight: 0 }}>
+          {/* Area anteprima: rotazione dinamica (riuso "Prova Schema") o classico */}
+          <div ref={tableRef} className="flex-1 px-3 pb-3 overflow-auto" style={{ minHeight: 0 }}>
             {usaNuovoMotore ? (
-              <div className="h-full flex items-center justify-center text-center px-4">
-                <div className="text-[11px] leading-relaxed" style={{ color: '#7a7a6a' }}>
-                  Schema dinamico ⚗️<br />
-                  L'anteprima della rotazione è in<br />
-                  <strong style={{ color: '#476540' }}>Disegna Schema → Prova Schema</strong>.
+              previewCellsGen && previewCellsGen.length > 0 ? (
+                <ProvaSchemaPreview previewCells={previewCellsGen} turnisti={turnistiGen} tipiTurno={nuovoTipi}
+                  className="flex flex-col min-w-0" />
+              ) : (
+                <div className="h-full flex items-center justify-center text-center px-4">
+                  <div className="text-[11px] leading-relaxed" style={{ color: '#7a7a6a' }}>
+                    Schema senza rotazione: aggiungi giorni e turni in<br />
+                    <strong style={{ color: '#476540' }}>Disegna Schema</strong>.
+                  </div>
                 </div>
-              </div>
+              )
             ) : (
               <AntepremaSchema
                 schemi={schemi}
