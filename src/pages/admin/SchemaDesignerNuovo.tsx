@@ -46,13 +46,16 @@ interface CellaRow { id: string; giorno_settimana: number; slot_idx: number; col
 // Cella nel DRAFT locale (la tabella turni non fa autosave): senza id, si
 // identifica per (giorno, slot, colonna). Persistita solo con "Salva schema".
 interface CellaDraft { giorno_settimana: number; slot_idx: number; colonna_sigla: string; numero: number | null; attivo: boolean }
-// DRAFT dell'INTERO schema (struttura + celle): nessun autosave, si persiste
-// solo con "Salva schema". checks = solo le caselle spuntate.
+// Riga di fabbisogno (per ambito × turno): totale + ripartizione per proprietà.
+interface FabRow { ambito: string; turno_sigla: string; totale: number; per_proprieta: Record<string, number> }
+// DRAFT dell'INTERO schema (struttura + celle + fabbisogno): nessun autosave,
+// si persiste solo con "Salva schema". checks = solo le caselle spuntate.
 interface SchemaDraft {
-  giorni:  { giorno_settimana: number }[]
-  colonne: { tipo: 'turno' | 'flag'; sigla: string }[]
-  checks:  { giorno_settimana: number; colonna_sigla: string }[]
-  celle:   CellaDraft[]
+  giorni:     { giorno_settimana: number }[]
+  colonne:    { tipo: 'turno' | 'flag'; sigla: string }[]
+  checks:     { giorno_settimana: number; colonna_sigla: string }[]
+  celle:      CellaDraft[]
+  fabbisogno: FabRow[]
 }
 
 export function SchemaDesignerNuovo() {
@@ -160,6 +163,15 @@ export function SchemaDesignerNuovo() {
       if (error) throw error; return (data ?? []) as CellaRow[]
     },
   })
+  const { data: fabDB = [] } = useQuery<FabRow[]>({
+    queryKey: ['schema-fabbisogno', repartoAttivo, schemaNum],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('schema_fabbisogno')
+        .select('ambito, turno_sigla, totale, per_proprieta')
+        .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum)
+      if (error) throw error; return (data ?? []) as FabRow[]
+    },
+  })
 
   // ── DRAFT unico dell'intero schema (niente autosave): tutte le modifiche
   //    (giorni, colonne, flag, slot, numeri) stanno in `draft` finché non si
@@ -169,11 +181,26 @@ export function SchemaDesignerNuovo() {
     colonne: colonneDB.map(c => ({ tipo: c.tipo, sigla: c.sigla })),
     checks:  checksDB.filter(c => c.attivo).map(c => ({ giorno_settimana: c.giorno_settimana, colonna_sigla: c.colonna_sigla })),
     celle:   celleDB.map(c => ({ giorno_settimana: c.giorno_settimana, slot_idx: c.slot_idx, colonna_sigla: c.colonna_sigla, numero: c.numero, attivo: c.attivo })),
+    fabbisogno: fabDB.map(f => ({ ambito: f.ambito, turno_sigla: f.turno_sigla, totale: f.totale, per_proprieta: { ...f.per_proprieta } })),
   })
   const draftEff = draft ?? baseline()
   const dirty = draft !== null
   function muta(fn: (d: SchemaDraft) => SchemaDraft) { setDraft(prev => fn(prev ?? baseline())) }
   function mutaCelle(fn: (list: CellaDraft[]) => CellaDraft[]) { muta(d => ({ ...d, celle: fn(d.celle) })) }
+  // Fabbisogno nel draft (niente autosave): set valore di (ambito,turno,proprietà).
+  function setValFab(amb: string, turno: string, prop: string, n: number) {
+    muta(d => {
+      const fab = d.fabbisogno.map(r => ({ ...r, per_proprieta: { ...r.per_proprieta } }))
+      let row = fab.find(r => r.ambito === amb && r.turno_sigla === turno)
+      if (!row) { row = { ambito: amb, turno_sigla: turno, totale: 0, per_proprieta: {} }; fab.push(row) }
+      if (n > 0) row.per_proprieta[prop] = n; else delete row.per_proprieta[prop]
+      row.totale = Object.values(row.per_proprieta).reduce((a, b) => a + (b || 0), 0)
+      return { ...d, fabbisogno: fab.filter(r => Object.keys(r.per_proprieta).length > 0) }
+    })
+  }
+  function rimuoviAmbitoFab(amb: string) {
+    muta(d => ({ ...d, fabbisogno: d.fabbisogno.filter(r => r.ambito !== amb) }))
+  }
 
   // Viste con id sintetici (stessi nomi/shape usati dalla JSX).
   const giorni = [...draftEff.giorni].sort((a, b) => a.giorno_settimana - b.giorno_settimana)
@@ -181,6 +208,7 @@ export function SchemaDesignerNuovo() {
   const colonne = draftEff.colonne.map((c, i) => ({ id: `col-${c.sigla}`, tipo: c.tipo, sigla: c.sigla, ordine: i }))
   const checks = draftEff.checks
   const celle = draftEff.celle
+  const fabbisogno = draftEff.fabbisogno
 
   const isChecked = (g: number, sigla: string) =>
     checks.some(c => c.giorno_settimana === g && c.colonna_sigla === sigla)
@@ -347,11 +375,13 @@ export function SchemaDesignerNuovo() {
       const p_colonne = draft.colonne.map((c, i) => ({ tipo: c.tipo, sigla: c.sigla, ordine: i }))
       const p_checks  = draft.checks.map(c => ({ giorno_settimana: c.giorno_settimana, colonna_sigla: c.colonna_sigla }))
       const p_celle   = draft.celle
+      const p_fabbisogno = draft.fabbisogno
       const { error } = await supabase.rpc('salva_schema_struttura', {
-        p_reparto: repartoAttivo, p_num: schemaNum, p_giorni, p_colonne, p_checks, p_celle,
+        p_reparto: repartoAttivo, p_num: schemaNum, p_giorni, p_colonne, p_checks, p_celle, p_fabbisogno,
       })
       if (error) throw error
       setDraft(null)
+      qc.invalidateQueries({ queryKey: ['schema-fabbisogno', repartoAttivo] })
       invalida(); invalidaSchemi()
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Errore nel salvataggio')
@@ -789,8 +819,8 @@ export function SchemaDesignerNuovo() {
           </p>
         </div>
         <div className="shrink-0 sticky top-4 self-start">
-          <FabbisognoPanel reparto={repartoAttivo} schemaNum={schemaNum}
-            turni={turniColonne} proprieta={proprieta} />
+          <FabbisognoPanel turni={turniColonne} proprieta={proprieta}
+            fab={fabbisogno} onSet={setValFab} onRemove={rimuoviAmbitoFab} />
         </div>
         </div>
       )}
@@ -821,7 +851,6 @@ export function SchemaDesignerNuovo() {
 }
 
 // ── Pannello Fabbisogno (conteggio dichiarato per ambito × turno × proprietà) ──
-interface FabRow { ambito: string; turno_sigla: string; totale: number; per_proprieta: Record<string, number> }
 const AMBITI_SPECIALI: { key: string; label: string }[] = [
   { key: 'prefestivo', label: 'Prefestivo' },
   { key: 'sabato',     label: 'Sabato' },
@@ -886,40 +915,14 @@ function GrigliaAmbito({ amb, turni, proprieta, fab, onSet, onRemove }: {
   )
 }
 
-function FabbisognoPanel({ reparto, schemaNum, turni, proprieta }: {
-  reparto: string; schemaNum: number; turni: ColonnaRow[]; proprieta: ProprietaTurno[]
+function FabbisognoPanel({ turni, proprieta, fab, onSet, onRemove }: {
+  turni: ColonnaRow[]; proprieta: ProprietaTurno[]; fab: FabRow[]
+  onSet: (amb: string, turno: string, prop: string, n: number) => void
+  onRemove: (amb: string) => void
 }) {
-  const qc = useQueryClient()
+  // Niente autosave: `fab` arriva dal draft dello schema, onSet/onRemove lo mutano.
   const [extra, setExtra] = useState<string[]>([])   // ambiti speciali aperti localmente
-
-  const fkey = ['schema-fabbisogno', reparto, schemaNum]
-  const { data: fab = [] } = useQuery<FabRow[]>({
-    queryKey: fkey,
-    queryFn: async () => {
-      const { data, error } = await supabase.from('schema_fabbisogno')
-        .select('ambito, turno_sigla, totale, per_proprieta')
-        .eq('reparto_id', reparto).eq('schema_num', schemaNum)
-      if (error) throw error
-      return (data ?? []) as FabRow[]
-    },
-  })
-  const reload = () => qc.invalidateQueries({ queryKey: fkey })
-
-  async function setVal(amb: string, turno: string, prop: string, n: number) {
-    const row = fab.find(f => f.ambito === amb && f.turno_sigla === turno)
-    const pp: Record<string, number> = { ...(row?.per_proprieta ?? {}) }
-    if (n > 0) pp[prop] = n; else delete pp[prop]
-    const totale = Object.values(pp).reduce((a, b) => a + (b || 0), 0)
-    const { error } = await supabase.from('schema_fabbisogno').upsert(
-      { reparto_id: reparto, schema_num: schemaNum, ambito: amb, turno_sigla: turno, totale, per_proprieta: pp },
-      { onConflict: 'reparto_id,schema_num,ambito,turno_sigla' })
-    if (!error) reload()
-  }
-  async function rimuoviAmbito(amb: string) {
-    await supabase.from('schema_fabbisogno').delete()
-      .eq('reparto_id', reparto).eq('schema_num', schemaNum).eq('ambito', amb)
-    setExtra(x => x.filter(a => a !== amb)); reload()
-  }
+  function handleRemove(amb: string) { setExtra(x => x.filter(a => a !== amb)); onRemove(amb) }
 
   // Ambiti mostrati: Normale sempre + quelli con dati + quelli aperti localmente.
   const conDati = [...new Set(fab.map(f => f.ambito))].filter(a => a !== 'normale')
@@ -937,9 +940,9 @@ function FabbisognoPanel({ reparto, schemaNum, turni, proprieta }: {
         </p>
       ) : (
         <>
-          <GrigliaAmbito amb="normale" turni={turni} proprieta={proprieta} fab={fab} onSet={setVal} />
+          <GrigliaAmbito amb="normale" turni={turni} proprieta={proprieta} fab={fab} onSet={onSet} />
           {specialiAperti.map(amb => (
-            <GrigliaAmbito key={amb} amb={amb} turni={turni} proprieta={proprieta} fab={fab} onSet={setVal} onRemove={rimuoviAmbito} />
+            <GrigliaAmbito key={amb} amb={amb} turni={turni} proprieta={proprieta} fab={fab} onSet={onSet} onRemove={handleRemove} />
           ))}
           {daAggiungere.length > 0 && (
             <div className="flex flex-wrap gap-1 pt-0.5">
