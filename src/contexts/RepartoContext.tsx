@@ -11,7 +11,7 @@
  * l'utente "efficace" (doppelganger / admin-mode compresi).
  */
 
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
@@ -30,6 +30,13 @@ interface RepartoCtx {
   isSuperAdmin:     boolean
   hasAdminAccess:   boolean          // super-admin OPPURE responsabile di >=1 reparto
   loading:          boolean
+  /**
+   * Guardia sul cambio reparto: una pagina con modifiche non salvate registra
+   * una funzione che, ricevuto il prossimo reparto, decide se procedere (true)
+   * o bloccare (false, gestendo l'avviso). Ref-based → si può azzerare al volo
+   * per completare il cambio dopo la conferma. null = nessuna guardia.
+   */
+  registerRepartoGuard: (fn: ((next: string) => boolean) | null) => void
 }
 
 const Ctx = createContext<RepartoCtx | null>(null)
@@ -76,25 +83,36 @@ export function RepartoProvider({ children }: { children: ReactNode }) {
   const [repartoAttivo, setStato] = useState<string>(
     () => localStorage.getItem(LS_KEY) || REPARTO_11N,
   )
-  function setRepartoAttivo(id: string) {
+  // Applica il cambio reparto SENZA passare dalla guardia (uso interno).
+  const applyReparto = useCallback((id: string) => {
     localStorage.setItem(LS_KEY, id)
     setStato(id)
-  }
+  }, [])
+  // Guardia ref-based registrata dalle pagine con modifiche non salvate.
+  const repartoGuardRef = useRef<((next: string) => boolean) | null>(null)
+  const registerRepartoGuard = useCallback((fn: ((next: string) => boolean) | null) => {
+    repartoGuardRef.current = fn
+  }, [])
+  const setRepartoAttivo = useCallback((id: string) => {
+    const guard = repartoGuardRef.current
+    if (guard && !guard(id)) return   // bloccato: la guardia mostra l'avviso
+    applyReparto(id)
+  }, [applyReparto])
 
   // Se il reparto attivo non è tra quelli visibili (cambiato/perso accesso),
-  // ripiega sul primo reparto visibile.
+  // ripiega sul primo reparto visibile (bypassa la guardia: è un fallback di sistema).
   useEffect(() => {
     if (reparti.length && !reparti.some(r => r.id === repartoAttivo)) {
-      setRepartoAttivo(reparti[0].id)
+      applyReparto(reparti[0].id)
     }
-  }, [reparti, repartoAttivo])
+  }, [reparti, repartoAttivo, applyReparto])
 
   const repartoCorrente = reparti.find(r => r.id === repartoAttivo)
 
   return (
     <Ctx.Provider value={{
       reparti, repartoAttivo, setRepartoAttivo, repartoCorrente,
-      isSuperAdmin, hasAdminAccess, loading,
+      isSuperAdmin, hasAdminAccess, loading, registerRepartoGuard,
     }}>
       {children}
     </Ctx.Provider>

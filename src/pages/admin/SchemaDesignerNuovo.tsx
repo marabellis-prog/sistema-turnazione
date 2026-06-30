@@ -49,7 +49,7 @@ interface CellaDraft { giorno_settimana: number; slot_idx: number; colonna_sigla
 
 export function SchemaDesignerNuovo() {
   const qc = useQueryClient()
-  const { repartoAttivo, repartoCorrente } = useReparto()
+  const { repartoAttivo, repartoCorrente, setRepartoAttivo, registerRepartoGuard } = useReparto()
   const navigate = useNavigate()
   const { registerNavGuard } = usePendingActions()
   const [schemaNum, setSchemaNum] = useState(1)
@@ -58,6 +58,7 @@ export function SchemaDesignerNuovo() {
   const [draftCelle, setDraftCelle] = useState<CellaDraft[] | null>(null)  // null = nessuna modifica pendente
   const [saving, setSaving] = useState(false)
   const [navPending, setNavPending] = useState<string | null>(null)
+  const [pendingReparto, setPendingReparto] = useState<string | null>(null)
   const dragCol = useRef<string | null>(null)
   const [dragOver, setDragOver] = useState<string | null>(null)
   const dragNum = useRef<number | null>(null)
@@ -445,15 +446,16 @@ export function SchemaDesignerNuovo() {
   // si rischia di salvarlo sullo schema/reparto sbagliato.
   useEffect(() => { setDraftCelle(null) }, [repartoAttivo, schemaNum])
 
-  // Guardia: modifiche non salvate bloccano la navigazione (menu admin) e la
-  // chiusura/refresh della tab finché non salvi o scarti.
+  // Guardia: modifiche non salvate bloccano la navigazione (menu admin), il
+  // cambio reparto (selettore admin/headbar) e la chiusura/refresh della tab.
   useEffect(() => {
-    if (!dirty) { registerNavGuard(null); return }
+    if (!dirty) { registerNavGuard(null); registerRepartoGuard(null); return }
     registerNavGuard((to: string) => { setNavPending(to); return false })
+    registerRepartoGuard((next: string) => { setPendingReparto(next); return false })
     const beforeUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
     window.addEventListener('beforeunload', beforeUnload)
-    return () => { registerNavGuard(null); window.removeEventListener('beforeunload', beforeUnload) }
-  }, [dirty, registerNavGuard])
+    return () => { registerNavGuard(null); registerRepartoGuard(null); window.removeEventListener('beforeunload', beforeUnload) }
+  }, [dirty, registerNavGuard, registerRepartoGuard])
 
   const giorniAttivi = giorni.map(g => g.giorno_settimana)
   const colonneOrdinate = colonne   // già ordinate per 'ordine'
@@ -469,6 +471,12 @@ export function SchemaDesignerNuovo() {
         confirmLabel="Esci senza salvare" cancelLabel="Rimani" danger
         onConfirm={() => { const to = navPending; setDraftCelle(null); setNavPending(null); if (to) navigate(to) }}
         onCancel={() => setNavPending(null)} />
+      <ConfirmModal open={pendingReparto != null}
+        title="Modifiche non salvate"
+        message="La tabella turni ha modifiche non salvate. Cambiando reparto andranno perse."
+        confirmLabel="Cambia senza salvare" cancelLabel="Rimani" danger
+        onConfirm={() => { const n = pendingReparto; setDraftCelle(null); setPendingReparto(null); registerRepartoGuard(null); if (n) setRepartoAttivo(n) }}
+        onCancel={() => setPendingReparto(null)} />
       <div>
         <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
           <Table2 size={20} style={{ color: '#476540' }} />
