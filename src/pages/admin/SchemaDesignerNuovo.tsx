@@ -1,116 +1,186 @@
 /**
  * SchemaDesignerNuovo (sperimentale)
  *
- * Nuovo Disegna Schema con COLONNE DINAMICHE PER-GIORNO. Pagina separata dalla
- * vecchia "Disegna Schema" (che resta intatta per 11N) finché il nuovo modello
- * non è validato. Tappa 1: scelta schema + giorni + colonne (turni/flag) scelte
- * giorno per giorno, persistite in schema_colonna. La griglia slot e il
- * fabbisogno arrivano nelle tappe successive.
+ * Nuovo Disegna Schema = MATRICE: righe = giorni dello schema (aggiunti in
+ * ordine), colonne = turni+flag GLOBALI (scelti dai Tipi di turno/Proprietà,
+ * draggabili per riordinare), celle = checkbox (il giorno usa quel turno/flag).
+ *
+ * Interazione:
+ *  - clic su un giorno → aggiunge la riga (o la seleziona);
+ *  - selezionato un giorno, clic su un turno/flag → aggiunge la colonna (se
+ *    nuova) e spunta la checkbox per quel giorno; gli altri restano deselezionati;
+ *  - le checkbox si attivano/disattivano cliccandole;
+ *  - le colonne si trascinano per riordinarle.
+ *
+ * Pagina separata: la vecchia "Disegna Schema" resta intatta finché validato.
+ * Tappe successive: slot/numeri + fabbisogno.
  */
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Table2, Plus, X, Tag, Flag, Info } from 'lucide-react'
+import { Table2, Tag, Flag, Trash2, GripVertical, Info } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useReparto } from '../../contexts/RepartoContext'
 import type { TipoTurno, ProprietaTurno } from '../../types'
 
 const GIORNI = [
-  { n: 1, label: 'Lun' }, { n: 2, label: 'Mar' }, { n: 3, label: 'Mer' },
-  { n: 4, label: 'Gio' }, { n: 5, label: 'Ven' }, { n: 6, label: 'Sab' }, { n: 7, label: 'Dom' },
+  { n: 1, label: 'LUN' }, { n: 2, label: 'MAR' }, { n: 3, label: 'MER' },
+  { n: 4, label: 'GIO' }, { n: 5, label: 'VEN' }, { n: 6, label: 'SAB' }, { n: 7, label: 'DOM' },
 ]
+const labelGiorno = (n: number) => GIORNI.find(g => g.n === n)?.label ?? '?'
 
-interface ColonnaRow {
-  id: string
-  giorno_settimana: number
-  tipo: 'turno' | 'flag'
-  sigla: string
-  ordine: number
-}
+interface GiornoRow { id: string; giorno_settimana: number; ordine: number }
+interface ColonnaRow { id: string; tipo: 'turno' | 'flag'; sigla: string; ordine: number }
+interface CheckRow { giorno_settimana: number; colonna_sigla: string; attivo: boolean }
 
 export function SchemaDesignerNuovo() {
   const qc = useQueryClient()
   const { repartoAttivo, repartoCorrente } = useReparto()
   const [schemaNum, setSchemaNum] = useState(1)
   const [giornoSel, setGiornoSel] = useState<number | null>(null)
-  const [pickerOpen, setPickerOpen] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const dragCol = useRef<string | null>(null)
+  const [dragOver, setDragOver] = useState<string | null>(null)
+
+  const key = ['schema-matrice', repartoAttivo, schemaNum]
+  const invalida = () => qc.invalidateQueries({ queryKey: key })
 
   const { data: tipiTurno = [] } = useQuery<TipoTurno[]>({
     queryKey: ['tipi_turno', repartoAttivo],
     queryFn: async () => {
-      const { data, error } = await supabase.from('tipi_turno').select('*')
-        .eq('reparto_id', repartoAttivo).order('ordine')
-      if (error) throw error
-      return (data ?? []) as TipoTurno[]
+      const { data, error } = await supabase.from('tipi_turno').select('*').eq('reparto_id', repartoAttivo).order('ordine')
+      if (error) throw error; return (data ?? []) as TipoTurno[]
     },
   })
   const { data: proprieta = [] } = useQuery<ProprietaTurno[]>({
     queryKey: ['proprieta_turno', repartoAttivo],
     queryFn: async () => {
-      const { data, error } = await supabase.from('proprieta_turno').select('*')
-        .eq('reparto_id', repartoAttivo).order('ordine')
-      if (error) throw error
-      return (data ?? []) as ProprietaTurno[]
+      const { data, error } = await supabase.from('proprieta_turno').select('*').eq('reparto_id', repartoAttivo).order('ordine')
+      if (error) throw error; return (data ?? []) as ProprietaTurno[]
+    },
+  })
+  const { data: giorni = [] } = useQuery<GiornoRow[]>({
+    queryKey: [...key, 'giorni'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('schema_giorno').select('id, giorno_settimana, ordine')
+        .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum).order('ordine')
+      if (error) throw error; return (data ?? []) as GiornoRow[]
     },
   })
   const { data: colonne = [] } = useQuery<ColonnaRow[]>({
-    queryKey: ['schema-colonna', repartoAttivo, schemaNum],
+    queryKey: [...key, 'colonne'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('schema_colonna')
-        .select('id, giorno_settimana, tipo, sigla, ordine')
+      const { data, error } = await supabase.from('schema_colonna').select('id, tipo, sigla, ordine')
+        .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum).order('ordine')
+      if (error) throw error; return (data ?? []) as ColonnaRow[]
+    },
+  })
+  const { data: checks = [] } = useQuery<CheckRow[]>({
+    queryKey: [...key, 'checks'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('schema_giorno_colonna').select('giorno_settimana, colonna_sigla, attivo')
         .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum)
-        .order('giorno_settimana').order('ordine')
-      if (error) throw error
-      return (data ?? []) as ColonnaRow[]
+      if (error) throw error; return (data ?? []) as CheckRow[]
     },
   })
 
-  const giorniAttivi = [...new Set(colonne.map(c => c.giorno_settimana))].sort((a, b) => a - b)
-  const colonneDelGiorno = (g: number) => colonne.filter(c => c.giorno_settimana === g)
+  const isChecked = (g: number, sigla: string) =>
+    checks.some(c => c.giorno_settimana === g && c.colonna_sigla === sigla && c.attivo)
+  const colColor = (sigla: string) => tipiTurno.find(t => t.sigla === sigla)
 
-  async function aggiungiColonna(giorno: number, tipo: 'turno' | 'flag', sigla: string) {
+  async function aggiungiGiorno(g: number) {
     setErr(null)
-    const esistenti = colonneDelGiorno(giorno)
-    if (esistenti.some(c => c.sigla === sigla)) { setPickerOpen(false); return }
-    const ordine = esistenti.length
-    const { error } = await supabase.from('schema_colonna')
-      .insert({ reparto_id: repartoAttivo, schema_num: schemaNum, giorno_settimana: giorno, tipo, sigla, ordine })
+    if (giorni.some(x => x.giorno_settimana === g)) { setGiornoSel(g); return }
+    const ordine = giorni.length
+    const { error } = await supabase.from('schema_giorno')
+      .insert({ reparto_id: repartoAttivo, schema_num: schemaNum, giorno_settimana: g, ordine })
     if (error) { setErr(error.message); return }
-    setPickerOpen(false)
-    qc.invalidateQueries({ queryKey: ['schema-colonna', repartoAttivo, schemaNum] })
+    setGiornoSel(g); invalida()
   }
-  async function rimuoviColonna(id: string) {
+  async function rimuoviGiorno(g: number) {
     setErr(null)
-    const { error } = await supabase.from('schema_colonna').delete().eq('id', id)
+    await supabase.from('schema_giorno_colonna').delete()
+      .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum).eq('giorno_settimana', g)
+    const { error } = await supabase.from('schema_giorno').delete()
+      .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum).eq('giorno_settimana', g)
     if (error) { setErr(error.message); return }
-    qc.invalidateQueries({ queryKey: ['schema-colonna', repartoAttivo, schemaNum] })
+    if (giornoSel === g) setGiornoSel(null)
+    invalida()
   }
-  async function aggiungiGiorno(giorno: number) {
-    setGiornoSel(giorno)
-    setPickerOpen(true)
+  async function aggiungiColonna(tipo: 'turno' | 'flag', sigla: string) {
+    setErr(null)
+    if (giornoSel === null) { setErr('Seleziona prima un giorno (clicca sulla sua riga), poi aggiungi turni/flag.'); return }
+    if (!colonne.some(c => c.sigla === sigla)) {
+      const ordine = colonne.length
+      const { error } = await supabase.from('schema_colonna')
+        .insert({ reparto_id: repartoAttivo, schema_num: schemaNum, tipo, sigla, ordine })
+      if (error) { setErr(error.message); return }
+    }
+    // spunta la checkbox per il giorno selezionato
+    const { error: e2 } = await supabase.from('schema_giorno_colonna')
+      .upsert({ reparto_id: repartoAttivo, schema_num: schemaNum, giorno_settimana: giornoSel, colonna_sigla: sigla, attivo: true },
+        { onConflict: 'reparto_id,schema_num,giorno_settimana,colonna_sigla' })
+    if (e2) { setErr(e2.message); return }
+    invalida()
+  }
+  async function rimuoviColonna(sigla: string) {
+    setErr(null)
+    await supabase.from('schema_giorno_colonna').delete()
+      .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum).eq('colonna_sigla', sigla)
+    const { error } = await supabase.from('schema_colonna').delete()
+      .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum).eq('sigla', sigla)
+    if (error) { setErr(error.message); return }
+    invalida()
+  }
+  async function toggleCheck(g: number, sigla: string) {
+    setErr(null)
+    const nuovo = !isChecked(g, sigla)
+    const { error } = await supabase.from('schema_giorno_colonna')
+      .upsert({ reparto_id: repartoAttivo, schema_num: schemaNum, giorno_settimana: g, colonna_sigla: sigla, attivo: nuovo },
+        { onConflict: 'reparto_id,schema_num,giorno_settimana,colonna_sigla' })
+    if (error) { setErr(error.message); return }
+    invalida()
   }
 
-  const turniColonna = (g: number) => colonneDelGiorno(g).filter(c => c.tipo === 'turno')
-  const flagColonna  = (g: number) => colonneDelGiorno(g).filter(c => c.tipo === 'flag')
+  // ── Drag & drop colonne (riordino) ───────────────────────────────
+  async function dropColonna(targetSigla: string) {
+    const fromSigla = dragCol.current
+    dragCol.current = null; setDragOver(null)
+    if (!fromSigla || fromSigla === targetSigla) return
+    const ordered = [...colonne]
+    const fromIdx = ordered.findIndex(c => c.sigla === fromSigla)
+    const toIdx   = ordered.findIndex(c => c.sigla === targetSigla)
+    if (fromIdx < 0 || toIdx < 0) return
+    const [moved] = ordered.splice(fromIdx, 1)
+    ordered.splice(toIdx, 0, moved)
+    // riscrive ordine 0..n
+    for (let i = 0; i < ordered.length; i++) {
+      if (ordered[i].ordine !== i) {
+        await supabase.from('schema_colonna').update({ ordine: i }).eq('id', ordered[i].id)
+      }
+    }
+    invalida()
+  }
+
+  const giorniAttivi = giorni.map(g => g.giorno_settimana)
 
   return (
-    <div className="flex flex-col gap-4 max-w-4xl">
+    <div className="flex flex-col gap-4">
       <div>
         <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
           <Table2 size={20} style={{ color: '#476540' }} />
-          Disegna Schema — nuovo (sperimentale) · {repartoCorrente?.nome ?? '…'}
+          Disegna Schema — nuovo ⚗️ · {repartoCorrente?.nome ?? '…'}
         </h2>
         <p className="text-sm text-stone-600 mt-0.5">
-          Colonne dinamiche scelte <strong>giorno per giorno</strong> dai tuoi Tipi di turno e
-          proprietà. Tappa 1: giorni + colonne. (Griglia slot e Fabbisogno in arrivo.)
+          Aggiungi i <strong>giorni</strong> (righe) e seleziona un giorno, poi aggiungi
+          <strong> turni/flag</strong> (colonne) → si spuntano per quel giorno. Le colonne si trascinano.
         </p>
       </div>
 
       {tipiTurno.length === 0 && (
         <div className="flex gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
           <Info size={16} className="shrink-0 mt-0.5" />
-          Prima definisci almeno un <strong>Tipo di turno</strong> (menu Tipi di turno): sono i mattoni dello schema.
+          Prima definisci almeno un <strong>Tipo di turno</strong>: sono i mattoni dello schema.
         </div>
       )}
       {err && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{err}</div>}
@@ -121,116 +191,117 @@ export function SchemaDesignerNuovo() {
         {[1, 2, 3].map(n => (
           <button key={n} onClick={() => { setSchemaNum(n); setGiornoSel(null) }}
             className="px-3 py-1 rounded font-semibold text-sm border transition-colors"
-            style={schemaNum === n
-              ? { background: '#476540', color: '#fff', borderColor: '#2b3c24' }
-              : { background: '#fff', color: '#476540', borderColor: '#cdd9c4' }}>
+            style={schemaNum === n ? { background: '#476540', color: '#fff', borderColor: '#2b3c24' } : { background: '#fff', color: '#476540', borderColor: '#cdd9c4' }}>
             {n}
           </button>
         ))}
       </div>
 
-      {/* Giorni: chip per ogni giorno della settimana */}
-      <div className="card p-3">
-        <h3 className="text-sm font-semibold text-stone-700 mb-2">Giorni dello schema</h3>
-        <div className="flex flex-wrap gap-2">
-          {GIORNI.map(g => {
-            const attivo = giorniAttivi.includes(g.n)
-            return (
-              <button key={g.n}
-                onClick={() => attivo ? setGiornoSel(g.n) : aggiungiGiorno(g.n)}
-                className="px-3 py-1.5 rounded-lg text-sm font-semibold border transition-colors"
-                style={giornoSel === g.n
-                  ? { background: '#456b3a', color: '#fff', borderColor: '#2b3c24' }
-                  : attivo
-                    ? { background: '#e0e8d8', color: '#2b3c24', borderColor: '#9ab488' }
-                    : { background: '#fff', color: '#9ca3af', borderColor: '#e5e7eb', borderStyle: 'dashed' }}
-                title={attivo ? 'Modifica colonne di questo giorno' : 'Aggiungi questo giorno allo schema'}>
-                {g.label}{!attivo && <span className="ml-1 opacity-60">+</span>}
+      {/* Picker: Giorni + Turni/Proprietà */}
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div className="card p-3">
+          <h3 className="text-xs font-semibold text-stone-600 mb-2">Giorni dello schema</h3>
+          <div className="flex flex-wrap gap-1.5">
+            {GIORNI.map(g => (
+              <button key={g.n} onClick={() => aggiungiGiorno(g.n)}
+                className="px-2.5 py-1 rounded text-xs font-semibold border transition-colors"
+                style={giorniAttivi.includes(g.n)
+                  ? { background: '#e0e8d8', color: '#2b3c24', borderColor: '#9ab488' }
+                  : { background: '#fff', color: '#9ca3af', borderColor: '#e5e7eb', borderStyle: 'dashed' }}>
+                {g.label}{!giorniAttivi.includes(g.n) && ' +'}
               </button>
-            )
-          })}
+            ))}
+          </div>
         </div>
-        <p className="text-[11px] text-stone-400 mt-2">
-          Tratteggiati = non nello schema (clicca per aggiungerli). Pieni = nello schema (clicca per modificarne le colonne).
-        </p>
+        <div className="card p-3">
+          <h3 className="text-xs font-semibold text-stone-600 mb-2 flex items-center gap-1.5">
+            <Tag size={12} /> Turni <span className="text-stone-300">·</span> <Flag size={12} /> Proprietà
+            {giornoSel === null && <span className="text-[10px] font-normal text-amber-600 ml-1">(seleziona prima un giorno)</span>}
+          </h3>
+          <div className="flex flex-wrap gap-1.5">
+            {tipiTurno.map(t => (
+              <button key={t.sigla} onClick={() => aggiungiColonna('turno', t.sigla)} disabled={giornoSel === null}
+                className="px-2 py-1 rounded text-xs font-semibold border disabled:opacity-40 hover:opacity-80"
+                style={{ background: t.colore_bg ?? '#e5e7eb', color: t.colore_fg ?? '#1f2937', borderColor: 'rgba(0,0,0,0.1)' }} title={t.nome}>
+                {t.sigla}
+              </button>
+            ))}
+            {proprieta.map(p => (
+              <button key={p.sigla} onClick={() => aggiungiColonna('flag', p.sigla)} disabled={giornoSel === null}
+                className="px-2 py-1 rounded text-xs font-semibold border border-stone-300 bg-white disabled:opacity-40 hover:bg-stone-100" title={p.nome}>
+                {p.sigla}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      {/* Colonne del giorno selezionato */}
-      {giornoSel !== null && (
-        <div className="card p-3">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-semibold text-stone-700">
-              Colonne di <span style={{ color: '#476540' }}>{GIORNI.find(g => g.n === giornoSel)?.label}</span>
-            </h3>
-            <button onClick={() => setPickerOpen(o => !o)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold text-white"
-              style={{ background: '#476540' }}>
-              <Plus size={13} /> Aggiungi colonna
-            </button>
-          </div>
-
-          {/* Picker turni + flag */}
-          {pickerOpen && (
-            <div className="rounded-lg border border-stone-200 p-2 mb-2 bg-stone-50 space-y-2">
-              <div>
-                <div className="text-[11px] font-semibold text-stone-500 flex items-center gap-1 mb-1"><Tag size={11} /> Turni</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {tipiTurno.map(t => (
-                    <button key={t.sigla} onClick={() => aggiungiColonna(giornoSel, 'turno', t.sigla)}
-                      className="px-2 py-1 rounded text-xs font-semibold border hover:opacity-80"
-                      style={{ background: t.colore_bg ?? '#e5e7eb', color: t.colore_fg ?? '#1f2937', borderColor: 'rgba(0,0,0,0.1)' }}
-                      title={t.nome}>{t.sigla}</button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <div className="text-[11px] font-semibold text-stone-500 flex items-center gap-1 mb-1"><Flag size={11} /> Flag / proprietà</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {proprieta.map(p => (
-                    <button key={p.sigla} onClick={() => aggiungiColonna(giornoSel, 'flag', p.sigla)}
-                      className="px-2 py-1 rounded text-xs font-semibold border border-stone-300 bg-white hover:bg-stone-100"
-                      title={p.nome}>{p.sigla}</button>
-                  ))}
-                  {proprieta.length === 0 && <span className="text-[11px] text-stone-400 italic">Nessuna proprietà configurata.</span>}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Colonne attuali */}
-          {colonneDelGiorno(giornoSel).length === 0 ? (
-            <p className="text-xs text-stone-400 italic">Nessuna colonna. Clicca "Aggiungi colonna".</p>
-          ) : (
-            <div className="space-y-2">
-              <div>
-                <div className="text-[11px] text-stone-400 mb-1">Turni</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {turniColonna(giornoSel).map(c => (
-                    <span key={c.id} className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold"
-                      style={{ background: '#e0e8d8', color: '#2b3c24' }}>
-                      {c.sigla}
-                      <button onClick={() => rimuoviColonna(c.id)} className="hover:text-red-600"><X size={11} /></button>
-                    </span>
-                  ))}
-                  {turniColonna(giornoSel).length === 0 && <span className="text-[11px] text-stone-400 italic">—</span>}
-                </div>
-              </div>
-              <div>
-                <div className="text-[11px] text-stone-400 mb-1">Flag</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {flagColonna(giornoSel).map(c => (
-                    <span key={c.id} className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold border border-stone-300 bg-white text-stone-700">
-                      {c.sigla}
-                      <button onClick={() => rimuoviColonna(c.id)} className="hover:text-red-600"><X size={11} /></button>
-                    </span>
-                  ))}
-                  {flagColonna(giornoSel).length === 0 && <span className="text-[11px] text-stone-400 italic">—</span>}
-                </div>
-              </div>
-            </div>
-          )}
+      {/* MATRICE */}
+      {giorni.length === 0 ? (
+        <p className="text-sm text-stone-400 italic">Aggiungi un giorno per iniziare.</p>
+      ) : (
+        <div className="card overflow-x-auto">
+          <table className="text-sm border-collapse">
+            <thead>
+              <tr style={{ background: '#2b3c24' }}>
+                <th className="px-3 py-2 text-left text-white font-semibold sticky left-0" style={{ background: '#2b3c24', minWidth: 90 }}>Giorno</th>
+                {colonne.map(c => (
+                  <th key={c.id} draggable
+                    onDragStart={() => { dragCol.current = c.sigla }}
+                    onDragOver={e => { e.preventDefault(); setDragOver(c.sigla) }}
+                    onDragLeave={() => setDragOver(null)}
+                    onDrop={() => dropColonna(c.sigla)}
+                    className="px-2 py-1.5 text-center font-semibold cursor-grab select-none"
+                    style={{
+                      color: c.tipo === 'turno' ? (colColor(c.sigla)?.colore_fg ?? '#fff') : '#e0e8d8',
+                      background: dragOver === c.sigla ? '#577a45' : (c.tipo === 'turno' ? (colColor(c.sigla)?.colore_bg ?? '#3a4f30') : '#3a4f30'),
+                      minWidth: 52, borderLeft: '1px solid #1e2a16',
+                    }}>
+                    <div className="flex items-center justify-center gap-1">
+                      <GripVertical size={11} className="opacity-50" />{c.sigla}
+                    </div>
+                    <button onClick={() => rimuoviColonna(c.sigla)} className="opacity-60 hover:opacity-100 hover:text-red-300" title="Rimuovi colonna">
+                      <Trash2 size={10} />
+                    </button>
+                  </th>
+                ))}
+                <th style={{ background: '#2b3c24', width: 28 }} />
+              </tr>
+            </thead>
+            <tbody>
+              {giorni.map(row => {
+                const g = row.giorno_settimana
+                const sel = giornoSel === g
+                return (
+                  <tr key={row.id} style={{ background: sel ? '#eef3e8' : '#fff' }}>
+                    <td onClick={() => setGiornoSel(g)}
+                      className="px-3 py-2 font-bold cursor-pointer sticky left-0"
+                      style={{ background: sel ? '#456b3a' : '#5c7a4e', color: '#fff', borderTop: '1px solid #2b3c24' }}
+                      title="Seleziona il giorno per aggiungere colonne">
+                      {labelGiorno(g)}
+                    </td>
+                    {colonne.map(c => (
+                      <td key={c.id} className="px-2 py-2 text-center border-l border-stone-100">
+                        <input type="checkbox" checked={isChecked(g, c.sigla)}
+                          onChange={() => toggleCheck(g, c.sigla)}
+                          className="w-4 h-4 cursor-pointer accent-[#476540]" />
+                      </td>
+                    ))}
+                    <td className="px-1 text-center border-l border-stone-100">
+                      <button onClick={() => rimuoviGiorno(g)} className="text-stone-300 hover:text-red-500" title="Rimuovi giorno">
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       )}
+      <p className="text-[11px] text-stone-400">
+        Prossime tappe: slot/numeri dei medici dentro le colonne-turno + pannello Fabbisogno.
+      </p>
     </div>
   )
 }
