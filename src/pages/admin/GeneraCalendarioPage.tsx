@@ -778,8 +778,10 @@ export function GeneraCalendarioPage() {
             )}
           </div>
 
-          {/* Area anteprima: rotazione dinamica (riuso "Prova Schema") o classico */}
-          <div ref={tableRef} className="flex-1 px-3 pb-3 overflow-auto" style={{ minHeight: 0 }}>
+          {/* Area anteprima: rotazione dinamica (riuso "Prova Schema") o classico.
+              scrollbar-gutter stable = larghezza costante → niente loop ResizeObserver. */}
+          <div ref={tableRef} className="flex-1 px-3 pb-3 overflow-y-auto overflow-x-hidden"
+            style={{ minHeight: 0, scrollbarGutter: 'stable' }}>
             {usaNuovoMotore ? (
               previewCellsGen && previewCellsGen.length > 0 ? (
                 <ProvaSchemaPreview previewCells={previewCellsGen} turnisti={turnistiGen} tipiTurno={nuovoTipi}

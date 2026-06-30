@@ -61,8 +61,18 @@ export function ProvaSchemaPreview({
   useEffect(() => {
     const el = ref.current; if (!el) return
     setW(el.clientWidth)
-    const ro = new ResizeObserver(([e]) => setW(e.contentRect.width))
-    ro.observe(el); return () => ro.disconnect()
+    let raf = 0
+    const ro = new ResizeObserver(([e]) => {
+      // rAF + soglia: evita il loop ResizeObserver↔scrollbar (che terrebbe la
+      // pagina "busy" all'infinito) quando il pannello vive in un contenitore
+      // scrollabile verticalmente, come in Genera Calendario.
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        const next = Math.round(e.contentRect.width)
+        setW(prev => (Math.abs(prev - next) >= 2 ? next : prev))
+      })
+    })
+    ro.observe(el); return () => { cancelAnimationFrame(raf); ro.disconnect() }
   }, [])
   const colore = (sigla: string) => tipiTurno.find(t => t.sigla === sigla)
   const cognomeDi = (t: Medico) => t.cognome || t.nome.split(' ')[0] || t.nome
