@@ -141,24 +141,24 @@ export function BackupRipristinoPage() {
     const ok = await confirm({
       title:   'Ripristinare questo backup?',
       message:
-        'Verranno SOSTITUITI tutti i turni attualmente nel calendario con ' +
-        'quelli contenuti nel backup "' + (b.descrizione ?? '?') + '" del ' +
-        fmtDataOra(b.created_at) + '. Operazione irreversibile, ma viene ' +
-        'creato automaticamente un backup "pre-ripristino" come safety net.',
-      confirmLabel: 'Ripristina',
+        'Verrà SOSTITUITO TUTTO il reparto (turni, turnisti, impostazioni, ' +
+        'ferie, cambi, festività, schemi) con lo stato del backup "' +
+        (b.descrizione ?? '?') + '" del ' + fmtDataOra(b.created_at) +
+        '. Operazione atomica e isolata al reparto (non tocca gli altri); ' +
+        'viene comunque creato un backup "pre-ripristino" come safety net.',
+      confirmLabel: 'Ripristina tutto',
       danger: true,
     })
     if (!ok) return
     setBusyId(b.id); setErr(null); setMsg(null)
     try {
-      const res = await restoreBackup(repartoAttivo, b.id)
+      const res = await restoreBackup(b.id)
       setMsg(
-        `Ripristino completato: ${res.inserted} turni reinseriti. ` +
-        `Backup pre-ripristino creato come safety net.`
+        (res.completo ? 'Ripristino completo del reparto' : 'Ripristino turni') +
+        ` eseguito (${res.inserted} turni). Backup pre-ripristino creato.`
       )
-      qc.invalidateQueries({ queryKey: ['turni-backup'] })
-      qc.invalidateQueries({ queryKey: ['turni-modifica'] })
-      qc.invalidateQueries({ queryKey: ['turni'] })
+      // Ripristino completo → tutto può essere cambiato: refresh totale.
+      qc.invalidateQueries()
       setTimeout(() => setMsg(null), 6000)
     } catch (e) {
       setErr('Errore ripristino: ' + (e as Error).message)

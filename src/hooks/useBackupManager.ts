@@ -24,9 +24,6 @@
 import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
-import type { Turno } from '../types'
-
-const CHUNK = 500   // batch size per INSERT bulk in restore (PostgREST limit)
 
 // ── Backup di UN REPARTO — snapshot SERVER-SIDE (RPC backup_reparto) ───────
 // Il database fa snapshot + rotazione (impostazioni_globali.backup_da_tenere)
@@ -44,51 +41,18 @@ export async function ruotaBackup(_repartoId: string, _daTenere: number): Promis
   return 0
 }
 
-// ── Restore: applica il backup ────────────────────────────────────────
-// Strategia:
-//   1. Crea AUTO-BACKUP pre-ripristino (safety net)
-//   2. Leggi snapshot del backup richiesto
-//   3. DELETE all turni
-//   4. INSERT bulk in chunks da CHUNK righe (limit PostgREST payload)
-//
-// Non e` atomico (transazione DB) ma in caso di fallimento allo step 3-4
-// l'admin puo` ripristinare dall'auto-backup creato allo step 1.
-export async function restoreBackup(repartoId: string, backupId: string): Promise<{
-  inserted: number; preBackupId: string
+// ── Restore SERVER-SIDE e ATOMICO (RPC ripristina_reparto) ────────────────
+// Il database, in un'unica transazione: crea un backup pre-ripristino, poi
+// sostituisce TUTTO il reparto (config, turnisti, turni, ferie, cambi,
+// festività, schemi…) con lo snapshot. O tutto o niente. Retrocompatibile coi
+// vecchi backup "solo turni". Non tocca gli altri reparti (11N incluso).
+export async function restoreBackup(backupId: string): Promise<{
+  inserted: number; completo: boolean
 }> {
-  // 1) Crea backup pre-ripristino (solo del reparto)
-  const pre = await createBackup(
-    repartoId,
-    `Auto pre-ripristino del ${new Date().toLocaleString('it-IT')}`
-  )
-
-  // 2) Leggi snapshot del backup richiesto
-  const { data: bk, error: fetchErr } = await supabase.from('turni_backup')
-    .select('snapshot').eq('id', backupId).single()
-  if (fetchErr) throw fetchErr
-  const snapshot = (bk as { snapshot: { turni: Turno[] } }).snapshot
-  const turniFromBk = snapshot?.turni ?? []
-
-  // 3) DELETE dei soli turni DEL REPARTO (NON tocca gli altri reparti, 11N
-  //    incluso: un ripristino di un reparto è isolato).
-  const { error: delErr } = await supabase.from('turni')
-    .delete().eq('reparto_id', repartoId)
-  if (delErr) throw delErr
-
-  // 4) INSERT bulk in chunks, forzando il reparto corretto sui turni.
-  let inserted = 0
-  for (let i = 0; i < turniFromBk.length; i += CHUNK) {
-    const chunk = turniFromBk.slice(i, i + CHUNK).map(t => {
-      const r = { ...(t as unknown as Record<string, unknown>) }
-      delete r.id; delete r.created_at; delete r.updated_at
-      r.reparto_id = repartoId
-      return r
-    })
-    const { error: insErr } = await supabase.from('turni').insert(chunk)
-    if (insErr) throw insErr
-    inserted += chunk.length
-  }
-  return { inserted, preBackupId: pre.id }
+  const { data, error } = await supabase.rpc('ripristina_reparto', { p_backup_id: backupId })
+  if (error) throw error
+  const r = (data ?? {}) as { turni?: number; completo?: boolean }
+  return { inserted: r.turni ?? 0, completo: !!r.completo }
 }
 
 // ── Delete single backup ─────────────────────────────────────────────
