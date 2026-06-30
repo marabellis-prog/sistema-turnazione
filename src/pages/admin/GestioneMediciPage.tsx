@@ -229,6 +229,13 @@ export function GestioneMediciPage() {
   async function salvaOrdine() {
     setSavingOrder(true); setErrore('')
     try {
+      // Fase 0: gli OSPITI sono fuori rotazione → numero_ordine NULL. Ripulisce
+      // eventuali residui numerici (vecchio bug) che altrimenti collidono col
+      // rinumero dei turnisti sul vincolo UNIQUE(reparto_id, numero_ordine).
+      const { error: e0 } = await supabase.from('medici')
+        .update({ numero_ordine: null })
+        .eq('reparto_id', repartoAttivo).eq('ruolo_reparto', 'ospite').not('numero_ordine', 'is', null)
+      if (e0) throw e0
       // Fase 1: valori temporanei alti per evitare conflitti di unicità
       for (let i = 0; i < localMedici.length; i++) {
         const { error } = await supabase
