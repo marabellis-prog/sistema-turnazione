@@ -493,6 +493,18 @@ export function SchemaDesignerNuovo() {
   const colonneOrdinate = colonne   // già ordinate per 'ordine'
   const turniColonne = colonne.filter(c => c.tipo === 'turno')
 
+  // Fabbisogno per ambito: mostra SOLO i turni/proprietà attivi (spuntati) nei
+  // giorni di quell'ambito → es. la domenica non chiede la mattina se non c'è.
+  const colsAmbito = (amb: string): { turni: ColonnaRow[]; proprieta: ProprietaTurno[] } => {
+    const gg = GIORNI_AMBITO[amb] ?? [1, 2, 3, 4, 5, 6, 7]
+    const attivo = (sigla: string) => gg.some(g => isChecked(g, sigla))
+    return {
+      turni:     colonne.filter(c => c.tipo === 'turno' && attivo(c.sigla)),
+      proprieta: proprieta.filter(p => attivo(p.sigla)),   // solo proprietà-flag configurate e spuntate
+    }
+  }
+  const puoFabbisogno = turniColonne.length > 0 && proprieta.some(p => colonne.some(c => c.tipo === 'flag' && c.sigla === p.sigla))
+
   return (
     <div className="flex flex-col gap-4">
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
@@ -819,7 +831,7 @@ export function SchemaDesignerNuovo() {
           </p>
         </div>
         <div className="shrink-0 sticky top-4 self-start">
-          <FabbisognoPanel turni={turniColonne} proprieta={proprieta}
+          <FabbisognoPanel colsAmbito={colsAmbito} puoFabbisogno={puoFabbisogno}
             fab={fabbisogno} onSet={setValFab} onRemove={rimuoviAmbitoFab} />
         </div>
         </div>
@@ -856,20 +868,31 @@ const AMBITI_SPECIALI: { key: string; label: string }[] = [
   { key: 'sabato',     label: 'Sabato' },
   { key: 'festivi',    label: 'Domenica / Festivi' },
 ]
+// Giorni-settimana rappresentativi di ogni ambito (per filtrare turni/proprietà).
+const GIORNI_AMBITO: Record<string, number[]> = {
+  normale:    [1, 2, 3, 4, 5],
+  prefestivo: [1, 2, 3, 4, 5],
+  sabato:     [6],
+  festivi:    [7],
+}
 const labelAmbito = (k: string) => k === 'normale' ? 'Normale' : (AMBITI_SPECIALI.find(a => a.key === k)?.label ?? k)
 
 // Una griglia di fabbisogno per un ambito (Normale o uno speciale). Componente
 // a livello modulo (stabile): l'intestazione mostra SEMPRE il nome dell'ambito.
-function GrigliaAmbito({ amb, turni, proprieta, fab, onSet, onRemove }: {
-  amb: string; turni: ColonnaRow[]; proprieta: ProprietaTurno[]; fab: FabRow[]
+function GrigliaAmbito({ amb, colsAmbito, fab, onSet, onRemove }: {
+  amb: string
+  colsAmbito: (amb: string) => { turni: ColonnaRow[]; proprieta: ProprietaTurno[] }
+  fab: FabRow[]
   onSet: (amb: string, turno: string, prop: string, n: number) => void
   onRemove?: (amb: string) => void
 }) {
+  const { turni, proprieta } = colsAmbito(amb)   // solo turni/proprietà attivi in questo ambito
   const valore = (turno: string, prop: string) =>
     fab.find(f => f.ambito === amb && f.turno_sigla === turno)?.per_proprieta?.[prop] ?? 0
   const totaleTurno = (turno: string) =>
     fab.find(f => f.ambito === amb && f.turno_sigla === turno)?.totale ?? 0
   const speciale = amb !== 'normale'
+  const vuoto = turni.length === 0 || proprieta.length === 0
   return (
     <div className="border rounded-lg p-2" style={{ borderColor: speciale ? '#e3d4ad' : '#e7e5e4', background: speciale ? '#fbf7ee' : '#fff' }}>
       <div className="flex items-center justify-between mb-1">
@@ -882,6 +905,9 @@ function GrigliaAmbito({ amb, turni, proprieta, fab, onSet, onRemove }: {
           </button>
         )}
       </div>
+      {vuoto ? (
+        <p className="text-[10px] text-stone-400 italic py-0.5">Nessun turno attivo in questo ambito.</p>
+      ) : (
       <table className="text-[11px] border-collapse w-full">
         <thead>
           <tr className="text-stone-500">
@@ -911,12 +937,15 @@ function GrigliaAmbito({ amb, turni, proprieta, fab, onSet, onRemove }: {
           ))}
         </tbody>
       </table>
+      )}
     </div>
   )
 }
 
-function FabbisognoPanel({ turni, proprieta, fab, onSet, onRemove }: {
-  turni: ColonnaRow[]; proprieta: ProprietaTurno[]; fab: FabRow[]
+function FabbisognoPanel({ colsAmbito, puoFabbisogno, fab, onSet, onRemove }: {
+  colsAmbito: (amb: string) => { turni: ColonnaRow[]; proprieta: ProprietaTurno[] }
+  puoFabbisogno: boolean
+  fab: FabRow[]
   onSet: (amb: string, turno: string, prop: string, n: number) => void
   onRemove: (amb: string) => void
 }) {
@@ -934,15 +963,15 @@ function FabbisognoPanel({ turni, proprieta, fab, onSet, onRemove }: {
       <h3 className="text-sm font-bold text-stone-800 flex items-center gap-1.5">
         <ListChecks size={15} style={{ color: '#476540' }} /> Fabbisogno
       </h3>
-      {turni.length === 0 || proprieta.length === 0 ? (
+      {!puoFabbisogno ? (
         <p className="text-[11px] text-stone-400 italic">
-          Definisci almeno un turno e una proprietà per impostare il fabbisogno.
+          Definisci almeno un turno e una proprietà (flag) nello schema per impostare il fabbisogno.
         </p>
       ) : (
         <>
-          <GrigliaAmbito amb="normale" turni={turni} proprieta={proprieta} fab={fab} onSet={onSet} />
+          <GrigliaAmbito amb="normale" colsAmbito={colsAmbito} fab={fab} onSet={onSet} />
           {specialiAperti.map(amb => (
-            <GrigliaAmbito key={amb} amb={amb} turni={turni} proprieta={proprieta} fab={fab} onSet={onSet} onRemove={handleRemove} />
+            <GrigliaAmbito key={amb} amb={amb} colsAmbito={colsAmbito} fab={fab} onSet={onSet} onRemove={handleRemove} />
           ))}
           {daAggiungere.length > 0 && (
             <div className="flex flex-wrap gap-1 pt-0.5">
