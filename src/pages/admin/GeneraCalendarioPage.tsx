@@ -785,7 +785,7 @@ export function GeneraCalendarioPage() {
             {usaNuovoMotore ? (
               previewCellsGen && previewCellsGen.length > 0 ? (
                 <ProvaSchemaPreview previewCells={previewCellsGen} turnisti={turnistiGen} tipiTurno={nuovoTipi}
-                  className="flex flex-col min-w-0" />
+                  width={508} className="flex flex-col min-w-0" />
               ) : (
                 <div className="h-full flex items-center justify-center text-center px-4">
                   <div className="text-[11px] leading-relaxed" style={{ color: '#7a7a6a' }}>

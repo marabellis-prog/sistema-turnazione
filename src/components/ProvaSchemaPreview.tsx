@@ -46,7 +46,7 @@ export function computePreviewCells(params: {
 }
 
 export function ProvaSchemaPreview({
-  previewCells, turnisti, tipiTurno, header, onClose, className, style,
+  previewCells, turnisti, tipiTurno, header, onClose, className, style, width,
 }: {
   previewCells: (string | null)[][]
   turnisti: Medico[]
@@ -55,25 +55,21 @@ export function ProvaSchemaPreview({
   onClose?: () => void
   className?: string
   style?: CSSProperties
+  /** Larghezza fissa (px): se data, NON si usa il ResizeObserver. Serve quando
+   *  il pannello vive in un contenitore scrollabile a larghezza nota (Genera),
+   *  dove l'observer innescherebbe un loop con la scrollbar. */
+  width?: number
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [w, setW] = useState(560)
+  const [measuredW, setMeasuredW] = useState(560)
   useEffect(() => {
+    if (width != null) return            // larghezza fissa → niente observer
     const el = ref.current; if (!el) return
-    setW(el.clientWidth)
-    let raf = 0
-    const ro = new ResizeObserver(([e]) => {
-      // rAF + soglia: evita il loop ResizeObserver↔scrollbar (che terrebbe la
-      // pagina "busy" all'infinito) quando il pannello vive in un contenitore
-      // scrollabile verticalmente, come in Genera Calendario.
-      cancelAnimationFrame(raf)
-      raf = requestAnimationFrame(() => {
-        const next = Math.round(e.contentRect.width)
-        setW(prev => (Math.abs(prev - next) >= 2 ? next : prev))
-      })
-    })
-    ro.observe(el); return () => { cancelAnimationFrame(raf); ro.disconnect() }
-  }, [])
+    setMeasuredW(el.clientWidth)
+    const ro = new ResizeObserver(([e]) => setMeasuredW(e.contentRect.width))
+    ro.observe(el); return () => ro.disconnect()
+  }, [width])
+  const w = width ?? measuredW
   const colore = (sigla: string) => tipiTurno.find(t => t.sigla === sigla)
   const cognomeDi = (t: Medico) => t.cognome || t.nome.split(' ')[0] || t.nome
   const N = turnisti.length
