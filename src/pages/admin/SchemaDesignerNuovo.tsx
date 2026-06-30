@@ -40,6 +40,15 @@ const GIORNI = [
 ]
 const labelGiorno = (n: number) => GIORNI.find(g => g.n === n)?.label ?? '?'
 
+// Spunta verde (in basso a destra di un badge) = turno/proprietà già presente
+// per il giorno attualmente selezionato.
+function SpuntaAttiva() {
+  return (
+    <span className="absolute flex items-center justify-center pointer-events-none"
+      style={{ bottom: -4, right: -4, width: 13, height: 13, borderRadius: '50%', background: '#16a34a', color: '#fff', fontSize: 9, fontWeight: 900, border: '1.5px solid #fff', lineHeight: 1 }}>✓</span>
+  )
+}
+
 interface GiornoRow { id: string; giorno_settimana: number; ordine: number }
 interface ColonnaRow { id: string; tipo: 'turno' | 'flag'; sigla: string; ordine: number }
 interface CheckRow { giorno_settimana: number; colonna_sigla: string; attivo: boolean }
@@ -622,15 +631,18 @@ export function SchemaDesignerNuovo() {
         <div className="card p-3">
           <h3 className="text-xs font-semibold text-stone-600 mb-2">Giorni dello schema</h3>
           <div className="flex flex-wrap gap-1.5">
-            {GIORNI.map(g => (
+            {/* Solo i giorni NON ancora nello schema: appena aggiunto, il badge
+                sparisce; ricompare quando si rimuove il giorno (cestino in tabella). */}
+            {GIORNI.filter(g => !giorniAttivi.includes(g.n)).map(g => (
               <button key={g.n} onClick={() => aggiungiGiorno(g.n)}
-                className="px-2.5 py-1 rounded text-xs font-semibold border transition-colors"
-                style={giorniAttivi.includes(g.n)
-                  ? { background: '#e0e8d8', color: '#2b3c24', borderColor: '#9ab488' }
-                  : { background: '#fff', color: '#9ca3af', borderColor: '#e5e7eb', borderStyle: 'dashed' }}>
-                {g.label}{!giorniAttivi.includes(g.n) && ' +'}
+                className="px-2.5 py-1 rounded text-xs font-semibold border border-dashed transition-colors hover:opacity-70"
+                style={{ background: '#fff', color: '#9ca3af', borderColor: '#e5e7eb' }}>
+                {g.label} +
               </button>
             ))}
+            {giorniAttivi.length === 7 && (
+              <span className="text-[10px] text-stone-400 italic self-center">Tutti i giorni aggiunti</span>
+            )}
           </div>
         </div>
         <div className="card p-3">
@@ -641,15 +653,17 @@ export function SchemaDesignerNuovo() {
           <div className="flex flex-wrap gap-1.5">
             {tipiTurno.map(t => (
               <button key={t.sigla} onClick={() => aggiungiColonna('turno', t.sigla)} disabled={giornoSel === null}
-                className="px-2 py-1 rounded text-xs font-semibold border disabled:opacity-40 hover:opacity-80"
+                className="relative px-2 py-1 rounded text-xs font-semibold border disabled:opacity-40 hover:opacity-80"
                 style={{ background: t.colore_bg ?? '#e5e7eb', color: t.colore_fg ?? '#1f2937', borderColor: 'rgba(0,0,0,0.1)' }} title={t.nome}>
                 {t.sigla}
+                {giornoSel !== null && isChecked(giornoSel, t.sigla) && <SpuntaAttiva />}
               </button>
             ))}
             {proprieta.map(p => (
               <button key={p.sigla} onClick={() => aggiungiColonna('flag', p.sigla)} disabled={giornoSel === null}
-                className="px-2 py-1 rounded text-xs font-semibold border border-stone-300 bg-white disabled:opacity-40 hover:bg-stone-100" title={p.nome}>
+                className="relative px-2 py-1 rounded text-xs font-semibold border border-stone-300 bg-white disabled:opacity-40 hover:bg-stone-100" title={p.nome}>
                 {p.sigla}
+                {giornoSel !== null && isChecked(giornoSel, p.sigla) && <SpuntaAttiva />}
               </button>
             ))}
           </div>
