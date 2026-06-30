@@ -382,9 +382,11 @@ export function SchemaDesignerNuovo() {
         )}
       </div>
 
-      {/* ① TIPI DI TURNO + PROPRIETÀ dello schema (i mattoni: si definiscono per primi) */}
-      <TipiSection reparto={repartoAttivo} schemaNum={schemaNum} onChanged={invalidaSchemi} />
-      <ProprietaSection reparto={repartoAttivo} schemaNum={schemaNum} onChanged={invalidaSchemi} />
+      {/* ① TIPI DI TURNO + PROPRIETÀ dello schema, affiancati (i mattoni: si definiscono per primi) */}
+      <div className="grid lg:grid-cols-5 gap-3 items-start">
+        <div className="lg:col-span-3"><TipiSection reparto={repartoAttivo} schemaNum={schemaNum} onChanged={invalidaSchemi} /></div>
+        <div className="lg:col-span-2"><ProprietaSection reparto={repartoAttivo} schemaNum={schemaNum} onChanged={invalidaSchemi} /></div>
+      </div>
 
       {/* Picker: Giorni + Turni/Proprietà */}
       <div className="grid sm:grid-cols-2 gap-3">
