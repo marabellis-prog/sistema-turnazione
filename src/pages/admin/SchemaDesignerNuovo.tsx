@@ -49,6 +49,7 @@ export function SchemaDesignerNuovo() {
   const dragCol = useRef<string | null>(null)
   const [dragOver, setDragOver] = useState<string | null>(null)
   const dragNum = useRef<number | null>(null)
+  const dragSource = useRef<{ g: number; slot: number; sigla: string } | null>(null)
   const { data: medici = [] } = useMediciReparto()
 
   const key = ['schema-matrice', repartoAttivo, schemaNum]
@@ -211,10 +212,18 @@ export function SchemaDesignerNuovo() {
     invalida()
   }
   async function dropNumero(g: number, slot: number, sigla: string) {
-    const num = dragNum.current; dragNum.current = null
+    const num = dragNum.current; const src = dragSource.current
+    dragNum.current = null; dragSource.current = null
     if (num == null) return
     setErr(null)
-    // "un solo numero per riga": svuota le altre colonne-turno dello stesso slot
+    // Stessa cella → no-op.
+    if (src && src.g === g && src.slot === slot && src.sigla === sigla) return
+    // Spostamento: svuota la cella di partenza.
+    if (src) {
+      const sc = cella(src.g, src.slot, src.sigla)
+      if (sc) await supabase.from('schema_cella').update({ numero: null }).eq('id', sc.id)
+    }
+    // "un solo numero per riga": svuota le altre colonne-turno dello stesso slot.
     const altre = celle.filter(c => c.giorno_settimana === g && c.slot_idx === slot && c.colonna_sigla !== sigla && c.numero != null)
     for (const c of altre) await supabase.from('schema_cella').update({ numero: null }).eq('id', c.id)
     const { error } = await supabase.from('schema_cella')
@@ -391,7 +400,7 @@ export function SchemaDesignerNuovo() {
             <div className="text-xs font-semibold text-stone-600 mb-1">Turnisti — trascina nei riquadri delle colonne-turno</div>
             <div className="flex flex-wrap gap-1">
               {medici.map(m => (
-                <div key={m.id} draggable onDragStart={() => { dragNum.current = m.numero_ordine ?? null }}
+                <div key={m.id} draggable onDragStart={() => { dragNum.current = m.numero_ordine ?? null; dragSource.current = null }}
                   className="px-2 py-1 rounded text-xs font-bold text-white cursor-grab shadow-sm select-none"
                   style={{ background: coloreMedico(m.numero_ordine ?? 0) }} title={m.nome}>
                   {m.numero_ordine}
@@ -449,8 +458,11 @@ export function SchemaDesignerNuovo() {
                           <td key={c.id} className="text-center border-l border-stone-100 px-1 py-1"
                             onDragOver={e => e.preventDefault()} onDrop={() => dropNumero(g, slot, c.sigla)}>
                             {cel?.numero != null
-                              ? <span onClick={() => svuotaNumero(g, slot, c.sigla)} title="Clic per togliere"
-                                  className="inline-block w-7 h-7 leading-7 rounded text-xs font-bold text-white cursor-pointer"
+                              ? <span draggable
+                                  onDragStart={() => { dragNum.current = cel.numero; dragSource.current = { g, slot, sigla: c.sigla } }}
+                                  onClick={() => svuotaNumero(g, slot, c.sigla)}
+                                  title="Trascina per spostare · clic per togliere"
+                                  className="inline-block w-7 h-7 leading-7 rounded text-xs font-bold text-white cursor-grab"
                                   style={{ background: coloreMedico(cel.numero) }}>{cel.numero}</span>
                               : <span className="text-stone-300">–</span>}
                           </td>
