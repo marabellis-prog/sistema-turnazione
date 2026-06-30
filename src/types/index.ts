@@ -190,23 +190,6 @@ export interface DbStats {
   tables: Array<{ name: string; rows: number }>
 }
 
-/** Fabbisogno giornaliero PER-SCHEMA: quanti SUB/MED/Supporto per fascia
- *  (mattina/pomeriggio) e tipo-giorno (feriale/sabato/festivo). */
-export interface SchemaFabbisogno {
-  id?: string
-  reparto_id: string
-  schema_num: number
-  sub_mattina_feriale: number; sub_pomeriggio_feriale: number
-  sub_mattina_sabato:  number; sub_pomeriggio_sabato:  number
-  sub_mattina_festivo: number; sub_pomeriggio_festivo: number
-  med_mattina_feriale: number; med_pomeriggio_feriale: number
-  med_mattina_sabato:  number; med_pomeriggio_sabato:  number
-  med_mattina_festivo: number; med_pomeriggio_festivo: number
-  sup_mattina_feriale: number; sup_pomeriggio_feriale: number
-  sup_mattina_sabato:  number; sup_pomeriggio_sabato:  number
-  sup_mattina_festivo: number; sup_pomeriggio_festivo: number
-}
-
 /** Schema come UNITÀ: struttura (slot in schemi_modello) + validità propria.
  *  Le regole/fabbisogno e l'algoritmo si legheranno a questo (in costruzione). */
 export interface Schema {

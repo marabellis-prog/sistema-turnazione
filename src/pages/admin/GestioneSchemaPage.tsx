@@ -8,7 +8,6 @@ import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useMediciReparto } from '../../hooks/useMediciReparto'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
-import { SchemaFabbisognoBox } from '../../components/SchemaFabbisognoBox'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import type { SchemaModello, Medico, Configurazione } from '../../types'
 
@@ -723,20 +722,6 @@ export function GestioneSchemaPage() {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // Placement effettivamente usati nello schema corrente (per mostrare nel
-  // fabbisogno solo SUB/MED/Supporto che servono davvero).
-  const placementUsati = useMemo(() => {
-    let sub = false, med = false, sup = false
-    for (const rows of Object.values(griglia)) {
-      for (const r of rows) {
-        if (r.SUB) sub = true
-        if (r.MED) med = true
-        if (r.SUP) sup = true
-      }
-    }
-    return { sub, med, sup }
-  }, [griglia])
-
   return (
     <div
       ref={schemaContainerRef}
@@ -1387,17 +1372,6 @@ export function GestioneSchemaPage() {
         </div>
       )}
       </div>{/* /flex-wrap container */}
-
-      {/* ═══ FABBISOGNO (auto-dal-design) ══════════════════════ */}
-      <div className="shrink-0 max-h-[42vh] overflow-y-auto">
-        <SchemaFabbisognoBox
-          repartoId={repartoAttivo}
-          schemaNum={schemaNum}
-          usaSub={placementUsati.sub}
-          usaMed={placementUsati.med}
-          usaSup={placementUsati.sup}
-        />
-      </div>
 
       {/* ═══ TOAST WARNING (validazione drop) ════════════════════
           Centrato sulla viewport (full-screen wrapper con flex center).

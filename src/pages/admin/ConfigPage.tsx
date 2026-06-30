@@ -304,16 +304,11 @@ export function ConfigPage() {
       <div>
         <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
           <CalendarDays size={20} style={{ color: '#476540' }} />
-          Festività e fabbisogno
+          Festività
         </h2>
         <p className="text-sm text-stone-600 mt-0.5">
-          Più in basso: <strong>nazione</strong> del reparto e <strong>festività</strong>
-          (nazionali + locali). Qui sopra il <strong>fabbisogno giornaliero</strong> (medici
-          attesi per slot / tipo di giorno), usato dal check in <strong>Modifica Turni</strong>.
-        </p>
-        <p className="text-xs text-stone-500 mt-1">
-          Nota: il fabbisogno si sposterà in <strong>Disegna Schema</strong> (legato allo schema).
-          Convenzione <strong>0</strong> = nessun controllo per quello slot.
+          Nazione del reparto + festività nazionali e locali. Il <strong>fabbisogno</strong>
+          giornaliero ora si configura in <strong>Disegna Schema</strong> (legato allo schema).
         </p>
       </div>
 
@@ -330,117 +325,6 @@ export function ConfigPage() {
           <AlertTriangle size={15} /> {err}
         </div>
       )}
-
-      {/* Form a tabella: 3 colonne (Feriale | Sabato | Festivo) × 6 righe */}
-      <div className="rounded-lg border border-stone-300 bg-white p-4 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-stone-200">
-              <th className="text-left py-2 px-2 font-semibold text-stone-700" style={{ width: '40%' }}>
-                Slot
-              </th>
-              <th className="text-center py-2 px-2 font-semibold text-stone-700">
-                Feriale
-                <div className="text-[10px] font-normal text-stone-500">(Lun – Ven)</div>
-              </th>
-              <th className="text-center py-2 px-2 font-semibold text-stone-700">
-                Sabato
-                <div className="text-[10px] font-normal text-stone-500">(solo sabato)</div>
-              </th>
-              <th className="text-center py-2 px-2 font-semibold text-stone-700">
-                Festivo
-                <div className="text-[10px] font-normal text-stone-500">(Dom + festivi)</div>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {/* SUB */}
-            <tr className="border-b border-stone-100">
-              <td className="py-2 px-2"><div className="flex items-center gap-2">
-                <span className="inline-block w-3 h-3 rounded-full" style={{ background: '#fecaca', border: '1px solid #dc2626' }} />
-                <span className="font-medium">SUB mattina</span></div></td>
-              {numCell('sub_mattina_feriale')}{numCell('sub_mattina_sabato')}{numCell('sub_mattina_festivo')}
-            </tr>
-            <tr className="border-b border-stone-100">
-              <td className="py-2 px-2"><div className="flex items-center gap-2">
-                <span className="inline-block w-3 h-3 rounded-full" style={{ background: '#fecaca', border: '1px solid #dc2626' }} />
-                <span className="font-medium">SUB pomeriggio</span></div></td>
-              {numCell('sub_pomeriggio_feriale')}{numCell('sub_pomeriggio_sabato')}{numCell('sub_pomeriggio_festivo')}
-            </tr>
-            {/* MED */}
-            <tr className="border-b border-stone-100">
-              <td className="py-2 px-2"><div className="flex items-center gap-2">
-                <span className="inline-block w-3 h-3 rounded-full" style={{ background: '#bae6fd', border: '1px solid #0284c7' }} />
-                <span className="font-medium">MED mattina</span></div></td>
-              {numCell('med_mattina_feriale')}{numCell('med_mattina_sabato')}{numCell('med_mattina_festivo')}
-            </tr>
-            <tr className="border-b border-stone-100">
-              <td className="py-2 px-2"><div className="flex items-center gap-2">
-                <span className="inline-block w-3 h-3 rounded-full" style={{ background: '#bae6fd', border: '1px solid #0284c7' }} />
-                <span className="font-medium">MED pomeriggio</span></div></td>
-              {numCell('med_pomeriggio_feriale')}{numCell('med_pomeriggio_sabato')}{numCell('med_pomeriggio_festivo')}
-            </tr>
-            {/* SUPPORTO (jolly grigio): celle che lavorano senza flag SUB/MED */}
-            <tr className="border-b border-stone-100">
-              <td className="py-2 px-2"><div className="flex items-center gap-2">
-                <span className="inline-block w-3 h-3 rounded-full" style={{ background: '#d4d4d4', border: '1px solid #6b7280' }} />
-                <span className="font-medium">Supporto mattina</span></div></td>
-              {numCell('sup_mattina_feriale')}{numCell('sup_mattina_sabato')}{numCell('sup_mattina_festivo')}
-            </tr>
-            <tr>
-              <td className="py-2 px-2"><div className="flex items-center gap-2">
-                <span className="inline-block w-3 h-3 rounded-full" style={{ background: '#d4d4d4', border: '1px solid #6b7280' }} />
-                <span className="font-medium">Supporto pomeriggio</span></div></td>
-              {numCell('sup_pomeriggio_feriale')}{numCell('sup_pomeriggio_sabato')}{numCell('sup_pomeriggio_festivo')}
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pulsanti salva */}
-      <div className="flex justify-end gap-2 flex-wrap">
-        {/* Salva con validità dal… — sempre visibile. Applica le soglie del
-            form solo da una certa data, archiviando le precedenti nello
-            storico (per non far scattare errori sulla vecchia turnazione). */}
-        <button
-          onClick={openValiditaModal}
-          disabled={!config || saving || savingValidita}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white shadow disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          style={{ background: !config || saving || savingValidita ? '#9ca3af' : '#7a5a2f' }}
-          title="Applica queste soglie solo a partire da una certa data, mantenendo le precedenti per i giorni anteriori">
-          <CalendarClock size={14} />
-          Salva con validità dal…
-        </button>
-        <button
-          onClick={handleSave}
-          disabled={!dirty || saving || !config}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white shadow disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          style={{ background: dirty && !saving ? '#476540' : '#9ca3af' }}>
-          <Save size={14} />
-          {saving ? 'Salvataggio…' : 'Salva impostazioni'}
-        </button>
-      </div>
-
-      {/* Esempio interpretativo */}
-      <div className="rounded-lg p-3 text-xs text-stone-600 space-y-1.5"
-        style={{ background: '#f4f1ea', border: '1px solid #d5ccb8' }}>
-        <p>
-          <strong className="text-stone-700">Come funziona il count:</strong> ogni cella di calendario contribuisce in base
-          al suo TC e ai placement SUB/MED. Esempio: <code>L</code> con <code>slot_mattina=SUB</code> e
-          <code> slot_pomeriggio=MED</code> conta 1 per "SUB mattina" e 1 per "MED pomeriggio". Una <code>M</code>
-          con <code>slot_mattina=SUB</code> conta 1 per "SUB mattina" (e niente pomeriggio).
-        </p>
-        <p>
-          <strong className="text-stone-700">Supporto (jolly, cerchio grigio):</strong> una cella che <em>lavora</em>
-          (M/P/L) ma <em>non</em> e` assegnata né a SUB né a MED conta come Supporto. È il caso del pomeridiano
-          "aiuto" che fa da spalla a entrambi: nel giorno ti aspetti es. 2 SUB + 2 MED + 1 Supporto.
-        </p>
-        <p>
-          <strong className="text-stone-700">Salva con validità dal…:</strong> applica queste soglie solo ai giorni
-          <strong> ≥ </strong> alla data scelta; per i giorni precedenti restano valide le soglie salvate prima.
-          Utile dopo un <strong>Aggiorna turnazione</strong>, quando la composizione cambia da una certa data in poi.
-        </p>
-      </div>
 
       {/* ── NAZIONE del reparto (guida le festività nazionali) ──────── */}
       <div className="mt-4">
@@ -592,59 +476,6 @@ export function ConfigPage() {
         </div>
       )}
 
-      {/* ── Modal: Salva impostazioni con validità dal… ─────────────── */}
-      {validitaOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.45)' }}
-          onClick={() => { if (!savingValidita) setValiditaOpen(false) }}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-5"
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-base font-bold text-stone-800 flex items-center gap-2">
-                <CalendarClock size={18} style={{ color: '#7a5a2f' }} />
-                Salva con validità dal…
-              </h3>
-              <button onClick={() => setValiditaOpen(false)}
-                disabled={savingValidita}
-                className="text-stone-400 hover:text-stone-700 transition-colors disabled:opacity-40">
-                <X size={18} />
-              </button>
-            </div>
-            <p className="text-sm text-stone-600 mb-3">
-              Le soglie impostate sopra varranno <strong>a partire dal giorno scelto</strong>.
-              Per i giorni precedenti restano valide le soglie attuali, che vengono archiviate.
-              Usalo quando hai cambiato la composizione con un <strong>Aggiorna turnazione</strong>.
-            </p>
-            <label className="block text-xs text-stone-600 mb-1 font-medium">
-              Valide a partire dal
-            </label>
-            <input type="date"
-              value={validitaData}
-              onChange={e => setValiditaData(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-stone-300 text-sm mb-4" />
-            {err && (
-              <div className="mb-3 px-2 py-1.5 rounded text-xs"
-                style={{ background: '#fde0e0', color: '#7a2020', border: '1px solid #f0c0c0' }}>
-                {err}
-              </div>
-            )}
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setValiditaOpen(false)}
-                disabled={savingValidita}
-                className="px-3 py-1.5 rounded-lg text-sm font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 disabled:opacity-50 transition-colors">
-                Annulla
-              </button>
-              <button onClick={handleSaveConValidita}
-                disabled={savingValidita || !validitaData}
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold text-white shadow disabled:opacity-50 transition-colors"
-                style={{ background: '#7a5a2f' }}>
-                {savingValidita ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                {savingValidita ? 'Salvataggio…' : 'Conferma'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
         onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
