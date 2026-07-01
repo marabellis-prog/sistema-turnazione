@@ -684,16 +684,20 @@ export function ModificaTurniPage() {
   // → niente più sovrapposizione tra turni vecchi e nuovi.
   const { data: turni = [], refetch: refetchTurni, isLoading: lTur } =
     useQuery<Turno[]>({
-      queryKey: ['turni-modifica', config?.updated_at],
+      queryKey: ['turni-modifica', repartoAttivo, config?.updated_at],
       enabled:  !!config,
       queryFn: async () => {
         if (!config) return []
         const mesi = calcolaMesi(config)
         let all: Turno[] = []
         for (const { di, df } of mesi) {
+          // ⚠️ SEMPRE filtrare per reparto: senza filtro la query prende i turni
+          // di TUTTI i reparti e PostgREST taglia a 1000 righe di default →
+          // i turni di fine periodo del reparto attivo sparirebbero (celle vuote).
           const { data, error } = await supabase
             .from('turni')
             .select('id, medico_id, data, turno_clinico, turno_ricerca, modificato_manualmente, is_ferie, is_sub, is_med, slot_mattina, slot_pomeriggio, turno_clinico_base, turno_ricerca_base, turno_clinico_originario, note, proprieta, created_at, updated_at')
+            .eq('reparto_id', repartoAttivo)
             .gte('data', di).lte('data', df)
           if (error) throw error
           all = [...all, ...((data ?? []) as Turno[])]

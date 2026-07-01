@@ -343,8 +343,12 @@ export function CalendarioPage() {
         setMeseCorrente(i + 1)
         setMeseName(`${MESI_IT[mese]} ${anno}`)
 
+        // ⚠️ SEMPRE filtrare per reparto: senza filtro la query prende i turni
+        // di TUTTI i reparti e PostgREST taglia a 1000 righe di default → con
+        // più reparti spariscono i turni di fine periodo (celle vuote).
         const { data, error } = await supabase
           .from('turni').select('*')
+          .eq('reparto_id', cfg.reparto_id)
           .gte('data', di).lte('data', df)
           .order('data').order('medico_id')
 

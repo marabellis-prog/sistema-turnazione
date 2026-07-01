@@ -260,6 +260,7 @@ export function GestioneCambiPage() {
         const dateToccate = Array.from(new Set(c.modifiche.map(m => m.data)))
         const { data: turniAggiornati, error: fetchErr } = await supabase
           .from('turni').select('*')
+          .eq('reparto_id', config.reparto_id)
           .in('data', dateToccate)
         if (fetchErr) throw fetchErr
         const turniByKey = new Map<string, Turno>()
