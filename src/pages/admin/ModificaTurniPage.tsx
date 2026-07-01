@@ -807,6 +807,23 @@ export function ModificaTurniPage() {
     () => [...proprietaDin].sort((a, b) => a.ordine - b.ordine),
     [proprietaDin],
   )
+  // Tipi di turno dello schema (per Legenda + Riepilogo dinamici).
+  const { data: tipiTurnoDin = [] } = useQuery<{ sigla: string; nome: string; colore_bg: string; colore_fg: string; peso: number; is_reperibilita: boolean; ordine: number }[]>({
+    queryKey: ['mod-tipiturno', repartoAttivo, schemaAttivoNum],
+    enabled: repartoDinamico && !!config,
+    staleTime: 0, refetchOnMount: 'always',
+    queryFn: async () => {
+      const { data, error } = await supabase.from('tipi_turno')
+        .select('sigla, nome, colore_bg, colore_fg, peso, is_reperibilita, ordine')
+        .eq('reparto_id', repartoAttivo).eq('schema_num', schemaAttivoNum)
+      if (error) throw error
+      return (data ?? []) as { sigla: string; nome: string; colore_bg: string; colore_fg: string; peso: number; is_reperibilita: boolean; ordine: number }[]
+    },
+  })
+  const tipiTurnoOrd = useMemo(
+    () => [...tipiTurnoDin].sort((a, b) => (a.ordine ?? 0) - (b.ordine ?? 0)),
+    [tipiTurnoDin],
+  )
   // Righe da mostrare = proprietà richieste nel fabbisogno o presenti in almeno
   // un turno (così "Supporto" e nuove proprietà compaiono appena usate).
   const proprietaDaMostrare = useMemo(() => {
@@ -1966,7 +1983,9 @@ export function ModificaTurniPage() {
         <div className="overflow-auto rounded-lg border border-stone-300 bg-white">
           <TabellaPeriodo cols={cols} tipo="clinica" />
         </div>
-        <LegendaCalendario variant="admin" />
+        <LegendaCalendario variant="admin"
+          tipiTurno={repartoDinamico ? tipiTurnoOrd : undefined}
+          proprieta={repartoDinamico ? proprietaOrd : undefined} />
         {/* Ricerca (RM/RP): solo 11N. I reparti dinamici non hanno Ricerca. */}
         {!repartoDinamico && (
           <div className="overflow-auto rounded-lg border bg-white" style={{ borderColor: '#c98a96' }}>
@@ -1998,11 +2017,23 @@ export function ModificaTurniPage() {
             Modifica Turni
           </h2>
           <p className="text-sm text-stone-600 mt-0.5">
-            <strong>Clinica</strong>: clicca per modificare TC,
-            <kbd className="px-1 py-0.5 rounded text-[10px]" style={{background:'#f0ece4',border:'1px solid #d5ccb8'}}>Ctrl+V</kbd> da Excel,
-            o trascina M / P / L / REP dalla legenda. Per L con sub mattina + med pomeriggio (o viceversa),
-            il cerchio si divide a metà — primo drop di Ⓢ / Ⓜ = mattina, secondo = pomeriggio.
-            <strong className="ml-2">Ricerca</strong>: trascina RM (a chi fa P) o RP (a chi fa M).
+            {repartoDinamico ? (
+              <>
+                Clicca una cella per cambiare il turno (scrivi la sigla),{' '}
+                <kbd className="px-1 py-0.5 rounded text-[10px]" style={{background:'#f0ece4',border:'1px solid #d5ccb8'}}>Ctrl+V</kbd> da Excel,
+                oppure <strong>trascina turni e proprietà</strong> dalla legenda qui sotto.
+                In fondo trovi la <strong>copertura</strong> del fabbisogno (clic sulla proprietà per il dettaglio mattina/pomeriggio)
+                e il <strong>riepilogo</strong> per turnista.
+              </>
+            ) : (
+              <>
+                <strong>Clinica</strong>: clicca per modificare TC,{' '}
+                <kbd className="px-1 py-0.5 rounded text-[10px]" style={{background:'#f0ece4',border:'1px solid #d5ccb8'}}>Ctrl+V</kbd> da Excel,
+                o trascina M / P / L / REP dalla legenda. Per L con sub mattina + med pomeriggio (o viceversa),
+                il cerchio si divide a metà — primo drop di Ⓢ / Ⓜ = mattina, secondo = pomeriggio.
+                <strong className="ml-2">Ricerca</strong>: trascina RM (a chi fa P) o RP (a chi fa M).
+              </>
+            )}
           </p>
         </div>
 
