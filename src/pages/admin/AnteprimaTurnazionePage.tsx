@@ -6,23 +6,26 @@
  * **Scartare** la bozza.
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useLegendaDinamica } from '../../hooks/useLegendaDinamica'
 import { CalendarClock, CheckCircle, Trash2, Loader2, AlertTriangle, Save } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useMediciReparto } from '../../hooks/useMediciReparto'
-import { useReparto } from '../../contexts/RepartoContext'
+import { useReparto, REPARTO_11N } from '../../contexts/RepartoContext'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { useTurnazioneAnteprima } from '../../hooks/useTurnazioneAnteprima'
 import { useFestivitaCustom } from '../../hooks/useFestivitaCustom'
 import { AnteprimaTurnazioneView } from '../../components/AnteprimaTurnazioneView'
+import { RiepilogoTurni } from '../../components/RiepilogoTurni'
 import { pubblicaBozza, scartaBozza, salvaModificheBozza } from '../../lib/aggiornaTurnazione'
 import { applicaDropCella } from '../../lib/anteprimaEditing'
-import type { Configurazione, Medico, Turno } from '../../types'
+import { isFestivo } from '../../lib/holidays'
+import type { Configurazione, Medico, Turno, ColonnaCal } from '../../types'
 
 export function AnteprimaTurnazionePage() {
   const qc = useQueryClient()
@@ -66,6 +69,74 @@ export function AnteprimaTurnazionePage() {
 
   const { data: medici = [] } = useMediciReparto()
   const { data: config } = useConfigReparto()
+
+  const repartoDinamico = repartoAttivo !== REPARTO_11N
+  // Legenda DINAMICA = unione dei turni/proprietà dei due schemi che convivono
+  // nel range (vecchio prima del cutover, nuovo dal cutover).
+  const legNew = useLegendaDinamica(repartoAttivo, anteprima?.meta?.schema_nuovo)
+  const legOld = useLegendaDinamica(repartoAttivo, config?.schema_attivo)
+  const tipiTurnoLeg = useMemo(() => {
+    const by = new Map<string, typeof legNew.tipiTurno[number]>()
+    for (const t of [...legNew.tipiTurno, ...legOld.tipiTurno]) if (!by.has(t.sigla)) by.set(t.sigla, t)
+    return [...by.values()]
+  }, [legNew.tipiTurno, legOld.tipiTurno])
+  const proprietaLeg = useMemo(() => {
+    const by = new Map<string, typeof legNew.proprieta[number]>()
+    for (const p of [...legNew.proprieta, ...legOld.proprieta]) if (!by.has(p.sigla)) by.set(p.sigla, p)
+    return [...by.values()]
+  }, [legNew.proprieta, legOld.proprieta])
+
+  // Fabbisogno DINAMICO (schema_fabbisogno) di tutti gli schemi del reparto:
+  // l'atteso per giorno usa lo schema vecchio (prima del cutover) o nuovo (dal
+  // cutover) e l'ambito del giorno (normale/sabato/festivi).
+  const { data: fabbisognoAll = [] } = useQuery<{ schema_num: number; ambito: string; turno_sigla: string; totale: number; per_proprieta: Record<string, number> }[]>({
+    queryKey: ['antep-fabbisogno', repartoAttivo],
+    enabled: repartoDinamico,
+    staleTime: 0,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('schema_fabbisogno')
+        .select('schema_num, ambito, turno_sigla, totale, per_proprieta').eq('reparto_id', repartoAttivo)
+      if (error) throw error
+      return (data ?? []) as { schema_num: number; ambito: string; turno_sigla: string; totale: number; per_proprieta: Record<string, number> }[]
+    },
+  })
+  const attesoDin = useMemo(() => {
+    const cutover   = anteprima?.meta?.cutover ?? '9999-99-99'
+    const schemaNew = anteprima?.meta?.schema_nuovo
+    const schemaOld = config?.schema_attivo
+    return (data: string) => {
+      const dd = new Date(data + 'T00:00:00')
+      const fest = dd.getDay() === 0 || isFestivo(dd, festivitaCustomSet)
+      const ambito = fest ? 'festivi' : dd.getDay() === 6 ? 'sabato' : 'normale'
+      const schema = data >= cutover ? schemaNew : schemaOld
+      let sub = 0, med = 0, tot = 0
+      for (const r of fabbisognoAll) {
+        if (r.schema_num !== schema || r.ambito !== ambito) continue
+        const pp = r.per_proprieta ?? {}
+        sub += pp.SUB ?? 0; med += pp.MED ?? 0; tot += r.totale ?? 0
+      }
+      return { sub, med, sup: Math.max(0, tot - sub - med) }
+    }
+  }, [fabbisognoAll, anteprima?.meta, config?.schema_attivo, festivitaCustomSet])
+
+  // Riepilogo DINAMICO (righe = turnisti) — riuso RiepilogoTurni.
+  const riepilogoNode = useMemo(() => {
+    if (!repartoDinamico || turniLocal.length === 0) return null
+    const byKey = new Map(turniLocal.map(t => [`${t.medico_id}|${t.data}`, t]))
+    const dates = [...new Set(turniLocal.map(t => t.data))].sort()
+    const colonne: ColonnaCal[] = dates.map(d => {
+      const dd = new Date(d + 'T00:00:00')
+      return { data: d, giorno: dd.getDate(), mese: dd.getMonth() + 1, anno: dd.getFullYear(), isDomenica: dd.getDay() === 0, isFestivo: isFestivo(dd, festivitaCustomSet) }
+    })
+    return (
+      <RiepilogoTurni medici={medici} colonne={colonne}
+        getCellInfo={(mid, d) => {
+          const t = byKey.get(`${mid}|${d}`)
+          return { tc: (t?.turno_clinico ?? '') as Turno['turno_clinico'], slot_mattina: t?.slot_mattina ?? null, slot_pomeriggio: t?.slot_pomeriggio ?? null, proprieta: t?.proprieta ?? [] }
+        }}
+        tipiTurno={tipiTurnoLeg} proprieta={proprietaLeg} festivitaCustomSet={festivitaCustomSet} />
+    )
+  }, [repartoDinamico, turniLocal, medici, tipiTurnoLeg, proprietaLeg, festivitaCustomSet])
 
   async function handleApprova() {
     if (!anteprima || !config) return
@@ -163,7 +234,13 @@ export function AnteprimaTurnazionePage() {
       ) : (
         <div className="flex-1 min-h-0">
           <AnteprimaTurnazioneView turni={turniLocal} meta={anteprima.meta} medici={medici}
-            festivitaCustomSet={festivitaCustomSet} editable onDropCell={handleDropCell} fullHeight />
+            festivitaCustomSet={festivitaCustomSet}
+            editable={!repartoDinamico} onDropCell={handleDropCell} fullHeight
+            dinamico={repartoDinamico}
+            tipiTurnoLeg={repartoDinamico ? tipiTurnoLeg : undefined}
+            proprietaLeg={repartoDinamico ? proprietaLeg : undefined}
+            attesoDin={repartoDinamico ? attesoDin : undefined}
+            riepilogoNode={repartoDinamico ? riepilogoNode : undefined} />
         </div>
       )}
     </div>

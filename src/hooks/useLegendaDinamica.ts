@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { REPARTO_11N } from '../contexts/RepartoContext'
 
-export interface TipoTurnoLegenda { sigla: string; nome: string; colore_bg: string; colore_fg: string; is_reperibilita: boolean }
+export interface TipoTurnoLegenda { sigla: string; nome: string; colore_bg: string; colore_fg: string; is_reperibilita: boolean; peso: number }
 export interface ProprietaLegenda { sigla: string; nome: string; colore_bg: string }
 
 /**
@@ -36,7 +36,7 @@ export function useLegendaDinamica(
     staleTime: 0, refetchOnMount: 'always',
     queryFn: async () => {
       const { data, error } = await supabase.from('tipi_turno')
-        .select('sigla, nome, colore_bg, colore_fg, is_reperibilita, ordine')
+        .select('sigla, nome, colore_bg, colore_fg, is_reperibilita, peso, ordine')
         .eq('reparto_id', repartoId as string).eq('schema_num', schema)
       if (error) throw error
       return (data ?? []) as (TipoTurnoLegenda & { ordine: number })[]

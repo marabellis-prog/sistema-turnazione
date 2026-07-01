@@ -306,6 +306,23 @@ async function fetchTurniRangeReparto(repartoId: string, diISO: string, dfISO: s
   return all
 }
 
+/** Carica i dati di UNO schema dinamico (per generare la rotazione vecchia). */
+async function fetchSchemaDinamico(repartoId: string, schemaNum: number): Promise<SchemaDinamicoData> {
+  const [colR, chkR, celR, tipR] = await Promise.all([
+    supabase.from('schema_colonna').select('tipo, sigla').eq('reparto_id', repartoId).eq('schema_num', schemaNum),
+    supabase.from('schema_giorno_colonna').select('giorno_settimana, colonna_sigla').eq('reparto_id', repartoId).eq('schema_num', schemaNum).eq('attivo', true),
+    supabase.from('schema_cella').select('giorno_settimana, slot_idx, colonna_sigla, numero, attivo').eq('reparto_id', repartoId).eq('schema_num', schemaNum),
+    supabase.from('tipi_turno').select('*').eq('reparto_id', repartoId).eq('schema_num', schemaNum),
+  ])
+  for (const r of [colR, chkR, celR, tipR]) if (r.error) throw r.error
+  return {
+    colonne:   (colR.data ?? []) as SchemaColonnaLite[],
+    checks:    (chkR.data ?? []) as SchemaCheckLite[],
+    celle:     (celR.data ?? []) as SchemaCellaLite[],
+    tipiTurno: (tipR.data ?? []) as TipoTurno[],
+  }
+}
+
 export async function creaBozzaAggiornamentoDinamico(
   config: Configurazione,
   medici: Medico[],
@@ -341,6 +358,23 @@ export async function creaBozzaAggiornamentoDinamico(
   const prod = await fetchTurniRangeReparto(config.reparto_id, origStartISO, finalEndISO)
   const prodMap = new Map(prod.map(t => [`${t.medico_id}|${t.data}`, t]))
 
+  // Schema VECCHIO (attivo prima dell'aggiornamento): rotazione precedente
+  // CONTINUATA (stessa ancora A_old) su tutto il range → riempie i giorni-buco
+  // tra la fine della produzione e il cutover. Se coincide col nuovo, lo riusa.
+  const schemaVecchioNum = config.schema_attivo ?? p.schemaNuovo
+  const schemaVecchio = schemaVecchioNum === p.schemaNuovo
+    ? schema
+    : await fetchSchemaDinamico(config.reparto_id, schemaVecchioNum)
+  const vecchiaBase = generaSchemaNuovo({
+    anno_inizio: config.anno_inizio, mese_inizio: config.mese_inizio,
+    anno_fine: fineAnno, mese_fine: fineMese,
+    medici: mediciAttivi,
+    celle: schemaVecchio.celle, colonne: schemaVecchio.colonne,
+    checks: schemaVecchio.checks, tipiTurno: schemaVecchio.tipiTurno,
+    anchorOverride: A_old,
+  })
+  const veMap = new Map(vecchiaBase.map(t => [`${t.medico_id}|${t.data}`, t]))
+
   const snap: Array<Record<string, unknown>> = []
   let nCambi = 0
   const startD = firstOfMonth(config.anno_inizio, config.mese_inizio)
@@ -353,9 +387,11 @@ export async function creaBozzaAggiornamentoDinamico(
     for (const m of mediciAttivi) {
       const key = `${m.id}|${dataISO}`
       const pr  = prodMap.get(key)
-      // Riga B/N "vecchia" = produzione attuale (semplificazione per il dinamico).
-      const vecchioTc = (pr?.turno_clinico ?? '') as TurnoClinico
-      const vecchioTr = (pr?.turno_ricerca ?? '') as TurnoRicerca
+      const ve  = veMap.get(key)
+      // Riferimento "vecchio": prima del cutover = produzione (coi cambi), dal
+      // cutover = rotazione vecchia continuata (counterfactual).
+      const vecchioTc = (dataISO >= cutoverISO ? (ve?.turno_clinico ?? '') : (pr?.turno_clinico ?? '')) as TurnoClinico
+      const vecchioTr = (dataISO >= cutoverISO ? (ve?.turno_ricerca ?? '') : (pr?.turno_ricerca ?? '')) as TurnoRicerca
 
       if (inFinestraNuova) {
         const nb   = nbMap.get(key)
@@ -405,6 +441,21 @@ export async function creaBozzaAggiornamentoDinamico(
           turno_clinico_base: pr.turno_clinico_base ?? null,
           turno_ricerca_base: pr.turno_ricerca_base ?? null,
           turno_clinico_originario: pr.turno_clinico_originario ?? null,
+          turno_clinico_vecchio: vecchioTc, turno_ricerca_vecchio: vecchioTr,
+        })
+      } else if (ve) {
+        // Giorno-BUCO (prima del cutover, senza produzione): rotazione VECCHIA
+        // continuata → riempie il vuoto tra fine turnazione vecchia e cutover.
+        snap.push({
+          medico_id: m.id, data: dataISO,
+          turno_clinico: ve.turno_clinico, turno_ricerca: ve.turno_ricerca,
+          turno_sigla: ve.turno_sigla ?? null, proprieta: ve.proprieta ?? [],
+          slot_mattina: ve.slot_mattina, slot_pomeriggio: ve.slot_pomeriggio,
+          is_sub: ve.is_sub, is_med: ve.is_med,
+          is_ferie: false, note: null,
+          modificato_manualmente: false,
+          turno_clinico_base: ve.turno_clinico, turno_ricerca_base: ve.turno_ricerca,
+          turno_clinico_originario: null,
           turno_clinico_vecchio: vecchioTc, turno_ricerca_vecchio: vecchioTr,
         })
       }

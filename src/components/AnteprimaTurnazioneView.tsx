@@ -140,9 +140,19 @@ interface Props {
   /** true = calendario lineare a tutta altezza (come "Calendario"), scorre
    *  dx/sx senza box con scrollbar. false = box con maxHeight (admin). */
   fullHeight?:         boolean
+  /** Reparto DINAMICO: riga SINGOLA sola-lettura (niente riga "turno
+   *  originario"); mostra il turno ATTUALE (coi cambi) e sui cambi dal cutover
+   *  un bordo BLU + tooltip. Legenda dinamica. */
+  dinamico?:           boolean
+  tipiTurnoLeg?:       { sigla: string; nome: string; colore_bg: string; colore_fg: string; is_reperibilita: boolean }[]
+  proprietaLeg?:       { sigla: string; nome: string; colore_bg: string }[]
+  /** Atteso (fabbisogno) per giorno da schema_fabbisogno → footer copertura. */
+  attesoDin?:          (data: string) => { sub: number; med: number; sup: number }
+  /** Nodo riepilogo dinamico (RiepilogoTurni) reso sotto il calendario. */
+  riepilogoNode?:      React.ReactNode
 }
 
-export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSet, editable, onDropCell, fullHeight }: Props) {
+export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSet, editable, onDropCell, fullHeight, dinamico, tipiTurnoLeg, proprietaLeg, attesoDin, riepilogoNode }: Props) {
   const byKey = useMemo(() => {
     const m = new Map<string, Turno>()
     for (const t of turni) m.set(`${t.medico_id}|${t.data}`, t)
@@ -213,20 +223,26 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
         else if (sp === 'MED') medA++
         else if (attivaP) supA++
       }
-      const s = soglieForDay(config, c.data)
-      const isFest = c.isDomenica || c.isFestivo
-      const isSab = !isFest && new Date(c.data + 'T00:00:00').getDay() === 6
-      const pick = (fer: number, sab: number, fes: number) => isFest ? fes : isSab ? sab : fer
-      const subE = pick(s.sub_mattina_feriale, s.sub_mattina_sabato, s.sub_mattina_festivo)
-                 + pick(s.sub_pomeriggio_feriale, s.sub_pomeriggio_sabato, s.sub_pomeriggio_festivo)
-      const medE = pick(s.med_mattina_feriale, s.med_mattina_sabato, s.med_mattina_festivo)
-                 + pick(s.med_pomeriggio_feriale, s.med_pomeriggio_sabato, s.med_pomeriggio_festivo)
-      const supE = pick(s.sup_mattina_feriale, s.sup_mattina_sabato, s.sup_mattina_festivo)
-                 + pick(s.sup_pomeriggio_feriale, s.sup_pomeriggio_sabato, s.sup_pomeriggio_festivo)
+      let subE: number, medE: number, supE: number
+      if (dinamico && attesoDin) {
+        // Fabbisogno DINAMICO da schema_fabbisogno (schema attivo di quel giorno).
+        const a = attesoDin(c.data); subE = a.sub; medE = a.med; supE = a.sup
+      } else {
+        const s = soglieForDay(config, c.data)
+        const isFest = c.isDomenica || c.isFestivo
+        const isSab = !isFest && new Date(c.data + 'T00:00:00').getDay() === 6
+        const pick = (fer: number, sab: number, fes: number) => isFest ? fes : isSab ? sab : fer
+        subE = pick(s.sub_mattina_feriale, s.sub_mattina_sabato, s.sub_mattina_festivo)
+             + pick(s.sub_pomeriggio_feriale, s.sub_pomeriggio_sabato, s.sub_pomeriggio_festivo)
+        medE = pick(s.med_mattina_feriale, s.med_mattina_sabato, s.med_mattina_festivo)
+             + pick(s.med_pomeriggio_feriale, s.med_pomeriggio_sabato, s.med_pomeriggio_festivo)
+        supE = pick(s.sup_mattina_feriale, s.sup_mattina_sabato, s.sup_mattina_festivo)
+             + pick(s.sup_pomeriggio_feriale, s.sup_pomeriggio_sabato, s.sup_pomeriggio_festivo)
+      }
       map.set(c.data, { total: subA + medA + supA, sub: { a: subA, e: subE }, med: { a: medA, e: medE }, sup: { a: supA, e: supE } })
     }
     return map
-  }, [colonne, mediciOrd, byKey, ferieApproved, config])
+  }, [colonne, mediciOrd, byKey, ferieApproved, config, dinamico, attesoDin])
 
   const dropHandlers = (medicoId: string, data: string) => editable && onDropCell ? {
     onDragOver: (e: React.DragEvent) => {
@@ -259,12 +275,15 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
 
   return (
     <div className={fullHeight ? 'flex flex-col h-full min-h-0 gap-3' : 'space-y-3'}>
-      {/* Legenda trascinabile (solo admin/editabile) */}
-      {editable && <div className="shrink-0"><LegendaCalendario variant="admin" /></div>}
+      {/* Legenda: DINAMICA (turni/proprietà dello schema) anche in sola-lettura;
+          classica trascinabile per l'editing (11N). */}
+      {dinamico
+        ? <div className="shrink-0"><LegendaCalendario variant="pubblica" tipiTurno={tipiTurnoLeg} proprieta={proprietaLeg} /></div>
+        : editable && <div className="shrink-0"><LegendaCalendario variant="admin" /></div>}
 
       {/* Legenda colori */}
       <div className="text-[11px] text-stone-500 flex flex-wrap gap-x-4 gap-y-1 shrink-0">
-        <span><span style={{ boxShadow: DIVERSO_BLU, padding: '0 6px', borderRadius: 3 }}>blu</span> = giorno con cambio (riga "turno originario")</span>
+        <span><span style={{ boxShadow: DIVERSO_BLU, padding: '0 6px', borderRadius: 3 }}>blu</span> = {dinamico ? 'turno cambiato (clicca per il dettaglio)' : 'giorno con cambio (riga "turno originario")'}</span>
         <span><span style={{ background: FERIE_BG, padding: '0 6px', borderRadius: 3 }}>verde</span> = ferie</span>
         <span><span style={{ background: CUTOVER_HEAD_BG, padding: '0 6px', borderRadius: 3 }}>rosa</span> = inizio nuova turnazione</span>
       </div>
@@ -320,29 +339,39 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
                   </td>
                   {colonne.map(c => {
                     const t = byKey.get(`${m.id}|${c.data}`)
-                    // Turni NUOVI puliti: la rotazione nuova senza i cambi
-                    // (turno_clinico_base). Fallback a turno_clinico se assente.
-                    const tcShow = (t?.turno_clinico_base ?? t?.turno_clinico ?? '') as string
                     const red = c.isDomenica || c.isFestivo
                     const monthEnd = lastDaysOfMonth.has(c.data)
                     const isCut = c.data === meta.cutover
                     const ferie = inFerie(ferieApproved, m.id, c.data)
                     const bg = ferie ? FERIE_BG : isCut ? CUTOVER_BG : red ? '#fef3c7' : '#fefefe'
+                    // Dinamico: mostra il turno ATTUALE (coi cambi); bordo blu +
+                    // tooltip sui cambi (turno ≠ base) dal cutover. Classico: la
+                    // rotazione pulita (turno_clinico_base), niente bordo qui.
+                    const cambio = !!dinamico && !!t
+                      && (t.turno_clinico ?? '') !== (t.turno_clinico_base ?? '') && c.data >= meta.cutover
+                    const tcShow = (dinamico
+                      ? (t?.turno_clinico ?? '')
+                      : (t?.turno_clinico_base ?? t?.turno_clinico ?? '')) as string
                     return (
                       <td key={c.data}
                         {...dropHandlers(m.id, c.data)}
+                        title={cambio ? `turno cambiato in ${t?.turno_clinico || '—'} (era ${t?.turno_clinico_base || '—'})` : undefined}
                         style={{ width: 32, minWidth: 32, height: 26, background: bg,
-                          borderTop: '1px solid #c0b8a8', borderBottom: '1px dashed #cfc8ba',
+                          borderTop: '1px solid #c0b8a8',
+                          borderBottom: dinamico ? '1px solid #c0b8a8' : '1px dashed #cfc8ba',
                           borderRight: monthEnd ? MONTH_END_BORDER : '1px solid #c0b8a8',
                           borderLeft: isCut ? CUTOVER_BORDER : '1px solid #c0b8a8',
+                          boxShadow: cambio ? DIVERSO_BLU : undefined,
                           textAlign: 'center', verticalAlign: 'middle', padding: 0,
-                          cursor: editable ? 'copy' : undefined }}>
+                          cursor: editable && !dinamico ? 'copy' : undefined }}>
                         <LabelClinico tc={tcShow} sm={t?.slot_mattina} sp={t?.slot_pomeriggio} />
                       </td>
                     )
                   })}
                 </tr>
-                {/* Riga VECCHIA (grigia, sola lettura) */}
+                {/* Riga VECCHIA (grigia) — SOLO classico (11N); i dinamici hanno
+                    una riga sola coi cambi già bordati di blu. */}
+                {!dinamico && (
                 <tr>
                   <td style={{ width: 150, minWidth: 150, position: 'sticky', left: 0, zIndex: 3, background: OLD_ROW_BG,
                     fontSize: 9, fontStyle: 'italic', padding: '1px 8px 3px', borderBottom: '1px solid #d5ccb8',
@@ -370,6 +399,7 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
                     )
                   })}
                 </tr>
+                )}
               </Fragment>
             ))}
           </tbody>
@@ -417,6 +447,8 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
         </table>
       </div>
 
+      {/* Riepilogo DINAMICO (righe = turnisti) sotto il calendario. */}
+      {dinamico && riepilogoNode && <div className="shrink-0">{riepilogoNode}</div>}
     </div>
   )
 }
