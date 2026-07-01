@@ -580,7 +580,7 @@ export function SettimanalePage() {
         }}>{GIORNI_IT[dWeek]}</td>
 
         {!d.inPeriod ? (
-          <td colSpan={4} style={{
+          <td colSpan={repartoDinamico ? 3 : 4} style={{
             padding: '8px', textAlign: 'center', color: '#9ca3af',
             fontStyle: 'italic', fontSize: 11,
             background: '#f9fafb', border: '1px solid #d1d5db',
@@ -588,7 +588,7 @@ export function SettimanalePage() {
             (fuori periodo del calendario)
           </td>
         ) : d.emptyByDesign ? (
-          <td colSpan={4} style={{
+          <td colSpan={repartoDinamico ? 3 : 4} style={{
             padding: '6px', textAlign: 'center', color: '#9ca3af',
             fontStyle: 'italic', fontSize: 11,
             background: '#f9fafb', border: '1px solid #d1d5db',
