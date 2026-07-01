@@ -546,6 +546,10 @@ export function GeneraCalendarioPage() {
             schemaNuovo: schemaNum,
             annoInizio, meseInizio, annoFine, meseFine,
           }}
+          repartoDinamico={repartoDinamico}
+          schemaDinamico={repartoDinamico
+            ? { celle: nuovoCelle, colonne: nuovoColonne, checks: nuovoChecks, tipiTurno: nuovoTipi }
+            : undefined}
           onClose={() => setShowAggiorna(false)}
         />
       )}
@@ -705,17 +709,15 @@ export function GeneraCalendarioPage() {
                 attuale col nuovo schema, crea un'anteprima da approvare. */}
             <button
               onClick={() => setShowAggiorna(true)}
-              disabled={repartoDinamico || !conferma || medici.length === 0 || slotSchema === 0 || !config || !rangeValido}
+              disabled={!conferma || medici.length === 0 || slotSchema === 0 || !config || !rangeValido}
               className="w-full justify-center py-2.5 rounded-lg font-medium text-white shadow inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               style={{ background: '#0284c7' }}
             >
               <RefreshCw size={16} />
-              Aggiorna turnazione{repartoDinamico ? ' (in arrivo)' : ''}
+              Aggiorna turnazione
             </button>
             <p className="text-[11px] text-stone-500 -mt-2">
-              {repartoDinamico
-                ? '"Aggiorna turnazione" per gli schemi dinamici è in lavorazione (roadmap). Per ora usa "Genera Calendario".'
-                : '"Aggiorna turnazione" continua la rotazione attuale dal primo lunedì del mese di inizio col nuovo schema, mantenendo i cambi: crea un\'anteprima da approvare (non va subito in produzione).'}
+              "Aggiorna turnazione" continua la rotazione attuale dal primo lunedì del mese di inizio col nuovo schema, mantenendo i cambi: crea un'anteprima da approvare (non va subito in produzione).
             </p>
           </>
         )}

@@ -16,7 +16,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import { RefreshCw, X, AlertTriangle, CheckCircle, Loader2, ArrowRight } from 'lucide-react'
 import { primoLunediDelPeriodo, MESI_IT } from '../lib/algorithm'
 import {
-  validateAggiorna, creaBozzaAggiornamento, type ParametriAggiorna,
+  validateAggiorna, creaBozzaAggiornamento, creaBozzaAggiornamentoDinamico,
+  type ParametriAggiorna, type SchemaDinamicoData,
 } from '../lib/aggiornaTurnazione'
 import type { Configurazione, Medico, SchemaModello } from '../types'
 
@@ -26,11 +27,15 @@ interface Props {
   medici:  Medico[]
   params:  ParametriAggiorna
   onClose: () => void
+  /** Reparto dinamico → usa il motore schema (con turno_sigla/proprieta). */
+  repartoDinamico?: boolean
+  /** Dati dello schema NUOVO (obbligatori se repartoDinamico). */
+  schemaDinamico?:  SchemaDinamicoData
 }
 
 type Step = 'intro' | 'working' | 'done' | 'error'
 
-export function AggiornaTurnazioneModal({ config, schemi, medici, params, onClose }: Props) {
+export function AggiornaTurnazioneModal({ config, schemi, medici, params, onClose, repartoDinamico, schemaDinamico }: Props) {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [step, setStep]   = useState<Step>('intro')
@@ -54,7 +59,11 @@ export function AggiornaTurnazioneModal({ config, schemi, medici, params, onClos
   async function handleConferma() {
     setStep('working'); setError(null)
     try {
-      await creaBozzaAggiornamento(config, schemi, medici, params)
+      if (repartoDinamico && schemaDinamico) {
+        await creaBozzaAggiornamentoDinamico(config, medici, params, schemaDinamico)
+      } else {
+        await creaBozzaAggiornamento(config, schemi, medici, params)
+      }
       qc.invalidateQueries({ queryKey: ['turnazione-anteprima'] })
       setStep('done')
     } catch (e) {

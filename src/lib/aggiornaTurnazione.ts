@@ -19,9 +19,10 @@
 
 import { supabase } from './supabase'
 import { calcolaCalendarioCompleto, primoLunediDelPeriodo } from './algorithm'
+import { generaSchemaNuovo, type SchemaCellaLite, type SchemaColonnaLite, type SchemaCheckLite } from './generaSchemaNuovo'
 import type {
   Configurazione, Medico, SchemaModello, Turno, TurnoClinico, TurnoRicerca,
-  SlotPlacement, TurnazioneAnteprima, SchemaEpoca,
+  SlotPlacement, TurnazioneAnteprima, SchemaEpoca, TipoTurno,
 } from '../types'
 
 // ── Helper date ──────────────────────────────────────────────────────
@@ -243,6 +244,175 @@ export async function creaBozzaAggiornamento(
   //    SOLO di questo reparto) ─────────────────────────────────────────
   await supabase.from('turnazione_anteprima').delete()
     .eq('reparto_id', config.reparto_id)
+
+  const meta: TurnazioneAnteprima['meta'] = {
+    cutover: cutoverISO,
+    schema_nuovo: p.schemaNuovo,
+    anno_inizio: p.annoInizio, mese_inizio: p.meseInizio,
+    anno_fine: p.annoFine, mese_fine: p.meseFine,
+    n_cambi: nCambi,
+    config_payload: {
+      anno_inizio: config.anno_inizio, mese_inizio: config.mese_inizio,
+      anno_fine: fineAnno, mese_fine: fineMese,
+      schema_attivo: p.schemaNuovo,
+      n_medici_base: mediciAttivi.length,
+    },
+  }
+
+  const { data: inserted, error } = await supabase.from('turnazione_anteprima')
+    .insert({
+      reparto_id: config.reparto_id,
+      descrizione: `Aggiornamento schema ${p.schemaNuovo} dal ${cutoverISO}`,
+      snapshot: { turni: snap },
+      meta,
+    })
+    .select().single()
+  if (error) throw error
+  return inserted as TurnazioneAnteprima
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Versione DINAMICA (reparti non-11N): stessa continuità di rotazione, ma
+// usa il motore `generaSchemaNuovo` (schema_cella + tipi_turno) e porta nello
+// snapshot anche `turno_sigla` + `proprieta`. La bozza si pubblica con la
+// stessa `pubblicaBozza` (fa `{...t}` → scrive tutti i campi). La riga di
+// confronto B/N "vecchia" usa la produzione attuale (semplificazione rispetto
+// al counterfactual classico: sufficiente per l'anteprima dinamica).
+// ════════════════════════════════════════════════════════════════════
+
+/** Dati dello schema dinamico NUOVO (già disponibili in GeneraCalendarioPage). */
+export interface SchemaDinamicoData {
+  celle:     SchemaCellaLite[]
+  colonne:   SchemaColonnaLite[]
+  checks:    SchemaCheckLite[]
+  tipiTurno: TipoTurno[]
+}
+
+/** Fetch turni di UN reparto in un range (paginata, scoped per isolamento). */
+async function fetchTurniRangeReparto(repartoId: string, diISO: string, dfISO: string): Promise<Turno[]> {
+  const all: Turno[] = []
+  let offset = 0
+  const PAGE = 1000
+  for (;;) {
+    const { data, error } = await supabase.from('turni')
+      .select('*').eq('reparto_id', repartoId).gte('data', diISO).lte('data', dfISO)
+      .order('data').range(offset, offset + PAGE - 1)
+    if (error) throw error
+    if (!data || data.length === 0) break
+    all.push(...(data as Turno[]))
+    if (data.length < PAGE) break
+    offset += PAGE
+  }
+  return all
+}
+
+export async function creaBozzaAggiornamentoDinamico(
+  config: Configurazione,
+  medici: Medico[],
+  p: ParametriAggiorna,
+  schema: SchemaDinamicoData,
+): Promise<TurnazioneAnteprima> {
+  const mediciAttivi = [...medici]
+    .filter(m => m.attivo && m.numero_ordine != null)
+    .sort((a, b) => (a.numero_ordine ?? 0) - (b.numero_ordine ?? 0))
+
+  const A_old        = primoLunediDelPeriodo(firstOfMonth(config.anno_inizio, config.mese_inizio))
+  const cutover      = primoLunediDelPeriodo(firstOfMonth(p.annoInizio, p.meseInizio))
+  const cutoverISO   = iso(cutover)
+  const nuovoFineISO = iso(lastOfMonth(p.annoFine, p.meseFine))
+
+  const fineIdx  = Math.max(monthIdx(config.anno_fine, config.mese_fine), monthIdx(p.annoFine, p.meseFine))
+  const fineAnno = Math.floor(fineIdx / 12)
+  const fineMese = (fineIdx % 12) + 1
+  const origStartISO = iso(firstOfMonth(config.anno_inizio, config.mese_inizio))
+  const finalEndISO  = iso(lastOfMonth(fineAnno, fineMese))
+
+  // Nuova rotazione DINAMICA con anchor = A_old (la fase prosegue, non riparte).
+  const nuovoBase = generaSchemaNuovo({
+    anno_inizio: p.annoInizio, mese_inizio: p.meseInizio,
+    anno_fine:   p.annoFine,   mese_fine:   p.meseFine,
+    medici: mediciAttivi,
+    celle: schema.celle, colonne: schema.colonne, checks: schema.checks, tipiTurno: schema.tipiTurno,
+    anchorOverride: A_old,
+  })
+  const nbMap = new Map(nuovoBase.map(t => [`${t.medico_id}|${t.data}`, t]))
+
+  // Produzione di QUESTO reparto (scoped → isolamento).
+  const prod = await fetchTurniRangeReparto(config.reparto_id, origStartISO, finalEndISO)
+  const prodMap = new Map(prod.map(t => [`${t.medico_id}|${t.data}`, t]))
+
+  const snap: Array<Record<string, unknown>> = []
+  let nCambi = 0
+  const startD = firstOfMonth(config.anno_inizio, config.mese_inizio)
+  const endD   = lastOfMonth(fineAnno, fineMese)
+
+  for (const cur = new Date(startD); cur <= endD; cur.setDate(cur.getDate() + 1)) {
+    const dataISO = iso(cur)
+    const inFinestraNuova = dataISO >= cutoverISO && dataISO <= nuovoFineISO
+
+    for (const m of mediciAttivi) {
+      const key = `${m.id}|${dataISO}`
+      const pr  = prodMap.get(key)
+      // Riga B/N "vecchia" = produzione attuale (semplificazione per il dinamico).
+      const vecchioTc = (pr?.turno_clinico ?? '') as TurnoClinico
+      const vecchioTr = (pr?.turno_ricerca ?? '') as TurnoRicerca
+
+      if (inFinestraNuova) {
+        const nb   = nbMap.get(key)
+        const nbTc = (nb?.turno_clinico ?? '') as TurnoClinico
+        const nbTr = (nb?.turno_ricerca ?? '') as TurnoRicerca
+        if (pr && pr.modificato_manualmente) {
+          // Cambio/edit manuale preservato (con turno_sigla/proprieta di produzione).
+          nCambi++
+          snap.push({
+            medico_id: m.id, data: dataISO,
+            turno_clinico: pr.turno_clinico, turno_ricerca: pr.turno_ricerca,
+            turno_sigla: pr.turno_sigla ?? null, proprieta: pr.proprieta ?? [],
+            slot_mattina: pr.slot_mattina, slot_pomeriggio: pr.slot_pomeriggio,
+            is_sub: pr.is_sub, is_med: pr.is_med,
+            is_ferie: pr.is_ferie, note: pr.note ?? null,
+            modificato_manualmente: true,
+            turno_clinico_base: nbTc, turno_ricerca_base: nbTr,
+            turno_clinico_originario: (pr.turno_clinico_base ?? null),
+            turno_clinico_vecchio: vecchioTc, turno_ricerca_vecchio: vecchioTr,
+          })
+        } else {
+          // Nuova rotazione pulita (turno_sigla/proprieta dal nuovo schema).
+          snap.push({
+            medico_id: m.id, data: dataISO,
+            turno_clinico: nbTc, turno_ricerca: nbTr,
+            turno_sigla: nb?.turno_sigla ?? null, proprieta: nb?.proprieta ?? [],
+            slot_mattina: (nb?.slot_mattina ?? null) as SlotPlacement,
+            slot_pomeriggio: (nb?.slot_pomeriggio ?? null) as SlotPlacement,
+            is_sub: nb?.is_sub ?? false, is_med: nb?.is_med ?? false,
+            is_ferie: pr?.is_ferie ?? false, note: pr?.note ?? null,
+            modificato_manualmente: false,
+            turno_clinico_base: nbTc, turno_ricerca_base: nbTr,
+            turno_clinico_originario: null,
+            turno_clinico_vecchio: vecchioTc, turno_ricerca_vecchio: vecchioTr,
+          })
+        }
+      } else if (pr) {
+        // Fuori finestra → produzione invariata (con turno_sigla/proprieta).
+        snap.push({
+          medico_id: m.id, data: dataISO,
+          turno_clinico: pr.turno_clinico, turno_ricerca: pr.turno_ricerca,
+          turno_sigla: pr.turno_sigla ?? null, proprieta: pr.proprieta ?? [],
+          slot_mattina: pr.slot_mattina, slot_pomeriggio: pr.slot_pomeriggio,
+          is_sub: pr.is_sub, is_med: pr.is_med,
+          is_ferie: pr.is_ferie, note: pr.note ?? null,
+          modificato_manualmente: pr.modificato_manualmente,
+          turno_clinico_base: pr.turno_clinico_base ?? null,
+          turno_ricerca_base: pr.turno_ricerca_base ?? null,
+          turno_clinico_originario: pr.turno_clinico_originario ?? null,
+          turno_clinico_vecchio: vecchioTc, turno_ricerca_vecchio: vecchioTr,
+        })
+      }
+    }
+  }
+
+  // Una sola bozza attiva per reparto.
+  await supabase.from('turnazione_anteprima').delete().eq('reparto_id', config.reparto_id)
 
   const meta: TurnazioneAnteprima['meta'] = {
     cutover: cutoverISO,
