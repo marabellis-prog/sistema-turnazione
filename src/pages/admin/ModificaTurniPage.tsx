@@ -2366,12 +2366,15 @@ export function ModificaTurniPage() {
               // Stesso aggiustamento della vista pubblica (Marabelli +4 ecc.):
               // i due riepiloghi devono combaciare. Fonte unica in RiepilogoTurni.
               aggiustaConteggi={aggiustaConteggiRiepilogo}
+              tipiTurno={repartoDinamico ? tipiTurnoOrd : undefined}
+              proprieta={repartoDinamico ? proprietaOrd : undefined}
               getCellInfo={(mid, data) => {
                 const cur = getCella(mid, data)
                 return {
                   tc:              cur.tc,
                   slot_mattina:    cur.slot_mattina,
                   slot_pomeriggio: cur.slot_pomeriggio,
+                  proprieta:       turniByKey.get(`${mid}|${data}`)?.proprieta ?? [],
                 }
               }}
             />

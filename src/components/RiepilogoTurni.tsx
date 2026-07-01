@@ -23,7 +23,14 @@ interface CellInfo {
   tc:              TurnoClinico
   slot_mattina:    SlotPlacement
   slot_pomeriggio: SlotPlacement
+  /** Flag del turno — servono per le proprietà senza placement (dinamico). */
+  proprieta?:      string[]
 }
+
+/** Turno configurato (reparto dinamico). */
+export interface TipoTurnoRiepilogo { sigla: string; nome: string; colore_bg: string; peso: number; is_reperibilita: boolean }
+/** Proprietà configurata (reparto dinamico). */
+export interface ProprietaRiepilogo { sigla: string; nome: string; colore_bg: string }
 
 /** Delta da sommare ai conteggi di un medico nel riepilogo. */
 export type AggiustamentoConteggi = {
@@ -62,6 +69,11 @@ interface Props {
    *  i conti tornano. Usato nella vista pubblica per turni svolti fuori
    *  sistema. Default: nessun aggiustamento. */
   aggiustaConteggi?: (medico: Medico) => AggiustamentoConteggi
+  /** Se passati (reparto dinamico) → colonne DINAMICHE: una per turno
+   *  configurato + S/D/Festivi + una per proprietà + Totale (pesato). Senza
+   *  → tabella classica (11N / vista pubblica). */
+  tipiTurno?: TipoTurnoRiepilogo[]
+  proprieta?: ProprietaRiepilogo[]
 }
 
 interface RowStats {
@@ -81,7 +93,7 @@ interface RowStats {
   totale: number   // (M + P) + 2L — E* NON conta perche` il medico non l'ha lavorato
 }
 
-export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, festivitaCustomSet, aggiustaConteggi }: Props) {
+export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, festivitaCustomSet, aggiustaConteggi, tipiTurno, proprieta }: Props) {
   const stats = useMemo<RowStats[]>(() => {
     // Pre-calcolo festività italiane + custom (admin-defined) per gli
     // anni coperti dal periodo.
@@ -139,6 +151,51 @@ export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, f
     })
   }, [medici, colonne, getCellInfo, filtroMedicoId, festivitaCustomSet, aggiustaConteggi])
 
+  // ── Stats DINAMICHE (reparto dinamico): conteggio per turno configurato +
+  //    per proprietà (SUB/MED dallo slot LIVE, le altre dai flag del turno) +
+  //    S/D/Festivi. Totale = Σ conteggio × peso (reperibilità pesa 0). ──
+  const statsDin = useMemo(() => {
+    if (!tipiTurno) return [] as { medico: Medico; turni: Record<string, number>; props: Record<string, number>; S: number; D: number; F: number; totale: number }[]
+    const annoSet = new Set<number>(); colonne.forEach(c => annoSet.add(c.anno))
+    const festivi = new Set<string>()
+    for (const a of annoSet) for (const d of getItalianHolidays(a, festivitaCustomSet)) festivi.add(d)
+    const COPRE_M = new Set(['M', 'L', 'EM', 'EL']), COPRE_P = new Set(['P', 'L', 'EP', 'EL'])
+    const isExt = (tc: string) => tc === 'EM' || tc === 'EP' || tc === 'EL'
+    const list = filtroMedicoId ? medici.filter(m => m.id === filtroMedicoId) : medici
+    return list.map(m => {
+      const turni: Record<string, number> = {}
+      const props: Record<string, number> = {}
+      let S = 0, D = 0, F = 0
+      for (const col of colonne) {
+        const { tc, slot_mattina, slot_pomeriggio, proprieta: cp } = getCellInfo(m.id, col.data)
+        if (!tc) continue
+        turni[tc] = (turni[tc] ?? 0) + 1
+        if (isExt(tc)) continue
+        if (col.isDomenica) D++
+        else if (festivi.has(col.data)) F++
+        else if (new Date(col.data + 'T00:00:00').getDay() === 6) S++
+        const conta = (slot: SlotPlacement) => {
+          if (slot === 'SUB') props.SUB = (props.SUB ?? 0) + 1
+          else if (slot === 'MED') props.MED = (props.MED ?? 0) + 1
+          else for (const p of cp ?? []) if (p !== 'SUB' && p !== 'MED') props[p] = (props[p] ?? 0) + 1
+        }
+        if (COPRE_M.has(tc)) conta(slot_mattina)
+        if (COPRE_P.has(tc)) conta(slot_pomeriggio)
+      }
+      const adj = aggiustaConteggi?.(m) ?? {}
+      if (adj.M) turni.M = (turni.M ?? 0) + adj.M
+      if (adj.P) turni.P = (turni.P ?? 0) + adj.P
+      if (adj.L) turni.L = (turni.L ?? 0) + adj.L
+      if (adj.SUB) props.SUB = (props.SUB ?? 0) + adj.SUB
+      if (adj.MED) props.MED = (props.MED ?? 0) + adj.MED
+      if (adj.S) S += adj.S
+      if (adj.D) D += adj.D
+      if (adj.F) F += adj.F
+      const totale = tipiTurno.reduce((s, t) => s + (t.is_reperibilita ? 0 : (turni[t.sigla] ?? 0) * (t.peso ?? 1)), 0)
+      return { medico: m, turni, props, S, D, F, totale }
+    })
+  }, [tipiTurno, medici, colonne, getCellInfo, filtroMedicoId, festivitaCustomSet, aggiustaConteggi])
+
   // Stili condivisi per le celle
   const headBg = '#7eb6d4'   // azzurro pastello (stesso della riga TURNI TOTALI)
   const headBd = '#5d9bc1'
@@ -154,6 +211,63 @@ export function RiepilogoTurni({ medici, colonne, getCellInfo, filtroMedicoId, f
     fontSize: 12, padding: '4px 10px',
     border: '1px solid #d5ccb8',
     textAlign: 'center', verticalAlign: 'middle',
+  }
+
+  // ══ Render DINAMICO: colonne = turni configurati + S/D/Festivi + proprietà ══
+  if (tipiTurno) {
+    const propCols = proprieta ?? []
+    const fgSu = (bg: string) => {
+      const h = (bg || '#cccccc').replace('#', '')
+      if (h.length < 6) return '#1f2937'
+      const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16)
+      return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#1f2937' : '#fff'
+    }
+    const redTh: React.CSSProperties = { ...thStyle, background: '#fee2e2', color: '#b91c1c', borderColor: '#f0a8a8' }
+    const redTd: React.CSSProperties = { ...tdStyle, color: '#dc2626', fontWeight: 700 }
+    return (
+      <table className="border-collapse" style={{ borderSpacing: 0 }}>
+        <thead>
+          <tr>
+            <th style={{ ...thStyle, textAlign: 'left', minWidth: 160 }}>Medico</th>
+            {tipiTurno.map(t => <th key={t.sigla} style={thStyle} title={t.nome}>{t.sigla}</th>)}
+            <th style={thStyle} title="Sabati lavorati">S</th>
+            <th style={redTh} title="Domeniche lavorate">D</th>
+            <th style={redTh} title="Festivi non-domenica lavorati">Fe</th>
+            {propCols.map(p => (
+              <th key={p.sigla} style={thStyle} title={p.nome}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: '50%', background: p.colore_bg, color: fgSu(p.colore_bg), fontSize: 8, fontWeight: 800, lineHeight: 1 }}>{p.sigla}</span>
+              </th>
+            ))}
+            <th style={thStyle}>Totale</th>
+          </tr>
+        </thead>
+        <tbody>
+          {statsDin.map(s => (
+            <tr key={s.medico.id}>
+              <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 500, color: s.medico.attivo === false ? '#a16207' : '#3a3d30' }}>
+                {s.medico.nome}
+                {s.medico.attivo === false && <span style={{ fontSize: 9, fontWeight: 700, marginLeft: 4 }}>(rit.)</span>}
+              </td>
+              {tipiTurno.map(t => <td key={t.sigla} style={tdStyle}>{s.turni[t.sigla] || ''}</td>)}
+              <td style={tdStyle}>{s.S || ''}</td>
+              <td style={redTd}>{s.D || ''}</td>
+              <td style={redTd}>{s.F || ''}</td>
+              {propCols.map(p => (
+                <td key={p.sigla} style={{ ...tdStyle, ...(s.props[p.sigla] ? { background: p.colore_bg + '22', fontWeight: 700 } : {}) }}>{s.props[p.sigla] || ''}</td>
+              ))}
+              <td style={{ ...tdStyle, fontWeight: 800, background: '#f0f7fb', color: '#1f4a70' }}>{s.totale || ''}</td>
+            </tr>
+          ))}
+          {statsDin.length === 0 && (
+            <tr>
+              <td colSpan={1 + tipiTurno.length + 3 + propCols.length + 1} style={{ ...tdStyle, color: '#9ca3af', fontStyle: 'italic' }}>
+                Nessun medico da riepilogare.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    )
   }
 
   return (
