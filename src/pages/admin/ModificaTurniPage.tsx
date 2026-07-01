@@ -91,43 +91,57 @@ function CellaCop({ p, r }: { p: number; r: number }) {
   const color = r === 0 ? '#9ca3af' : p === r ? '#16a34a' : p < r ? '#dc2626' : '#d97706'
   return <span style={{ fontWeight: 800, color, fontSize: 11 }}>{r > 0 ? `${p}/${r}` : (p || '')}</span>
 }
-function RigheCoperturaDinamica({ cols, copByData, proprieta }: {
+function RigheCoperturaDinamica({ cols, copByData, proprieta, expanded, onToggle }: {
   cols: ColonnaCal[]
   copByData: Map<string, CoperturaGiorno>
   proprieta: { sigla: string; nome: string; colore_bg: string }[]
+  expanded: Set<string>
+  onToggle: (sigla: string) => void
 }) {
-  const labelTd = (bg: string): CSSProperties => ({
+  const labelTd = (bg: string, indent = false): CSSProperties => ({
     width: 140, minWidth: 140, position: 'sticky', left: 0, zIndex: 1,
     background: bg, color: fgPerSfondo(bg), fontSize: 10, fontWeight: 800,
-    padding: '3px 8px', border: '1px solid rgba(0,0,0,0.15)', whiteSpace: 'nowrap', letterSpacing: '0.04em',
+    padding: indent ? '2px 8px 2px 22px' : '3px 8px', border: '1px solid rgba(0,0,0,0.15)',
+    whiteSpace: 'nowrap', letterSpacing: '0.04em',
   })
   const cellTd: CSSProperties = {
     width: 32, minWidth: 32, height: 22, background: '#fff', textAlign: 'center',
     verticalAlign: 'middle', border: '1px solid #e5e7eb', padding: 0,
   }
-  const META = [['mattina', 'MATTINA'], ['pomeriggio', 'POMERIGGIO']] as const
+  // Riga compatta = totale combinato (mattina + pomeriggio) per proprietà.
+  const comb = (data: string, sigla: string) => {
+    const cop = copByData.get(data)
+    const m = cop?.mattina.righe.find(r => r.sigla === sigla)
+    const p = cop?.pomeriggio.righe.find(r => r.sigla === sigla)
+    return { p: (m?.presente ?? 0) + (p?.presente ?? 0), r: (m?.richiesto ?? 0) + (p?.richiesto ?? 0) }
+  }
+  const dett = (data: string, sigla: string, k: 'mattina' | 'pomeriggio') => {
+    const r = copByData.get(data)?.[k].righe.find(x => x.sigla === sigla)
+    return { p: r?.presente ?? 0, r: r?.richiesto ?? 0 }
+  }
   return (
     <>
-      {META.map(([meta, label]) => (
-        <Fragment key={meta}>
-          <tr>
-            <td style={labelTd('#5b6b73')}>{label}</td>
-            {cols.map(c => {
-              const m = copByData.get(c.data)?.[meta]
-              return <td key={c.data} style={cellTd}><CellaCop p={m?.totPresente ?? 0} r={m?.totRichiesto ?? 0} /></td>
-            })}
-          </tr>
-          {proprieta.map(p => (
-            <tr key={meta + p.sigla}>
-              <td style={labelTd(p.colore_bg)} title={p.nome}>· {p.sigla}</td>
-              {cols.map(c => {
-                const rr = copByData.get(c.data)?.[meta]?.righe.find(x => x.sigla === p.sigla)
-                return <td key={c.data} style={cellTd}><CellaCop p={rr?.presente ?? 0} r={rr?.richiesto ?? 0} /></td>
-              })}
+      {proprieta.map(prop => {
+        const open = expanded.has(prop.sigla)
+        return (
+          <Fragment key={prop.sigla}>
+            {/* Riga proprietà (combinato) — clic per espandere mattina/pomeriggio */}
+            <tr style={{ cursor: 'pointer' }} onClick={() => onToggle(prop.sigla)}
+              title={`${prop.nome} — clic per ${open ? 'nascondere' : 'mostrare'} mattina/pomeriggio`}>
+              <td style={labelTd(prop.colore_bg)}>
+                <span style={{ display: 'inline-block', width: 9 }}>{open ? '▾' : '▸'}</span> {prop.sigla}
+              </td>
+              {cols.map(c => { const v = comb(c.data, prop.sigla); return <td key={c.data} style={cellTd}><CellaCop p={v.p} r={v.r} /></td> })}
             </tr>
-          ))}
-        </Fragment>
-      ))}
+            {open && (['mattina', 'pomeriggio'] as const).map(k => (
+              <tr key={prop.sigla + k}>
+                <td style={labelTd('#eef1ec', true)}>{k}</td>
+                {cols.map(c => { const v = dett(c.data, prop.sigla, k); return <td key={c.data} style={cellTd}><CellaCop p={v.p} r={v.r} /></td> })}
+              </tr>
+            ))}
+          </Fragment>
+        )
+      })}
     </>
   )
 }
@@ -809,14 +823,26 @@ export function ModificaTurniPage() {
     for (const c of colonne) {
       const amb = ambitoGiorno(c.data, !!(c.isFestivo || c.isDomenica))
       const fabAmb = fabbisognoDin.filter(f => f.ambito === amb)
-      const turniGiorno = mediciVisibili.map(m => ({
-        turno_clinico: getCella(m.id, c.data).tc,
-        proprieta: turniByKey.get(`${m.id}|${c.data}`)?.proprieta ?? [],
-      }))
+      const turniGiorno = mediciVisibili.map(m => {
+        const cell = getCella(m.id, c.data)   // tc + slot LIVE (con le modifiche)
+        return {
+          turno_clinico: cell.tc,
+          slot_mattina: cell.slot_mattina,
+          slot_pomeriggio: cell.slot_pomeriggio,
+          proprieta: turniByKey.get(`${m.id}|${c.data}`)?.proprieta ?? [],
+        }
+      })
       map.set(c.data, calcolaCoperturaGiorno(turniGiorno, sigle, fabAmb))
     }
     return map
   }, [repartoDinamico, colonne, mediciVisibili, getCella, turniByKey, fabbisognoDin, proprietaOrd])
+  // Espansione righe copertura: click su una proprietà → dettaglio mattina/pom.
+  const [expandedCop, setExpandedCop] = useState<Set<string>>(() => new Set())
+  const toggleCop = (sigla: string) => setExpandedCop(prev => {
+    const next = new Set(prev)
+    if (next.has(sigla)) next.delete(sigla); else next.add(sigla)
+    return next
+  })
 
   const getOriginale = useCallback((medicoId: string, data: string): { tc: TurnoClinico; tr: TurnoRicerca } => {
     // Preferisci il "base" memorizzato sulla riga turni (robusto con schemi
@@ -1830,7 +1856,8 @@ export function ModificaTurniPage() {
               modifiche prima del DB). In un giorno bilanciato vale
               sub + med == tot, e idealmente sub ≈ med. */}
           {tipo === 'clinica' && (repartoDinamico ? (
-            <RigheCoperturaDinamica cols={cols} copByData={coperturaByData} proprieta={proprietaDaMostrare} />
+            <RigheCoperturaDinamica cols={cols} copByData={coperturaByData} proprieta={proprietaDaMostrare}
+              expanded={expandedCop} onToggle={toggleCop} />
           ) : (
             <>
               <tr>
@@ -1940,9 +1967,12 @@ export function ModificaTurniPage() {
           <TabellaPeriodo cols={cols} tipo="clinica" />
         </div>
         <LegendaCalendario variant="admin" />
-        <div className="overflow-auto rounded-lg border bg-white" style={{ borderColor: '#c98a96' }}>
-          <TabellaPeriodo cols={cols} tipo="ricerca" />
-        </div>
+        {/* Ricerca (RM/RP): solo 11N. I reparti dinamici non hanno Ricerca. */}
+        {!repartoDinamico && (
+          <div className="overflow-auto rounded-lg border bg-white" style={{ borderColor: '#c98a96' }}>
+            <TabellaPeriodo cols={cols} tipo="ricerca" />
+          </div>
+        )}
       </div>
     )
   }
@@ -2011,7 +2041,7 @@ export function ModificaTurniPage() {
               Quando OFF, il cambio TC NON ridistribuisce automaticamente
               sub/med del giorno; l'admin gestisce manualmente i pallini
               via drag dalla legenda. */}
-          {(() => {
+          {!repartoDinamico && (() => {
             const autocalcSubMed = config?.autocalc_sub_med ?? true
             return (
               <label
@@ -2064,9 +2094,8 @@ export function ModificaTurniPage() {
             )
           })()}
 
-          {/* Bottone "Ricalcola RM/RP" — propone modifiche RM/RP per
-              tutto il periodo. Le modifiche entrano come pending e
-              vanno salvate. */}
+          {/* Bottone "Ricalcola RM/RP" — solo 11N (i dinamici non hanno Ricerca). */}
+          {!repartoDinamico && (
           <button
             onClick={handleRicalcolaRMRP}
             disabled={saving || !config}
@@ -2078,6 +2107,7 @@ export function ModificaTurniPage() {
             <RefreshCw size={13} />
             <span className="hidden sm:inline">Ricalcola RM/RP</span>
           </button>
+          )}
 
           {/* Bottone salva */}
           <button

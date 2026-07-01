@@ -28,6 +28,10 @@ export interface FabbisognoRiga {
 /** Turno di un medico in un giorno (solo i campi utili alla copertura). */
 export interface TurnoCopertura {
   turno_clinico?: string | null
+  /** Placement SUB/MED per metà (fonte LIVE: riflette le modifiche manuali). */
+  slot_mattina?: 'SUB' | 'MED' | null
+  slot_pomeriggio?: 'SUB' | 'MED' | null
+  /** Flag del turno: usati per le proprietà SENZA placement (es. Supporto). */
   proprieta?: string[] | null
 }
 
@@ -73,7 +77,16 @@ export function calcolaCoperturaGiorno(
       const tc = t.turno_clinico ?? ''
       if (!copre.has(tc)) continue
       totPresente++
-      for (const p of t.proprieta ?? []) presente[p] = (presente[p] ?? 0) + 1
+      // SUB/MED dal placement (slot) → LIVE con le modifiche manuali; le altre
+      // proprietà (es. Supporto) dai flag del turno solo se NON c'è placement.
+      const slot = meta === 'mattina' ? (t.slot_mattina ?? null) : (t.slot_pomeriggio ?? null)
+      if (slot === 'SUB' || slot === 'MED') {
+        presente[slot] = (presente[slot] ?? 0) + 1
+      } else {
+        for (const p of t.proprieta ?? []) {
+          if (p !== 'SUB' && p !== 'MED') presente[p] = (presente[p] ?? 0) + 1
+        }
+      }
     }
 
     // Righe = proprietà configurate che sono richieste nel fabbisogno OPPURE
