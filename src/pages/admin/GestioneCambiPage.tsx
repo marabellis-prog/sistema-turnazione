@@ -335,6 +335,7 @@ export function GestioneCambiPage() {
       setMsg(`✓ Cambio turno approvato — ${c.modifiche.length} celle aggiornate${cellsRicalcolate > 0 ? `, ${cellsRicalcolate} RM/RP ricalcolati` : ''}.`)
       qc.invalidateQueries({ queryKey: ['cambi-turno'] })
       qc.invalidateQueries({ queryKey: ['cambi-turno-pending-count'] })
+      qc.invalidateQueries({ queryKey: ['cambi-pending-multi'] })
       qc.invalidateQueries({ queryKey: ['turni-modifica'] })
       qc.invalidateQueries({ queryKey: ['messaggi'] })
       qc.invalidateQueries({ queryKey: ['messaggi-unread-count'] })
@@ -372,6 +373,7 @@ export function GestioneCambiPage() {
       setMsg('Cambio turno rifiutato.')
       qc.invalidateQueries({ queryKey: ['cambi-turno'] })
       qc.invalidateQueries({ queryKey: ['cambi-turno-pending-count'] })
+      qc.invalidateQueries({ queryKey: ['cambi-pending-multi'] })
       qc.invalidateQueries({ queryKey: ['messaggi'] })
       qc.invalidateQueries({ queryKey: ['messaggi-unread-count'] })
       setRejectFor(null); setRejectMsg('')
@@ -466,6 +468,7 @@ export function GestioneCambiPage() {
       setMsg('Richiesta eliminata dall\'archivio.')
       qc.invalidateQueries({ queryKey: ['cambi-turno'] })
       qc.invalidateQueries({ queryKey: ['cambi-turno-pending-count'] })
+      qc.invalidateQueries({ queryKey: ['cambi-pending-multi'] })
     } catch (e) {
       setErr('Errore eliminazione: ' + (e as Error).message)
     } finally {

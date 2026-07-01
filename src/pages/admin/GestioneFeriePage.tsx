@@ -219,6 +219,7 @@ export function GestioneFeriePage() {
     qc.invalidateQueries({ queryKey: ['turni'] })
     qc.invalidateQueries({ queryKey: ['messaggi'] })
     qc.invalidateQueries({ queryKey: ['messaggi-unread-count'] })
+    qc.invalidateQueries({ queryKey: ['ferie-pending-multi'] })
   }
 
   // ── Elimina ferie ────────────────────────────────────────────
@@ -262,6 +263,7 @@ export function GestioneFeriePage() {
     qc.invalidateQueries({ queryKey: ['turni'] })
     qc.invalidateQueries({ queryKey: ['messaggi'] })
     qc.invalidateQueries({ queryKey: ['messaggi-unread-count'] })
+    qc.invalidateQueries({ queryKey: ['ferie-pending-multi'] })
   }
 
   // ── Helpers display ──────────────────────────────────────────

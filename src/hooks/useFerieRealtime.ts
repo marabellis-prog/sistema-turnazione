@@ -38,6 +38,9 @@ export function useFerieRealtime() {
           // nell'AdminLayout sidebar — deve aggiornarsi in realtime
           // quando un user richiede o un admin approva.
           qc.invalidateQueries({ queryKey: ['ferie-pending-count'] })
+          // Badge cross-reparto in AdminLayout (#33): senza questa il badge
+          // si aggiornava solo al refetch 30s → ritardo dopo approva/rifiuta.
+          qc.invalidateQueries({ queryKey: ['ferie-pending-multi'] })
           // Badge "posta" della NavBar conta anche ferie pending del
           // medico loggato → invalida cosi` il numerello sale subito
           // quando uno user inserisce una richiesta di ferie.

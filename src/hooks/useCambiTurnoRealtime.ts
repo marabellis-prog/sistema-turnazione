@@ -30,6 +30,9 @@ export function useCambiTurnoRealtime() {
         () => {
           qc.invalidateQueries({ queryKey: ['cambi-turno'] })
           qc.invalidateQueries({ queryKey: ['cambi-turno-pending-count'] })
+          // Badge cross-reparto in AdminLayout (#33): senza questa il badge
+          // si aggiornava solo al refetch 30s → ritardo dopo approva/rifiuta.
+          qc.invalidateQueries({ queryKey: ['cambi-pending-multi'] })
           // Badge "posta" della NavBar conta anche i cambi turno pending
           // del medico richiedente → invalida cosi` il numerello sale
           // subito quando uno user inserisce una richiesta di cambio.
