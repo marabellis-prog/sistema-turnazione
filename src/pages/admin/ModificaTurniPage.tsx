@@ -1424,7 +1424,13 @@ export function ModificaTurniPage() {
       //    quelli ricalcolati.
       const finalCells = new Map<string, RicalcCell>(modifiche)
 
-      for (const data of dateToccate) {
+      // Il ricalcolo del giorno (autocalc SUB/MED + RM/RP) è logica CLASSICA
+      // basata su schemi_modello: per i reparti DINAMICI schemi è vuoto e
+      // ricalcoloGiorno tornerebbe la mappa modifiche con chiavi diverse
+      // (medico|data invece di medico_id) → chiavi malformate e DUPLICATI
+      // nell'upsert ("affect row a second time"). Sui dinamici si salvano le
+      // modifiche dirette (finalCells = modifiche).
+      if (!repartoDinamico) for (const data of dateToccate) {
         // TC override = i TC presenti in modifiche per quella data
         const tcOverrides = new Map<string, TurnoClinico>()
         for (const [key, cell] of modifiche.entries()) {

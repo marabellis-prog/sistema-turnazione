@@ -169,11 +169,11 @@ export function LegendaCalendario({ variant = 'pubblica', className, style, tipi
                 style={{ display: 'inline-flex', width: 22, height: 22, borderRadius: '50%', background: '#d4d4d4', border: '1.5px solid #6b7280' }} />
               <span style={{ color: '#5a5a4a' }}>Supporto (jolly)</span>
             </span>
+            {/* Aiuti L con placement misto — SOLO classico 11N (non configurati). */}
+            <ChipLSplit payload="FLAG:L_SUB_MED" sx="#fecaca" dx="#bae6fd" label="L: sub matt. + med pom." />
+            <ChipLSplit payload="FLAG:L_MED_SUB" sx="#bae6fd" dx="#fecaca" label="L: med matt. + sub pom." />
           </>
         )}
-      {/* Aiuti L con placement misto (validi ovunque ci siano SUB/MED su una L) */}
-      <ChipLSplit payload="FLAG:L_SUB_MED" sx="#fecaca" dx="#bae6fd" label="L: sub matt. + med pom." />
-      <ChipLSplit payload="FLAG:L_MED_SUB" sx="#bae6fd" dx="#fecaca" label="L: med matt. + sub pom." />
 
       <Separatore />
 
