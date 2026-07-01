@@ -34,19 +34,33 @@ export function MioRepartoProvider({ children }: { children: ReactNode }) {
   const { repartoAttivo, setRepartoAttivo, reparti, hasAdminAccess } = useReparto()
   const utenteId = effectiveUser?.id ?? null
 
+  const utenteNome = effectiveUser?.nome ?? null
+
   // Reparti dove l'utente efficace è MEDICO attivo (per il visualizzatore puro).
+  // Match come l'RLS `my_medici_ids()`: per utente_id OPPURE per NOME — così un
+  // turnista vede TUTTI i reparti in cui esiste un suo medico attivo, anche se
+  // il medico è nato copiando un reparto (dove `utente_id` resta scollegato).
+  // `medici_select` = is_utente_attivo() → un utente attivo legge tutti i medici,
+  // quindi il match-per-nome vale anche per gli utenti reali, non solo in
+  // impersonation admin. Esclude inoltre i reparti DISATTIVATI (attivo=false),
+  // che non vanno mostrati ai turnisti (filtro lato client: l'`attivo` del join
+  // non è filtrabile qui senza inner-join).
   const { data: mieiRepartiMedico = [], isLoading } = useQuery<Reparto[]>({
-    queryKey: ['miei-reparti', utenteId],
+    queryKey: ['miei-reparti', utenteId, utenteNome],
     queryFn: async () => {
       if (!utenteId) return []
-      const { data, error } = await supabase
+      let q = supabase
         .from('medici')
         .select('reparto:reparti(id, nome, attivo, created_at)')
-        .eq('utente_id', utenteId).eq('attivo', true)
+        .eq('attivo', true)
+      q = utenteNome
+        ? q.or(`utente_id.eq.${utenteId},nome.eq."${utenteNome}"`)
+        : q.eq('utente_id', utenteId)
+      const { data, error } = await q
       if (error) throw error
       const map = new Map<string, Reparto>()
       for (const row of (data ?? []) as unknown as { reparto: Reparto | null }[]) {
-        if (row.reparto) map.set(row.reparto.id, row.reparto)
+        if (row.reparto && row.reparto.attivo) map.set(row.reparto.id, row.reparto)
       }
       return [...map.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'it'))
     },

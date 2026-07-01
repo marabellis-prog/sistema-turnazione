@@ -377,8 +377,8 @@ export function SchemaDesignerNuovo() {
   }
   // ── Salva schema: invia l'INTERO draft (struttura + celle) alla RPC che
   //    sostituisce il contenuto dello schema in modo atomico. ─────────────
-  async function salvaSchema() {
-    if (!draft) return
+  async function salvaSchema(): Promise<boolean> {
+    if (!draft) return true
     setErr(null); setSaving(true)
     try {
       const p_giorni  = [...draft.giorni].sort((a, b) => a.giorno_settimana - b.giorno_settimana)
@@ -394,11 +394,29 @@ export function SchemaDesignerNuovo() {
       setDraft(null)
       qc.invalidateQueries({ queryKey: ['schema-fabbisogno', repartoAttivo] })
       invalida(); invalidaSchemi()
+      return true
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Errore nel salvataggio')
+      return false
     } finally {
       setSaving(false)
     }
+  }
+
+  // Guardia uscita/cambio-reparto: salva prima di procedere (bottone "Salva ed
+  // esci"). Se il salvataggio fallisce, resta sul designer con l'errore.
+  async function salvaEProsegui() {
+    const to = navPending, n = pendingReparto
+    const ok = await salvaSchema()
+    if (!ok) return
+    if (to != null) { setNavPending(null); navigate(to) }
+    else if (n != null) { setPendingReparto(null); registerRepartoGuard(null); setRepartoAttivo(n) }
+  }
+  function esciSenzaSalvare() {
+    const to = navPending, n = pendingReparto
+    setDraft(null)
+    if (to != null) { setNavPending(null); navigate(to) }
+    else if (n != null) { setPendingReparto(null); registerRepartoGuard(null); setRepartoAttivo(n) }
   }
   // Scarta il draft (con conferma se ci sono modifiche). Ritorna true se si può procedere.
   async function scartaSeNecessario(): Promise<boolean> {
@@ -540,18 +558,31 @@ export function SchemaDesignerNuovo() {
     <div className="flex flex-col gap-4">
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
         onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
-      <ConfirmModal open={navPending != null}
-        title="Modifiche non salvate"
-        message="Lo schema ha modifiche non salvate. Se esci ora andranno perse."
-        confirmLabel="Esci senza salvare" cancelLabel="Rimani" danger
-        onConfirm={() => { const to = navPending; setDraft(null); setNavPending(null); if (to) navigate(to) }}
-        onCancel={() => setNavPending(null)} />
-      <ConfirmModal open={pendingReparto != null}
-        title="Modifiche non salvate"
-        message="Lo schema ha modifiche non salvate. Cambiando reparto andranno perse."
-        confirmLabel="Cambia senza salvare" cancelLabel="Rimani" danger
-        onConfirm={() => { const n = pendingReparto; setDraft(null); setPendingReparto(null); registerRepartoGuard(null); if (n) setRepartoAttivo(n) }}
-        onCancel={() => setPendingReparto(null)} />
+      {(navPending != null || pendingReparto != null) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: 'rgba(0,0,0,0.55)' }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5">
+            <h3 className="font-bold text-stone-800 text-base mb-1">Modifiche non salvate</h3>
+            <p className="text-sm text-stone-600">
+              Lo schema ha modifiche non salvate. {navPending != null ? 'Se esci ora' : 'Cambiando reparto'} andranno perse — oppure salvale prima di proseguire.
+            </p>
+            {err && <p className="text-xs text-red-700 mt-2">{err}</p>}
+            <div className="flex items-center justify-end gap-2 flex-wrap mt-4">
+              <button onClick={() => { setNavPending(null); setPendingReparto(null) }} disabled={saving}
+                className="py-2 px-4 text-sm rounded-lg font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 disabled:opacity-50">
+                Rimani
+              </button>
+              <button onClick={esciSenzaSalvare} disabled={saving}
+                className="py-2 px-4 text-sm rounded-lg font-semibold text-white disabled:opacity-50" style={{ background: '#dc2626' }}>
+                Esci senza salvare
+              </button>
+              <button onClick={salvaEProsegui} disabled={saving}
+                className="py-2 px-4 text-sm rounded-lg font-semibold text-white inline-flex items-center gap-1 disabled:opacity-50" style={{ background: '#476540' }}>
+                <Save size={14} /> {saving ? 'Salvataggio…' : 'Salva ed esci'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div>
         <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
           <Table2 size={20} style={{ color: '#476540' }} />
