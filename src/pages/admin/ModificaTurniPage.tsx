@@ -1469,6 +1469,8 @@ export function ModificaTurniPage() {
         slot_mattina: SlotPlacement; slot_pomeriggio: SlotPlacement;
         is_sub: boolean; is_med: boolean;
         is_ferie: boolean; note: string | null;
+        // Solo reparti DINAMICI: turno_sigla + proprieta mantenuti coerenti.
+        turno_sigla?: string | null; proprieta?: string[];
       }> = []
       for (const [key, cell] of finalCells.entries()) {
         const [medico_id, data] = key.split('|')
@@ -1483,6 +1485,25 @@ export function ModificaTurniPage() {
         }
         const orig = getOriginale(medico_id, data)
         const modificato_manualmente = (cell.tc !== orig.tc) || (cell.tr !== orig.tr)
+        const isSub = cell.slot_mattina === 'SUB' || cell.slot_pomeriggio === 'SUB'
+        const isMed = cell.slot_mattina === 'MED' || cell.slot_pomeriggio === 'MED'
+        // Reparti DINAMICI: turno_sigla e proprieta NON sono tracciati nelle
+        // `modifiche` (che seguono turno_clinico + slot), ma vanno riallineati
+        // qui — altrimenti dopo il Salva resterebbero i valori di GENERAZIONE,
+        // disallineati dal nuovo turno (es. turno_clinico='L' ma turno_sigla='REP').
+        // Negli schemi supportati la sigla coincide col turno_clinico (M/P/L/REP)
+        // e le proprietà SUB/MED derivano dagli slot; eventuali flag non-SUB/MED
+        // (rari, solo da generazione) vengono preservati. Sui CLASSICI (11N) NO-OP.
+        const extraDin = repartoDinamico
+          ? {
+              turno_sigla: cell.tc === '' ? null : cell.tc,
+              proprieta: [
+                ...(isSub ? ['SUB'] : []),
+                ...(isMed ? ['MED'] : []),
+                ...((dbT?.proprieta ?? []) as string[]).filter(p => p !== 'SUB' && p !== 'MED'),
+              ],
+            }
+          : {}
         updates.push({
           medico_id, data, reparto_id: repartoAttivo,
           turno_clinico:          cell.tc,
@@ -1490,10 +1511,11 @@ export function ModificaTurniPage() {
           modificato_manualmente,
           slot_mattina:           cell.slot_mattina,
           slot_pomeriggio:        cell.slot_pomeriggio,
-          is_sub: cell.slot_mattina === 'SUB' || cell.slot_pomeriggio === 'SUB',
-          is_med: cell.slot_mattina === 'MED' || cell.slot_pomeriggio === 'MED',
+          is_sub: isSub,
+          is_med: isMed,
           is_ferie: dbT?.is_ferie ?? false,
           note:     dbT?.note     ?? null,
+          ...extraDin,
         })
       }
 
