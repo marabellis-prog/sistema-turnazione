@@ -16,6 +16,7 @@
 import { useMemo, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { fetchAllRows } from '../lib/fetchAll'
 import { nomeBreve } from '../lib/nomeTurnista'
 import { isFestivo } from '../lib/holidays'
 import { MESI_IT } from '../lib/algorithm'
@@ -171,11 +172,10 @@ export function AnteprimaTurnazioneView({ turni, meta, medici, festivitaCustomSe
   // Ferie APPROVATE → verde.
   const { data: ferieDB = [] } = useQuery<Pick<Ferie, 'medico_id' | 'data_inizio' | 'data_fine' | 'approvate'>[]>({
     queryKey: ['ferie-ranges'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('ferie').select('medico_id, data_inizio, data_fine, approvate')
-      if (error) throw error
-      return data ?? []
-    },
+    // Paginato anti-1000 (#43): ferie cross-reparto (poi filtrate per medico in ferieApproved).
+    queryFn: () =>
+      fetchAllRows<Pick<Ferie, 'medico_id' | 'data_inizio' | 'data_fine' | 'approvate'>>((from, to) =>
+        supabase.from('ferie').select('medico_id, data_inizio, data_fine, approvate').order('id').range(from, to)),
     staleTime: 0, refetchInterval: 15_000,
   })
   const ferieApproved = useMemo(() => {

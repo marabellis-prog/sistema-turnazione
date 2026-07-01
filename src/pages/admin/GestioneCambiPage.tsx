@@ -119,9 +119,10 @@ export function GestioneCambiPage() {
 
   // ── Query: tutti i medici (per mostrare i nomi) ────────────────────
   const { data: medici = [] } = useQuery<Medico[]>({
-    queryKey: ['medici-tutti'],
+    queryKey: ['medici-tutti', repartoAttivo],
     queryFn: async () => {
       const { data, error } = await supabase.from('medici').select('*')
+        .eq('reparto_id', repartoAttivo)
       if (error) throw error
       return data ?? []
     },

@@ -621,10 +621,10 @@ export function ModificaTurniPage() {
 
   // Ritirati (subentro): per mostrarne i turni storici nella griglia, marcati.
   const { data: mediciRitirati = [] } = useQuery<Medico[]>({
-    queryKey: ['medici-ritirati'],
+    queryKey: ['medici-ritirati', repartoAttivo],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('medici').select('*').eq('attivo', false).order('nome')
+        .from('medici').select('*').eq('reparto_id', repartoAttivo).eq('attivo', false).order('nome')
       if (error) throw error
       return data ?? []
     },
@@ -649,10 +649,10 @@ export function ModificaTurniPage() {
   // `ferie`, distinguendo ferie approvate (verde solido) da quelle in
   // attesa (verde a righe).
   const { data: ferieDB = [] } = useQuery<Pick<Ferie, 'medico_id' | 'data_inizio' | 'data_fine' | 'approvate'>[]>({
-    queryKey: ['ferie-ranges'],
+    queryKey: ['ferie-ranges', repartoAttivo],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('ferie').select('medico_id, data_inizio, data_fine, approvate')
+        .from('ferie').select('medico_id, data_inizio, data_fine, approvate').eq('reparto_id', repartoAttivo)
       if (error) throw error
       return data ?? []
     },

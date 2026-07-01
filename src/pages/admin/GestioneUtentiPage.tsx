@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, Shield, User, Lock, UserPlus, Pencil, Save, X, UserCheck } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { fetchAllRows } from '../../lib/fetchAll'
 import { emailValida } from '../../lib/email'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
@@ -58,12 +59,10 @@ export function GestioneUtentiPage() {
 
   const { data: medici = [] } = useQuery<Medico[]>({
     queryKey: ['medici'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('medici').select('*').eq('attivo', true).order('numero_ordine')
-      if (error) throw error
-      return data
-    },
+    // Cross-reparto (confronto globale nomi→account): paginato anti-1000 (#43).
+    queryFn: () =>
+      fetchAllRows<Medico>((from, to) =>
+        supabase.from('medici').select('*').eq('attivo', true).order('id').range(from, to)),
   })
 
   // Medici non ancora in utenti_autorizzati (confronto per nome)
