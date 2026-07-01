@@ -26,6 +26,7 @@ import { getDayOfWeek, formatDate, MESI_IT } from '../lib/algorithm'
 import { useTurniRealtime } from '../hooks/useTurniRealtime'
 import { useFerieRealtime } from '../hooks/useFerieRealtime'
 import { useMioReparto } from '../contexts/MioRepartoContext'
+import { REPARTO_11N } from '../contexts/RepartoContext'
 import { ForceLandscapeOverlay } from '../components/ForceLandscapeOverlay'
 import type { Configurazione, Medico, Turno, Ferie, SlotPlacement } from '../types'
 
@@ -120,6 +121,8 @@ export function SettimanaleAltPage() {
 
   // Reparto della vista pubblica (selettore in NavBar per chi è in più reparti).
   const { repartoVista } = useMioReparto()
+  // Reparto dinamico (≠ 11N): niente Ricerca (RM/RP) → 2 colonne RM nascoste.
+  const repartoDinamico = repartoVista !== REPARTO_11N
 
   const { data: config } = useQuery<Configurazione | null>({
     queryKey: ['configurazione', repartoVista],
@@ -382,7 +385,7 @@ export function SettimanaleAltPage() {
       return (
         <tr key={d.dataISO} style={{ borderTop: '2px solid #1e3a8a' }}>
           <td style={{ ...cellDataDay, background: bgGiorno }}>{fmtDataLunga(d.data)}</td>
-          <td colSpan={5} style={{
+          <td colSpan={repartoDinamico ? 3 : 5} style={{
             padding: '8px', textAlign: 'center', color: '#9ca3af',
             fontStyle: 'italic', fontSize: 11,
             background: '#f9fafb', border: '1px solid #d1d5db',
@@ -398,7 +401,7 @@ export function SettimanaleAltPage() {
     // RM/RP: una voce per riga (div block-level esterno → newline tra
     // turnisti). Se in ferie, la stripe è applicata allo <span> interno
     // così non rompe il layout block del wrapper.
-    const cellRicercaM = (
+    const cellRicercaM = repartoDinamico ? null : (
       <td rowSpan={totalRows} style={{ ...cellRicerca }}>
         {d.ricercaMattina.length === 0
           ? <span style={emptyDash}>—</span>
@@ -415,7 +418,7 @@ export function SettimanaleAltPage() {
             ))}
       </td>
     )
-    const cellRicercaP = (
+    const cellRicercaP = repartoDinamico ? null : (
       <td rowSpan={totalRows} style={{ ...cellRicerca }}>
         {d.ricercaPomeriggio.length === 0
           ? <span style={emptyDash}>—</span>
@@ -630,8 +633,8 @@ export function SettimanaleAltPage() {
                 <th style={hData}>Data</th>
                 <th style={hMattina}>Mattina</th>
                 <th style={hMattina}>Pomeriggio</th>
-                <th style={hRicerca}>RM Mattina</th>
-                <th style={hRicerca}>RM Pomeriggio</th>
+                {!repartoDinamico && <th style={hRicerca}>RM Mattina</th>}
+                {!repartoDinamico && <th style={hRicerca}>RM Pomeriggio</th>}
                 <th style={hReperibile}>Reperibile</th>
               </tr>
             </thead>
@@ -648,8 +651,8 @@ export function SettimanaleAltPage() {
                         <th style={hDataSub}>Data</th>
                         <th style={hMattinaSub}>Mattina</th>
                         <th style={hMattinaSub}>Pomeriggio</th>
-                        <th style={hRicercaSub}>RM Mattina</th>
-                        <th style={hRicercaSub}>RM Pomeriggio</th>
+                        {!repartoDinamico && <th style={hRicercaSub}>RM Mattina</th>}
+                        {!repartoDinamico && <th style={hRicercaSub}>RM Pomeriggio</th>}
                         <th style={hReperibileSub}>Reperibile</th>
                       </tr>
                     )}

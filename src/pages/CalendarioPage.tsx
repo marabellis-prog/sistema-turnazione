@@ -11,6 +11,7 @@ import { ForceLandscapeOverlay } from '../components/ForceLandscapeOverlay'
 import { RiepilogoTurni, aggiustaConteggiRiepilogo } from '../components/RiepilogoTurni'
 import { SyncCalendarModal } from '../components/SyncCalendarModal'
 import { LegendaCalendario } from '../components/LegendaCalendario'
+import { useLegendaDinamica } from '../hooks/useLegendaDinamica'
 import { calcolaColoreFerie, COLORI_FERIE, ETICHETTA_COLORE } from '../lib/ferieColori'
 import { useDebug } from '../contexts/DebugContext'
 import { useMioReparto } from '../contexts/MioRepartoContext'
@@ -212,6 +213,12 @@ export function CalendarioPage() {
       return data
     },
   })
+
+  // Legenda DINAMICA (reparti non-11N): turni + proprietà dallo schema attivo
+  // (solo quelli messi nella struttura). 11N → repartoDinamico=false → legenda
+  // classica. Per i dinamici togliamo anche la tabella Ricerca (RM/RP).
+  const { repartoDinamico, tipiTurno: tipiTurnoLeg, proprieta: proprietaLeg } =
+    useLegendaDinamica(repartoVista, config?.schema_attivo)
 
   const { data: medici = [], isLoading: lMed } = useQuery<Medico[]>({
     queryKey: ['medici', repartoVista],
@@ -953,7 +960,9 @@ export function CalendarioPage() {
           {/* Desktop lg+: legenda inline sopra la tabella */}
           <div className="hidden lg:block px-3 py-2 shrink-0 border-b"
             style={{ borderColor: '#d5ccb8' }}>
-            <LegendaCalendario variant="pubblica" />
+            <LegendaCalendario variant="pubblica"
+              tipiTurno={repartoDinamico ? tipiTurnoLeg : undefined}
+              proprieta={repartoDinamico ? proprietaLeg : undefined} />
           </div>
 
           {/* Mobile/tablet: modal centrato (click fuori = chiudi) */}
@@ -978,7 +987,9 @@ export function CalendarioPage() {
               </div>
               {/* Contenuto */}
               <div className="overflow-auto p-3">
-                <LegendaCalendario variant="pubblica" />
+                <LegendaCalendario variant="pubblica"
+              tipiTurno={repartoDinamico ? tipiTurnoLeg : undefined}
+              proprieta={repartoDinamico ? proprietaLeg : undefined} />
               </div>
             </div>
           </div>
@@ -995,9 +1006,13 @@ export function CalendarioPage() {
           <>
             {/* ─── TABELLA CLINICA (M/P/L/REP) ─── */}
             {renderTabella('clinica')}
-            {/* ─── TABELLA RICERCA (RM/RP) ─── */}
-            <div style={{ height: 8 }} />
-            {renderTabella('ricerca')}
+            {/* ─── TABELLA RICERCA (RM/RP) — solo reparti classici (11N) ─── */}
+            {!repartoDinamico && (
+              <>
+                <div style={{ height: 8 }} />
+                {renderTabella('ricerca')}
+              </>
+            )}
           </>
         )}
       </div>

@@ -27,6 +27,7 @@ import { getDayOfWeek, formatDate, MESI_IT } from '../lib/algorithm'
 import { useTurniRealtime } from '../hooks/useTurniRealtime'
 import { useFerieRealtime } from '../hooks/useFerieRealtime'
 import { useMioReparto } from '../contexts/MioRepartoContext'
+import { REPARTO_11N } from '../contexts/RepartoContext'
 import { ForceLandscapeOverlay } from '../components/ForceLandscapeOverlay'
 import type { Configurazione, Medico, Turno, Ferie, SlotPlacement } from '../types'
 
@@ -169,6 +170,8 @@ export function SettimanalePage() {
 
   // Reparto della vista pubblica (selettore in NavBar per chi è in più reparti).
   const { repartoVista } = useMioReparto()
+  // Reparto dinamico (≠ 11N): niente Ricerca (RM/RP) — colonna + legenda nascoste.
+  const repartoDinamico = repartoVista !== REPARTO_11N
 
   // ── Query dati (scoped al reparto-vista) ──────────────────────────
   const { data: config } = useQuery<Configurazione | null>({
@@ -617,17 +620,19 @@ export function SettimanalePage() {
                     <MedRow key={`${m.medico.id}-${m.half ?? i}`} item={m} columnPlacement="MED" />
                   ))}
             </td>
-            {/* RICERCA */}
-            <td style={{
-              padding: '4px 8px', verticalAlign: 'top',
-              border: '1px solid #6b7280', background: '#fdf4f5', minWidth: 160,
-            }}>
-              <RicercaRow label="RM" items={d.ricercaMattina} />
-              <RicercaRow label="RP" items={d.ricercaPomeriggio} />
-              {d.ricercaMattina.length === 0 && d.ricercaPomeriggio.length === 0 && (
-                <span style={{ color: '#cbd5e1', fontSize: 11 }}>—</span>
-              )}
-            </td>
+            {/* RICERCA — solo reparti classici (11N) */}
+            {!repartoDinamico && (
+              <td style={{
+                padding: '4px 8px', verticalAlign: 'top',
+                border: '1px solid #6b7280', background: '#fdf4f5', minWidth: 160,
+              }}>
+                <RicercaRow label="RM" items={d.ricercaMattina} />
+                <RicercaRow label="RP" items={d.ricercaPomeriggio} />
+                {d.ricercaMattina.length === 0 && d.ricercaPomeriggio.length === 0 && (
+                  <span style={{ color: '#cbd5e1', fontSize: 11 }}>—</span>
+                )}
+              </td>
+            )}
             {/* REPERIBILE — stesso linguaggio visivo degli altri:
                 stripe + tooltip se il reperibile è in ferie. */}
             <td style={{
@@ -788,28 +793,31 @@ export function SettimanalePage() {
               <span>= L con metà giornata in altra colonna</span>
             </span>
 
-            {/* Separatore */}
-            <span style={{ width: 1, height: 14, background: '#c0b8a8', display: 'inline-block' }} />
-
-            {/* RM / RP / ·L */}
-            <span className="flex items-center gap-1.5">
-              <span style={{
-                fontSize: 9, fontWeight: 800, color: '#3a2858',
-                background: '#ddd8ea', padding: '1px 4px', borderRadius: 3,
-              }}>RM</span>
-              <span>Ricerca mattina</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span style={{
-                fontSize: 9, fontWeight: 800, color: '#3a2858',
-                background: '#ddd8ea', padding: '1px 4px', borderRadius: 3,
-              }}>RP</span>
-              <span>Ricerca pomeriggio</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <span style={{ color: '#7a2233', fontWeight: 700 }}>·L</span>
-              <span>= anche in turno lungo</span>
-            </span>
+            {/* RM / RP / ·L — solo reparti classici (11N) */}
+            {!repartoDinamico && (
+              <>
+                {/* Separatore */}
+                <span style={{ width: 1, height: 14, background: '#c0b8a8', display: 'inline-block' }} />
+                <span className="flex items-center gap-1.5">
+                  <span style={{
+                    fontSize: 9, fontWeight: 800, color: '#3a2858',
+                    background: '#ddd8ea', padding: '1px 4px', borderRadius: 3,
+                  }}>RM</span>
+                  <span>Ricerca mattina</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span style={{
+                    fontSize: 9, fontWeight: 800, color: '#3a2858',
+                    background: '#ddd8ea', padding: '1px 4px', borderRadius: 3,
+                  }}>RP</span>
+                  <span>Ricerca pomeriggio</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span style={{ color: '#7a2233', fontWeight: 700 }}>·L</span>
+                  <span>= anche in turno lungo</span>
+                </span>
+              </>
+            )}
 
             {/* Separatore */}
             <span style={{ width: 1, height: 14, background: '#c0b8a8', display: 'inline-block' }} />
@@ -869,12 +877,14 @@ export function SettimanalePage() {
                   background: '#0284c7', color: '#fff',
                   border: '1px solid #075985', letterSpacing: '0.02em',
                 }}>Medicina</th>
-                {/* RICERCA — bordeaux */}
-                <th style={{
-                  width: 160, padding: '6px 4px',
-                  background: '#7a2233', color: '#fff',
-                  border: '1px solid #5a1a26', letterSpacing: '0.02em',
-                }}>Ricerca</th>
+                {/* RICERCA — bordeaux · solo reparti classici (11N) */}
+                {!repartoDinamico && (
+                  <th style={{
+                    width: 160, padding: '6px 4px',
+                    background: '#7a2233', color: '#fff',
+                    border: '1px solid #5a1a26', letterSpacing: '0.02em',
+                  }}>Ricerca</th>
+                )}
                 {/* REPERIBILE — verde */}
                 <th style={{
                   width: 140, padding: '6px 4px',
