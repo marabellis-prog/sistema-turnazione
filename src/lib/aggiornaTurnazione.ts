@@ -460,9 +460,13 @@ export async function pubblicaBozza(anteprima: TurnazioneAnteprima, configId: st
   let inserted = 0
   for (let i = 0; i < turni.length; i += CHUNK) {
     const chunk = turni.slice(i, i + CHUNK).map(t => {
-      // Rimuovi eventuali id/timestamp dallo snapshot (li rigenera il DB).
+      // Rimuovi id/timestamp (li rigenera il DB) e i campi SOLO-snapshot usati
+      // per il confronto B/N in anteprima (turno_clinico_vecchio /
+      // turno_ricerca_vecchio): NON sono colonne di `turni`, altrimenti l'insert
+      // fallisce ("Could not find the column ... in the schema cache").
       const r = { ...(t as unknown as Record<string, unknown>) }
       delete r.id; delete r.created_at; delete r.updated_at
+      delete r.turno_clinico_vecchio; delete r.turno_ricerca_vecchio
       r.reparto_id = repartoId   // forza il reparto corretto sui turni inseriti
       return r
     })
