@@ -820,10 +820,31 @@ export function ModificaTurniPage() {
       return (data ?? []) as { sigla: string; nome: string; colore_bg: string; colore_fg: string; peso: number; is_reperibilita: boolean; ordine: number }[]
     },
   })
-  const tipiTurnoOrd = useMemo(
-    () => [...tipiTurnoDin].sort((a, b) => (a.ordine ?? 0) - (b.ordine ?? 0)),
-    [tipiTurnoDin],
-  )
+  // Colonne EFFETTIVAMENTE messe nella tabella dello schema (schema_colonna):
+  // Legenda + Riepilogo mostrano SOLO queste, nell'ordine delle colonne (così
+  // una proprietà configurata ma non usata — es. Supporto — non compare).
+  const { data: schemaColonneDin = [] } = useQuery<{ tipo: 'turno' | 'flag'; sigla: string; ordine: number }[]>({
+    queryKey: ['mod-schemacolonne', repartoAttivo, schemaAttivoNum],
+    enabled: repartoDinamico && !!config,
+    staleTime: 0, refetchOnMount: 'always',
+    queryFn: async () => {
+      const { data, error } = await supabase.from('schema_colonna')
+        .select('tipo, sigla, ordine')
+        .eq('reparto_id', repartoAttivo).eq('schema_num', schemaAttivoNum)
+      if (error) throw error
+      return (data ?? []) as { tipo: 'turno' | 'flag'; sigla: string; ordine: number }[]
+    },
+  })
+  const tipiTurnoUsati = useMemo(() => {
+    const by = new Map(tipiTurnoDin.map(t => [t.sigla, t]))
+    return schemaColonneDin.filter(c => c.tipo === 'turno').sort((a, b) => a.ordine - b.ordine)
+      .map(c => by.get(c.sigla)).filter((t): t is typeof tipiTurnoDin[number] => !!t)
+  }, [schemaColonneDin, tipiTurnoDin])
+  const proprietaUsate = useMemo(() => {
+    const by = new Map(proprietaDin.map(p => [p.sigla, p]))
+    return schemaColonneDin.filter(c => c.tipo === 'flag').sort((a, b) => a.ordine - b.ordine)
+      .map(c => by.get(c.sigla)).filter((p): p is typeof proprietaDin[number] => !!p)
+  }, [schemaColonneDin, proprietaDin])
   // Righe da mostrare = proprietà richieste nel fabbisogno o presenti in almeno
   // un turno (così "Supporto" e nuove proprietà compaiono appena usate).
   const proprietaDaMostrare = useMemo(() => {
@@ -1984,8 +2005,8 @@ export function ModificaTurniPage() {
           <TabellaPeriodo cols={cols} tipo="clinica" />
         </div>
         <LegendaCalendario variant="admin"
-          tipiTurno={repartoDinamico ? tipiTurnoOrd : undefined}
-          proprieta={repartoDinamico ? proprietaOrd : undefined} />
+          tipiTurno={repartoDinamico ? tipiTurnoUsati : undefined}
+          proprieta={repartoDinamico ? proprietaUsate : undefined} />
         {/* Ricerca (RM/RP): solo 11N. I reparti dinamici non hanno Ricerca. */}
         {!repartoDinamico && (
           <div className="overflow-auto rounded-lg border bg-white" style={{ borderColor: '#c98a96' }}>
@@ -2366,8 +2387,8 @@ export function ModificaTurniPage() {
               // Stesso aggiustamento della vista pubblica (Marabelli +4 ecc.):
               // i due riepiloghi devono combaciare. Fonte unica in RiepilogoTurni.
               aggiustaConteggi={aggiustaConteggiRiepilogo}
-              tipiTurno={repartoDinamico ? tipiTurnoOrd : undefined}
-              proprieta={repartoDinamico ? proprietaOrd : undefined}
+              tipiTurno={repartoDinamico ? tipiTurnoUsati : undefined}
+              proprieta={repartoDinamico ? proprietaUsate : undefined}
               getCellInfo={(mid, data) => {
                 const cur = getCella(mid, data)
                 return {
