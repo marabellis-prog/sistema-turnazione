@@ -21,8 +21,10 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Table2, Tag, Flag, Trash2, GripVertical, Info, Plus, Copy, ListChecks, Eraser, Save, Eye, EyeOff, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { schemiInUso } from '../../lib/schemiInUso'
 import { useReparto } from '../../contexts/RepartoContext'
 import { useMediciReparto } from '../../hooks/useMediciReparto'
+import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useConfirm } from '../../hooks/useConfirm'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { ConfirmModal } from '../../components/ConfirmModal'
@@ -145,6 +147,12 @@ export function SchemaDesignerNuovo() {
     const p = idx >= 0 ? Math.floor(idx / SCHEMI_PER_PAGE) : 0
     setSchemaPage(prev => (prev === p ? prev : p))
   }, [schemaNum, schemiList])
+
+  // #36 — lo schema è IN USO se calcola ≥1 giorno della turnazione attiva
+  // (da schema_storico). In tal caso si blocca salva/azzera/elimina: per
+  // modificarlo va duplicato in un nuovo schema.
+  const { data: config } = useConfigReparto()
+  const inUso = useMemo(() => schemiInUso(config).has(schemaNum), [config, schemaNum])
 
   const { data: tipiTurno = [] } = useQuery<TipoTurno[]>({
     queryKey: ['tipi_turno', repartoAttivo, schemaNum],
@@ -676,12 +684,13 @@ export function SchemaDesignerNuovo() {
           onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
           placeholder={`Schema ${schemaNum} — dai un nome per riconoscerlo…`}
           className="flex-1 min-w-[140px] text-base font-bold bg-transparent border-b-2 border-stone-200 focus:border-[#476540] outline-none py-1 px-1 text-stone-800" />
-        <button onClick={azzeraSchema} title="Svuota lo schema (mantiene il titolo)"
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border border-amber-300 text-amber-700 hover:bg-amber-50 shrink-0">
+        <button onClick={azzeraSchema} disabled={inUso}
+          title={inUso ? 'Schema in uso nella turnazione attiva: duplicalo (Copia da…) per modificarlo' : 'Svuota lo schema (mantiene il titolo)'}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border border-amber-300 text-amber-700 hover:bg-amber-50 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed">
           <Eraser size={13} /> Azzera
         </button>
-        <button onClick={eliminaSchema} disabled={schemiList.length <= 1}
-          title={schemiList.length <= 1 ? "Non puoi eliminare l'unico schema (usa Azzera per svuotarlo)" : 'Elimina lo schema e rinumera gli altri'}
+        <button onClick={eliminaSchema} disabled={schemiList.length <= 1 || inUso}
+          title={inUso ? 'Schema in uso nella turnazione attiva: non eliminabile (duplicalo per modificarlo)' : schemiList.length <= 1 ? "Non puoi eliminare l'unico schema (usa Azzera per svuotarlo)" : 'Elimina lo schema e rinumera gli altri'}
           className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed">
           <Trash2 size={13} /> Elimina
         </button>
@@ -801,12 +810,24 @@ export function SchemaDesignerNuovo() {
         </div>
       )}
 
+      {inUso && (
+        <div className="flex items-start gap-2 rounded-lg px-3 py-2 text-sm"
+          style={{ background: '#fef3c7', border: '1px solid #fbbf24', color: '#92400e' }}>
+          <Info size={16} className="mt-0.5 shrink-0" />
+          <span>
+            <strong>Schema in uso</strong> nella turnazione attiva: salva, azzera ed elimina sono bloccati per non rompere i turni già generati.
+            Per modificarlo, <strong>duplicalo</strong> con “Copia da…” in un nuovo schema.
+          </span>
+        </div>
+      )}
+
       {/* Salva schema — subito SOTTO la struttura e SOPRA la griglia turnisti. */}
       {giorni.length > 0 && (
         <div className="flex items-center gap-3">
-          <button onClick={salvaSchema} disabled={!dirty || saving} title="Salva lo schema (struttura e turni)"
+          <button onClick={salvaSchema} disabled={!dirty || saving || inUso}
+            title={inUso ? 'Schema in uso: duplicalo (Copia da…) per modificarlo' : 'Salva lo schema (struttura e turni)'}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white shadow transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ background: dirty && !saving ? '#476540' : '#9ca3af' }}>
+            style={{ background: dirty && !saving && !inUso ? '#476540' : '#9ca3af' }}>
             <Save size={15} /> {saving ? 'Salvataggio…' : 'Salva schema'}
           </button>
           <button onClick={() => setShowPreview(v => !v)} disabled={giorniDB.length === 0}
