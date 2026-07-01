@@ -60,7 +60,13 @@ export function MioRepartoProvider({ children }: { children: ReactNode }) {
       if (error) throw error
       const map = new Map<string, Reparto>()
       for (const row of (data ?? []) as unknown as { reparto: Reparto | null }[]) {
-        if (row.reparto && row.reparto.attivo) map.set(row.reparto.id, row.reparto)
+        // #32: nascondi ai turnisti i reparti DISATTIVATI (attivo=false). MA 11N
+        // è il reparto classico "sacro": oggi ha attivo=false e va comunque
+        // SEMPRE mostrato, altrimenti un turnista solo-11N resterebbe senza
+        // reparti. Eccezione da togliere quando 11N verrà migrato (#29).
+        if (row.reparto && (row.reparto.attivo || row.reparto.id === REPARTO_11N)) {
+          map.set(row.reparto.id, row.reparto)
+        }
       }
       return [...map.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'it'))
     },
