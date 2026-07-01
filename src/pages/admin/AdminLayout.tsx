@@ -47,17 +47,20 @@ export function AdminLayout() {
   // snapshot + rotazione. Mai blocca la UI: failures solo in console.
   useAutoBackup(repartoAttivo)
 
-  // Count ferie ancora da approvare → driver del badge arancione.
-  const { data: ferieDaApprovare = 0 } = useQuery({
-    queryKey: ['ferie-pending-count', repartoAttivo],
+  // Pending ferie/cambi su TUTTI i reparti gestiti (badge CROSS-REPARTO): così
+  // non si perde una richiesta in un reparto non attivo. Ordinate per data →
+  // la più vecchia guida il "Vai alla richiesta".
+  const repartiIds = reparti.map(r => r.id)
+  const { data: feriePending = [] } = useQuery<{ id: string; reparto_id: string }[]>({
+    queryKey: ['ferie-pending-multi', repartiIds.join(',')],
     queryFn: async () => {
-      const { count, error } = await supabase
-        .from('ferie')
-        .select('*', { count: 'exact', head: true })
-        .eq('reparto_id', repartoAttivo)
-        .eq('approvate', false)
+      if (repartiIds.length === 0) return []
+      const { data, error } = await supabase.from('ferie')
+        .select('id, reparto_id, created_at')
+        .in('reparto_id', repartiIds).eq('approvate', false)
+        .order('created_at', { ascending: true })
       if (error) throw error
-      return count ?? 0
+      return (data ?? []) as { id: string; reparto_id: string }[]
     },
     staleTime:                   0,
     refetchOnMount:              'always',
@@ -65,17 +68,16 @@ export function AdminLayout() {
     refetchIntervalInBackground: false,
   })
 
-  // Count richieste cambio turno pending → secondo badge arancione.
-  const { data: cambiDaApprovare = 0 } = useQuery({
-    queryKey: ['cambi-turno-pending-count', repartoAttivo],
+  const { data: cambiPending = [] } = useQuery<{ id: string; reparto_id: string }[]>({
+    queryKey: ['cambi-pending-multi', repartiIds.join(',')],
     queryFn: async () => {
-      const { count, error } = await supabase
-        .from('cambi_turno')
-        .select('*', { count: 'exact', head: true })
-        .eq('reparto_id', repartoAttivo)
-        .eq('stato', 'pending')
+      if (repartiIds.length === 0) return []
+      const { data, error } = await supabase.from('cambi_turno')
+        .select('id, reparto_id, created_at')
+        .in('reparto_id', repartiIds).eq('stato', 'pending')
+        .order('created_at', { ascending: true })
       if (error) throw error
-      return count ?? 0
+      return (data ?? []) as { id: string; reparto_id: string }[]
     },
     staleTime:                   0,
     refetchOnMount:              'always',
@@ -103,17 +105,31 @@ export function AdminLayout() {
     navigate(to)
   }
 
-  // Helper per renderizzare un badge "X da approvare" uniforme.
-  // Lo riuso per ferie e cambi turno con label/count diversi.
-  function PendingBadge({ count, label, to }: { count: number; label: string; to: string }) {
+  // Vai alla richiesta pending "giusta": preferisci una del reparto attivo,
+  // altrimenti la più vecchia in assoluto → cambia reparto + naviga + evidenzia
+  // (la pagina target legge ?richiesta e fa scroll+flash).
+  function vaiARichiesta(pending: { id: string; reparto_id: string }[], to: string) {
+    if (pending.length === 0) return
+    const target = pending.find(p => p.reparto_id === repartoAttivo) ?? pending[0]
+    if (target.reparto_id !== repartoAttivo) setRepartoAttivo(target.reparto_id)
+    handleNav(`${to}?richiesta=${target.id}`)
+  }
+
+  // Badge "X da approvare" CROSS-REPARTO. count = pending su TUTTI i reparti
+  // gestiti; se alcune sono in altri reparti lo segnala.
+  function PendingBadge({ pending, label, to }: { pending: { id: string; reparto_id: string }[]; label: string; to: string }) {
+    const count = pending.length
     if (count === 0) return null
+    const altri = pending.filter(p => p.reparto_id !== repartoAttivo).length
     return (
       <button
-        onClick={() => handleNav(to)}
+        onClick={() => vaiARichiesta(pending, to)}
         className="mx-3 mt-2 flex items-center gap-2 px-3 py-2 rounded-md text-xs font-semibold
                    transition-all animate-pulse hover:opacity-90 text-left"
         style={{ background: '#d97706', color: '#fff' }}
-        title={`Vai a ${label} — ${count} richiest${count === 1 ? 'a' : 'e'} in attesa`}
+        title={altri > 0
+          ? `${label}: ${count} in attesa (${altri} in altri reparti) — vai alla più vecchia`
+          : `Vai a ${label} — ${count} richiest${count === 1 ? 'a' : 'e'} in attesa`}
       >
         <AlertCircle size={14} className="shrink-0" />
         <span className="leading-tight">
@@ -122,6 +138,7 @@ export function AdminLayout() {
             style={{ background: 'rgba(255,255,255,0.25)' }}>
             {count}
           </span>
+          {altri > 0 && <span className="ml-1 text-[9px] opacity-90">· altri reparti</span>}
         </span>
       </button>
     )
@@ -231,8 +248,8 @@ export function AdminLayout() {
             (riservato a "Rigenera calendario" nella navbar). Aggiornamento
             realtime via useFerieRealtime / useCambiTurnoRealtime + polling. */}
         <div className="mt-2">
-          <PendingBadge count={ferieDaApprovare} label="Ferie da approvare" to="/admin/ferie" />
-          <PendingBadge count={cambiDaApprovare} label="Cambi turno da approvare" to="/admin/cambi" />
+          <PendingBadge pending={feriePending} label="Ferie da approvare" to="/admin/ferie" />
+          <PendingBadge pending={cambiPending} label="Cambi turno da approvare" to="/admin/cambi" />
         </div>
       </aside>
 
