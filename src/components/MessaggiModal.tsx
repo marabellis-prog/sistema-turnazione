@@ -33,6 +33,7 @@ import {
   Send, Trash2, Shield,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { fetchAllRows } from '../lib/fetchAll'
 import { useFerieRealtime } from '../hooks/useFerieRealtime'
 import { useCambiTurnoRealtime } from '../hooks/useCambiTurnoRealtime'
 import type {
@@ -190,12 +191,11 @@ export function MessaggiModal({ mode, medici, repartoNomeByMedicoId, onClose }: 
   // (mostrare CHI ha richiesto) sia per i medici coinvolti nei cambi.
   const { data: tuttiMedici = [] } = useQuery<{ id: string; nome: string }[]>({
     queryKey: ['medici'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('medici').select('id, nome').eq('attivo', true)
-      if (error) throw error
-      return data ?? []
-    },
+    // Tutti i medici (cross-reparto) per il lookup id→nome: paginato per non
+    // incappare nel taglio a 1000 righe col crescere dei reparti (task #42).
+    queryFn: () =>
+      fetchAllRows<{ id: string; nome: string }>((from, to) =>
+        supabase.from('medici').select('id, nome').eq('attivo', true).order('id').range(from, to)),
   })
   const mediciById = useMemo(() => {
     const m = new Map<string, string>()

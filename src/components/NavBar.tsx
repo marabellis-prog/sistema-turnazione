@@ -9,6 +9,7 @@ import { useFerieRealtime } from '../hooks/useFerieRealtime'
 import { useCambiTurnoRealtime } from '../hooks/useCambiTurnoRealtime'
 import { MessaggiModal } from './MessaggiModal'
 import { supabase } from '../lib/supabase'
+import { fetchAllRows } from '../lib/fetchAll'
 import { useDebug } from '../contexts/DebugContext'
 import { useReparto } from '../contexts/RepartoContext'
 import { useMioReparto } from '../contexts/MioRepartoContext'
@@ -89,12 +90,13 @@ export function NavBar({ user, onSignOut }: Props) {
   // record nella tabella `medici` e quindi una casella di posta.
   const { data: medici = [] } = useQuery<(Medico & { reparto?: { id: string; nome: string } | null })[]>({
     queryKey: ['medici', 'navbar-reparto'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('medici').select('*, reparto:reparti(id, nome)').eq('attivo', true)
-      if (error) throw error
-      return (data ?? []) as (Medico & { reparto?: { id: string; nome: string } | null })[]
-    },
+    // Prende i medici di TUTTI i reparti (per il match nome cross-reparto):
+    // paginato per non incappare nel taglio a 1000 righe quando i reparti
+    // cresceranno (vedi lib/fetchAll + task #42).
+    queryFn: () =>
+      fetchAllRows<Medico & { reparto?: { id: string; nome: string } | null }>((from, to) =>
+        supabase.from('medici').select('*, reparto:reparti(id, nome)')
+          .eq('attivo', true).order('id').range(from, to)),
     enabled: !!user,
   })
   // Un turnista può essere medico in PIÙ reparti (un record `medici` per
