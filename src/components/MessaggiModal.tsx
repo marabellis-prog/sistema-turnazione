@@ -60,11 +60,15 @@ function getPageWindow(current: number, total: number, windowSize: number): numb
 }
 
 interface Props {
-  /** 'medico' = casella personale del medico (richiede `medico`);
+  /** 'medico' = casella personale del medico (richiede `medici`);
    *  'admin'  = casella admin con broadcast e richieste pending del sistema. */
   mode:    'medico' | 'admin'
-  /** Richiesto se mode='medico'. Ignorato se mode='admin'. */
-  medico?: Medico
+  /** Richiesto se mode='medico'. TUTTI i medici del turnista (uno per reparto):
+   *  la casella aggrega messaggi e richieste di tutti i suoi reparti. */
+  medici?: Medico[]
+  /** Se valorizzata (turnista in più reparti), mostra il reparto di
+   *  provenienza accanto a ogni messaggio/richiesta. Chiave = medico_id. */
+  repartoNomeByMedicoId?: Map<string, string>
   onClose: () => void
 }
 
@@ -104,16 +108,23 @@ function fmtDataBreve(sqlDate: string): string {
   return y !== curY ? `${d}/${m}/${y.slice(2)}` : `${d}/${m}`
 }
 
-export function MessaggiModal({ mode, medico, onClose }: Props) {
+export function MessaggiModal({ mode, medici, repartoNomeByMedicoId, onClose }: Props) {
   const qc = useQueryClient()
   const [page,    setPage]    = useState(0)
   const [marking, setMarking] = useState<string | null>(null)
   const [bulkLoading, setBulkLoading] = useState(false)
 
-  // Identita` per le query/invalidations: per il medico usiamo il suo id;
-  // per l'admin una stringa fissa cosi` ['messaggi', 'admin'] e
+  // Id di TUTTI i medici del turnista (uno per reparto). Ordinati → query-key
+  // stabile a prescindere dall'ordine di caricamento.
+  const mediciIds = useMemo(() => (medici ?? []).map(m => m.id).sort(), [medici])
+  // Reparto di provenienza (etichetta) per un medico_id, se fornito.
+  const repartoLabel = (medicoId: string | null | undefined): string | null =>
+    (medicoId != null ? repartoNomeByMedicoId?.get(medicoId) : null) ?? null
+
+  // Identita` per le query/invalidations: per il medico usiamo l'insieme dei
+  // suoi id; per l'admin una stringa fissa cosi` ['messaggi', 'admin'] e
   // ['messaggi-unread-count', 'admin'] non si scontrano con quelle medico.
-  const queryScopeId = mode === 'medico' ? (medico?.id ?? '') : 'admin'
+  const queryScopeId = mode === 'medico' ? mediciIds.join(',') : 'admin'
 
   // Realtime su ferie e cambi turno: cosi` se il modal e` aperto e
   // arrivano nuove richieste (medico) o azioni dell'admin (altrove),
@@ -129,8 +140,8 @@ export function MessaggiModal({ mode, medico, onClose }: Props) {
     queryFn: async () => {
       let q = supabase.from('messaggi').select('*')
       if (mode === 'medico') {
-        if (!medico) return []
-        q = q.eq('medico_id', medico.id)
+        if (mediciIds.length === 0) return []
+        q = q.in('medico_id', mediciIds)
       } else {
         q = q.eq('destinatario_ruolo', 'admin')
       }
@@ -138,7 +149,7 @@ export function MessaggiModal({ mode, medico, onClose }: Props) {
       if (error) throw error
       return (data ?? []) as Messaggio[]
     },
-    enabled:                     mode === 'admin' || !!medico,
+    enabled:                     mode === 'admin' || mediciIds.length > 0,
     staleTime:                   0,
     refetchOnMount:              'always',
     refetchOnWindowFocus:        true,    // safety net se realtime non arriva
@@ -152,12 +163,12 @@ export function MessaggiModal({ mode, medico, onClose }: Props) {
     queryKey: ['ferie', mode === 'admin' ? 'pending-tutte' : 'pending-mie', queryScopeId],
     queryFn: async () => {
       let q = supabase.from('ferie').select('*').eq('approvate', false)
-      if (mode === 'medico' && medico) q = q.eq('medico_id', medico.id)
+      if (mode === 'medico') q = q.in('medico_id', mediciIds)
       const { data, error } = await q.order('created_at', { ascending: false })
       if (error) throw error
       return data ?? []
     },
-    enabled: mode === 'admin' || !!medico,
+    enabled: mode === 'admin' || mediciIds.length > 0,
     staleTime: 0,
     refetchOnMount: 'always',
   })
@@ -165,12 +176,12 @@ export function MessaggiModal({ mode, medico, onClose }: Props) {
     queryKey: ['cambi-turno', mode === 'admin' ? 'pending-tutti' : 'pending-miei', queryScopeId],
     queryFn: async () => {
       let q = supabase.from('cambi_turno').select('*').eq('stato', 'pending')
-      if (mode === 'medico' && medico) q = q.eq('medico_richiedente_id', medico.id)
+      if (mode === 'medico') q = q.in('medico_richiedente_id', mediciIds)
       const { data, error } = await q.order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as CambioTurno[]
     },
-    enabled: mode === 'admin' || !!medico,
+    enabled: mode === 'admin' || mediciIds.length > 0,
     staleTime: 0,
     refetchOnMount: 'always',
   })
@@ -231,8 +242,8 @@ export function MessaggiModal({ mode, medico, onClose }: Props) {
     setBulkLoading(true)
     try {
       let q = supabase.from('messaggi').update({ letto: true }).eq('letto', false)
-      if (mode === 'medico' && medico) {
-        q = q.eq('medico_id', medico.id)
+      if (mode === 'medico') {
+        q = q.in('medico_id', mediciIds)
       } else {
         q = q.eq('destinatario_ruolo', 'admin')
       }
@@ -367,6 +378,12 @@ export function MessaggiModal({ mode, medico, onClose }: Props) {
                               <p className="text-[10px] text-stone-500 mt-1 font-mono">
                                 Inviata il {fmtDataOra(f.created_at)}
                               </p>
+                              {repartoLabel(f.medico_id) && (
+                                <span className="inline-block mt-1 text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                                  style={{ background: '#e0e8d8', color: '#456b3a' }}>
+                                  {repartoLabel(f.medico_id)}
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -427,6 +444,12 @@ export function MessaggiModal({ mode, medico, onClose }: Props) {
                               <p className="text-[10px] text-stone-500 mt-1 font-mono">
                                 Inviata il {fmtDataOra(c.created_at)}
                               </p>
+                              {repartoLabel(c.medico_richiedente_id) && (
+                                <span className="inline-block mt-1 text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                                  style={{ background: '#e0e8d8', color: '#456b3a' }}>
+                                  {repartoLabel(c.medico_richiedente_id)}
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -482,6 +505,12 @@ export function MessaggiModal({ mode, medico, onClose }: Props) {
                             {fmtDataOra(m.created_at)}
                           </span>
                         </div>
+                        {repartoLabel(m.medico_id) && (
+                          <span className="inline-block mt-1 text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                            style={{ background: '#e0e8d8', color: '#456b3a' }}>
+                            {repartoLabel(m.medico_id)}
+                          </span>
+                        )}
                         {m.corpo && (
                           <p className="text-xs text-stone-600 mt-1 leading-relaxed whitespace-pre-wrap">
                             {m.corpo}

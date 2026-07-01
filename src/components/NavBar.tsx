@@ -64,7 +64,7 @@ export function NavBar({ user, onSignOut }: Props) {
   // admin (es. l'admin principale che gestisce e ha anche turni propri),
   // ognuna apre il proprio modal con i propri filtri.
   const [showMessaggi, setShowMessaggi] = useState<'medico' | 'admin' | null>(null)
-  const [toast, setToast] = useState<{ titolo: string; corpo: string | null; mode: 'medico' | 'admin' } | null>(null)
+  const [toast, setToast] = useState<{ titolo: string; corpo: string | null; mode: 'medico' | 'admin'; reparto: string | null } | null>(null)
 
   // Safety net per il badge unread: rinfresca quando la tab torna in
   // primo piano. Safari mobile/iOS in particolare puo` chiudere la
@@ -87,21 +87,38 @@ export function NavBar({ user, onSignOut }: Props) {
   // Cerco il medico associato all'utente loggato (match per nome, come
   // gia` fa CalendarioPage.mioMedico). Solo gli account "medico" hanno un
   // record nella tabella `medici` e quindi una casella di posta.
-  const { data: medici = [] } = useQuery<Medico[]>({
-    queryKey: ['medici'],
+  const { data: medici = [] } = useQuery<(Medico & { reparto?: { id: string; nome: string } | null })[]>({
+    queryKey: ['medici', 'navbar-reparto'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('medici').select('*').eq('attivo', true)
+        .from('medici').select('*, reparto:reparti(id, nome)').eq('attivo', true)
       if (error) throw error
-      return data ?? []
+      return (data ?? []) as (Medico & { reparto?: { id: string; nome: string } | null })[]
     },
     enabled: !!user,
   })
-  const mioMedico = useMemo(() => {
+  // Un turnista può essere medico in PIÙ reparti (un record `medici` per
+  // reparto). Prendo TUTTI i suoi medici (match per nome), così la bustina
+  // aggrega i messaggi/richieste di tutti i reparti, non solo del primo.
+  const mieiMedici = useMemo(() => {
     const myName = (user?.nome ?? '').toUpperCase().trim()
-    if (!myName) return undefined
-    return medici.find(m => m.nome.toUpperCase().trim() === myName)
+    if (!myName) return []
+    return medici.filter(m => m.nome.toUpperCase().trim() === myName)
   }, [user?.nome, medici])
+  const mioMedico = mieiMedici[0]   // compat per gli usi "singolo medico"
+  const mieiMediciIds = useMemo(() => mieiMedici.map(m => m.id), [mieiMedici])
+  // reparto di provenienza per ogni medico-id (per etichettare le notifiche)
+  const repartoNomeByMedicoId = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const m of mieiMedici) if (m.reparto?.nome) map.set(m.id, m.reparto.nome)
+    return map
+  }, [mieiMedici])
+  // Etichetta reparto mostrata solo se il turnista è in più reparti (altrove
+  // sarebbe ovvia e ridondante).
+  const multiReparto = useMemo(
+    () => new Set(mieiMedici.map(m => m.reparto_id)).size > 1,
+    [mieiMedici],
+  )
 
   // ── Debug: Modalità Admin (on/off) + Doppelgänger (solo admin reale) ──
   const { isRealAdmin, realUser, adminMode, doppleganger, setAdminMode, setDoppleganger } = useDebug()
@@ -135,16 +152,16 @@ export function NavBar({ user, onSignOut }: Props) {
   // Count "items da vedere" per la bustina MEDICO: messaggi non letti del
   // medico + sue ferie/cambi pending.
   const { data: unreadCountMedico = 0 } = useQuery({
-    queryKey: ['messaggi-unread-count', 'medico', mioMedico?.id],
+    queryKey: ['messaggi-unread-count', 'medico', mieiMediciIds.join(',')],
     queryFn: async () => {
-      if (!mioMedico) return 0
+      if (mieiMediciIds.length === 0) return 0
       const [msgRes, ferieRes, cambiRes] = await Promise.all([
         supabase.from('messaggi').select('*', { count: 'exact', head: true })
-          .eq('medico_id', mioMedico.id).eq('letto', false),
+          .in('medico_id', mieiMediciIds).eq('letto', false),
         supabase.from('ferie').select('*', { count: 'exact', head: true })
-          .eq('medico_id', mioMedico.id).eq('approvate', false),
+          .in('medico_id', mieiMediciIds).eq('approvate', false),
         supabase.from('cambi_turno').select('*', { count: 'exact', head: true })
-          .eq('medico_richiedente_id', mioMedico.id).eq('stato', 'pending'),
+          .in('medico_richiedente_id', mieiMediciIds).eq('stato', 'pending'),
       ])
       return (msgRes.count ?? 0) + (ferieRes.count ?? 0) + (cambiRes.count ?? 0)
     },
@@ -189,19 +206,22 @@ export function NavBar({ user, onSignOut }: Props) {
   useEffect(() => {
     function onNuovoMessaggio(e: Event) {
       const m = (e as CustomEvent<Messaggio>).detail
-      const mineMedico = showMedicoMail && mioMedico && m.medico_id === mioMedico.id
+      const mineMedico = showMedicoMail && m.medico_id != null && mieiMedici.some(md => md.id === m.medico_id)
       const mineAdmin  = showAdminMail  && m.destinatario_ruolo === 'admin'
       if (!mineMedico && !mineAdmin) return
       // Se e` entrambe le cose (improbabile ma possibile), prevale 'admin'
       // perche` di solito le azioni admin sono prioritarie da gestire.
       const mode: 'medico' | 'admin' = mineAdmin ? 'admin' : 'medico'
-      setToast({ titolo: m.titolo, corpo: m.corpo, mode })
+      // Reparto di provenienza: nel toast solo se il turnista è in più reparti.
+      const reparto = mineMedico && multiReparto && m.medico_id
+        ? (repartoNomeByMedicoId.get(m.medico_id) ?? null) : null
+      setToast({ titolo: m.titolo, corpo: m.corpo, mode, reparto })
       const t = setTimeout(() => setToast(null), 5000)
       return () => clearTimeout(t)
     }
     window.addEventListener('messaggio-nuovo', onNuovoMessaggio)
     return () => window.removeEventListener('messaggio-nuovo', onNuovoMessaggio)
-  }, [mioMedico, showMedicoMail, showAdminMail])
+  }, [mieiMedici, multiReparto, repartoNomeByMedicoId, showMedicoMail, showAdminMail])
 
   // Auto-rinomina la tab corrente in base alla "famiglia" di pagine.
   // - Su /admin/*       → window.name = TAB_ADMIN
@@ -531,10 +551,11 @@ export function NavBar({ user, onSignOut }: Props) {
         )}
 
         {/* Modal casella messaggi — uno alla volta in base allo state */}
-        {showMessaggi === 'medico' && mioMedico && (
+        {showMessaggi === 'medico' && mieiMedici.length > 0 && (
           <MessaggiModal
             mode="medico"
-            medico={mioMedico}
+            medici={mieiMedici}
+            repartoNomeByMedicoId={multiReparto ? repartoNomeByMedicoId : undefined}
             onClose={() => setShowMessaggi(null)}
           />
         )}
@@ -621,6 +642,12 @@ export function NavBar({ user, onSignOut }: Props) {
                 style={{ color: '#92400e' }}>
                 {toast.mode === 'admin' ? 'Nuova notifica admin' : 'Nuovo messaggio'}
               </div>
+              {toast.reparto && (
+                <div className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded mb-0.5"
+                  style={{ background: '#e0e8d8', color: '#456b3a' }}>
+                  {toast.reparto}
+                </div>
+              )}
               <div className="text-sm font-semibold text-stone-800 truncate">
                 {toast.titolo}
               </div>
