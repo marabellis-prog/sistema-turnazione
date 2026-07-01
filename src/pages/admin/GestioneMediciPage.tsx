@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Save, X, Trash2, AlertTriangle, RefreshCw, GripVertical, Users, Search, UserPlus, ArrowRightLeft, History } from 'lucide-react'
+import { Plus, Pencil, Save, X, Trash2, AlertTriangle, RefreshCw, GripVertical, Users, Search, UserPlus, ArrowRightLeft, History, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { emailValida } from '../../lib/email'
 import { useConfirm } from '../../hooks/useConfirm'
@@ -16,6 +16,66 @@ interface SubentroRow {
   nota: string | null
   uscente: { nome: string } | null
   entrante: { nome: string } | null
+}
+
+/**
+ * Griglia impaginata di nominativi selezionabili. Riempie la larghezza con
+ * colonne da max 10 righe (misura il contenitore via ResizeObserver); se non
+ * entrano tutti compare il navigatore pagine. I nomi si riempiono per colonna
+ * (1-10 nella 1ª, 11-20 nella 2ª, …). Click = aggiungi (col ruolo attivo).
+ */
+function GrigliaNomiPaginata({ items, onPick }: { items: UtenteAutorizzato[]; onPick: (u: UtenteAutorizzato) => void }) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [nCols, setNCols] = useState(1)
+  const [page, setPage] = useState(0)
+  const ITEM_W = 190
+  const ROWS = 10
+
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const ro = new ResizeObserver(entries => {
+      const w = entries[0].contentRect.width
+      setNCols(Math.max(1, Math.floor((w + 8) / (ITEM_W + 8))))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const pageSize = ROWS * nCols
+  const nPages = Math.max(1, Math.ceil(items.length / pageSize))
+  const cur = Math.min(page, nPages - 1)
+  useEffect(() => { setPage(0) }, [items])
+  const slice = items.slice(cur * pageSize, cur * pageSize + pageSize)
+
+  return (
+    <div ref={wrapRef}>
+      <div style={{
+        display: 'grid',
+        gridTemplateRows: `repeat(${ROWS}, minmax(0, auto))`,
+        gridAutoFlow: 'column',
+        gridAutoColumns: `minmax(${ITEM_W}px, 1fr)`,
+        gap: '2px 8px',
+      }}>
+        {slice.map(u => (
+          <button key={u.id} onClick={() => onPick(u)} title={u.email}
+            className="flex items-center gap-1 px-2 py-1 text-sm text-left rounded hover:bg-olive-50 min-w-0">
+            <Plus size={12} className="text-olive-600 shrink-0" />
+            <span className="uppercase font-medium truncate">{u.nome || u.email || '—'}</span>
+          </button>
+        ))}
+      </div>
+      {nPages > 1 && (
+        <div className="flex items-center justify-center gap-3 mt-2 text-xs text-stone-500">
+          <button disabled={cur === 0} onClick={() => setPage(p => Math.max(0, p - 1))}
+            className="p-1 rounded hover:bg-stone-100 disabled:opacity-30 disabled:cursor-not-allowed"><ChevronLeft size={16} /></button>
+          <span>pagina <strong>{cur + 1}</strong> / {nPages} · {items.length} nomi</span>
+          <button disabled={cur >= nPages - 1} onClick={() => setPage(p => Math.min(nPages - 1, p + 1))}
+            className="p-1 rounded hover:bg-stone-100 disabled:opacity-30 disabled:cursor-not-allowed"><ChevronRight size={16} /></button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -393,24 +453,28 @@ export function GestioneMediciPage() {
     qc.invalidateQueries({ queryKey: ['medici'] })
   }
 
-  // Utenti globali che NON sono gia' turnisti di questo reparto (per id o nome).
-  const risultati = useMemo(() => {
-    const raw = searchTerm.trim().toLowerCase()
-    if (raw.length < 3) return []
-    // Ricerca per "parole": ogni token deve comparire in un punto qualsiasi di
-    // nome+email. Cosi "stef" trova "Stefano Marabelli", "Maria Stefanelli" e
-    // "Luigi Abbostefazzi"; "mar stef" trova comunque "Stefano Marabelli".
-    const tokens = raw.split(/\s+/).filter(Boolean)
+  // Utenti globali che NON sono già turnisti di questo reparto (per id o nome),
+  // in ordine alfabetico → base della griglia "Aggiungi al reparto".
+  const eligibili = useMemo(() => {
     const nomiPresenti = new Set(localMedici.map(m => m.nome.toUpperCase().trim()))
     const idPresenti = new Set(localMedici.map(m => m.utente_id).filter(Boolean))
-    return utenti.filter(u => {
-      if (!u.attivo) return false
-      if (idPresenti.has(u.id)) return false
-      if (nomiPresenti.has((u.nome ?? '').toUpperCase().trim())) return false
+    return utenti
+      .filter(u => u.attivo && !idPresenti.has(u.id) && !nomiPresenti.has((u.nome ?? '').toUpperCase().trim()))
+      .sort((a, b) => (a.nome ?? a.email ?? '').localeCompare(b.nome ?? b.email ?? '', 'it'))
+  }, [utenti, localMedici])
+
+  // Filtro della griglia: sotto i 3 caratteri mostra TUTTI, da 3 in su filtra
+  // LATO CLIENT per token (nessuna query per carattere). "mar stef" trova
+  // comunque "Stefano Marabelli".
+  const filtrati = useMemo(() => {
+    const raw = searchTerm.trim().toLowerCase()
+    if (raw.length < 3) return eligibili
+    const tokens = raw.split(/\s+/).filter(Boolean)
+    return eligibili.filter(u => {
       const hay = ((u.nome ?? '') + ' ' + (u.email ?? '')).toLowerCase()
       return tokens.every(t => hay.includes(t))
-    }).slice(0, 8)
-  }, [searchTerm, utenti, localMedici])
+    })
+  }, [eligibili, searchTerm])
 
   // Aggiunge un utente globale ESISTENTE come turnista del reparto.
   async function aggiungiDaUtente(u: UtenteAutorizzato) {
@@ -727,42 +791,50 @@ export function GestioneMediciPage() {
           <UserPlus size={15} /> Aggiungi al reparto
         </h3>
 
-        {/* Ruolo nel reparto del nuovo nominativo (il Responsabile si assegna
-            nel Centro di controllo, non qui). */}
-        <div className="flex items-center gap-3 text-xs">
-          <span className="text-stone-500">Aggiungi come:</span>
-          <label className="flex items-center gap-1 cursor-pointer">
-            <input type="radio" name="ruoloNuovo" checked={ruoloNuovo === 'turnista'}
-              onChange={() => setRuoloNuovo('turnista')} className="accent-olive-600" /> Turnista
-          </label>
-          <label className="flex items-center gap-1 cursor-pointer">
-            <input type="radio" name="ruoloNuovo" checked={ruoloNuovo === 'ospite'}
-              onChange={() => setRuoloNuovo('ospite')} className="accent-olive-600" /> Ospite
-          </label>
+        {/* Ruolo: SWITCH grande e mutuamente esclusivo. Il nome cliccato dalla
+            griglia (o il nuovo creato) entra con QUESTO ruolo. */}
+        <div>
+          <div className="text-xs text-stone-500 mb-1">I nomi che clicchi entrano come:</div>
+          <div className="inline-flex rounded-lg border border-stone-300 overflow-hidden shadow-sm">
+            {(['turnista', 'ospite'] as const).map(r => (
+              <button key={r} onClick={() => setRuoloNuovo(r)}
+                className="px-5 py-2 text-sm font-bold transition-colors"
+                style={ruoloNuovo === r
+                  ? { background: '#476540', color: '#fff' }
+                  : { background: '#fff', color: '#78716c' }}>
+                {r === 'turnista' ? 'Turnista' : 'Ospite'}
+              </button>
+            ))}
+          </div>
+          <span className="text-[11px] text-stone-400 ml-2">
+            {ruoloNuovo === 'turnista' ? 'in rotazione' : 'fuori rotazione (sola vista)'}
+          </span>
         </div>
 
-        <div>
+        {/* Ricerca: filtra la griglia sotto, da ≥3 caratteri (lato client) */}
+        {!showNew && (
           <div className="flex items-center gap-2">
             <Search size={15} className="text-stone-400 shrink-0" />
             <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-              placeholder="Scrivi almeno 3 lettere del nome…" className="input flex-1 text-sm" />
+              placeholder="Cerca un nome (min 3 lettere)…" className="input flex-1 text-sm" />
+            {searchTerm && (
+              <button onClick={() => setSearchTerm('')} className="text-stone-400 hover:text-stone-600 p-1"><X size={14} /></button>
+            )}
           </div>
-          {searchTerm.trim().length >= 3 && (
-            <div className="mt-1 border border-stone-200 rounded-lg overflow-hidden divide-y divide-stone-100">
-              {risultati.map(u => (
-                <button key={u.id} onClick={() => aggiungiDaUtente(u)}
-                  className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-olive-50 text-left">
-                  <span><strong className="uppercase">{u.nome || '—'}</strong>
-                    <span className="text-stone-400 text-xs ml-1">{u.email}</span></span>
-                  <Plus size={14} className="text-olive-600 shrink-0" />
-                </button>
-              ))}
-              {risultati.length === 0 && (
-                <div className="px-3 py-2 text-xs text-stone-500">Nessun utente trovato — aggiungilo come nuovo qui sotto.</div>
-              )}
+        )}
+
+        {/* Griglia impaginata dei nomi (esclusi quelli già nel reparto) */}
+        {!showNew && (
+          filtrati.length > 0 ? (
+            <GrigliaNomiPaginata items={filtrati} onPick={aggiungiDaUtente} />
+          ) : (
+            <div className="text-xs text-stone-500 py-2">
+              {eligibili.length === 0
+                ? 'Nessun turnista disponibile da aggiungere (sono già tutti nel reparto).'
+                : `Nessun nome corrisponde a "${searchTerm.trim()}". Aggiungilo come nuovo qui sotto.`}
             </div>
-          )}
-        </div>
+          )
+        )}
 
         {!showNew ? (
           <button onClick={() => { setShowNew(true); setNuovoCognome(searchTerm.toUpperCase()); setNuovoNome('') }}
