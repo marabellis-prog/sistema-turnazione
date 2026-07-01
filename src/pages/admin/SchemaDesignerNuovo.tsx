@@ -16,10 +16,10 @@
  * Tappe successive: slot/numeri + fabbisogno.
  */
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Table2, Tag, Flag, Trash2, GripVertical, Info, Plus, Copy, ListChecks, Eraser, Save, Eye, EyeOff } from 'lucide-react'
+import { Table2, Tag, Flag, Trash2, GripVertical, Info, Plus, Copy, ListChecks, Eraser, Save, Eye, EyeOff, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useReparto } from '../../contexts/RepartoContext'
 import { useMediciReparto } from '../../hooks/useMediciReparto'
@@ -74,6 +74,7 @@ export function SchemaDesignerNuovo() {
   const navigate = useNavigate()
   const { registerNavGuard } = usePendingActions()
   const [schemaNum, setSchemaNum] = useState(1)
+  const [schemaPage, setSchemaPage] = useState(0)   // pager selettore schemi (>5)
   const [giornoSel, setGiornoSel] = useState<number | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [draft, setDraft] = useState<SchemaDraft | null>(null)  // null = nessuna modifica pendente (intero schema)
@@ -122,8 +123,28 @@ export function SchemaDesignerNuovo() {
     },
   })
   const titoloDi = (n: number) => schemiMeta.find(m => m.schema_num === n)?.titolo ?? ''
-  const schemiList = [...new Set([1, 2, 3, ...schemiEsistenti, ...schemiMeta.map(m => m.schema_num), schemaNum])].sort((a, b) => a - b)
+  // Numeri mostrati: SEMPRE l'1 (minimo, non eliminabile) + gli schemi che
+  // ESISTONO davvero (hanno tipi/giorni o un titolo) + quello corrente (per il
+  // "+" appena creato). Niente 2/3 fissi: gli schemi vuoti non compaiono.
+  const schemiList = useMemo(
+    () => [...new Set([1, ...schemiEsistenti, ...schemiMeta.map(m => m.schema_num), schemaNum])].sort((a, b) => a - b),
+    [schemiEsistenti, schemiMeta, schemaNum],
+  )
   const prossimoSchema = Math.max(...schemiList) + 1
+  // Pager del selettore: se > 5 schemi, 5 per pagina con ‹ ›.
+  const SCHEMI_PER_PAGE = 5
+  const usaPagerSchemi = schemiList.length > SCHEMI_PER_PAGE
+  const totPagineSchemi = Math.max(1, Math.ceil(schemiList.length / SCHEMI_PER_PAGE))
+  const schemaPageClamp = Math.min(schemaPage, totPagineSchemi - 1)
+  const schemiVisibili = usaPagerSchemi
+    ? schemiList.slice(schemaPageClamp * SCHEMI_PER_PAGE, (schemaPageClamp + 1) * SCHEMI_PER_PAGE)
+    : schemiList
+  // La pagina del pager segue lo schema attivo (dopo +, elimina o selezione).
+  useEffect(() => {
+    const idx = schemiList.indexOf(schemaNum)
+    const p = idx >= 0 ? Math.floor(idx / SCHEMI_PER_PAGE) : 0
+    setSchemaPage(prev => (prev === p ? prev : p))
+  }, [schemaNum, schemiList])
 
   const { data: tipiTurno = [] } = useQuery<TipoTurno[]>({
     queryKey: ['tipi_turno', repartoAttivo, schemaNum],
@@ -606,13 +627,27 @@ export function SchemaDesignerNuovo() {
       {/* Selettore schema (dinamico) + aggiungi + copia da schema */}
       <div className="flex items-center gap-2 text-sm flex-wrap">
         <span className="text-stone-500">Schema:</span>
-        {schemiList.map(n => (
+        {usaPagerSchemi && (
+          <button onClick={() => setSchemaPage(p => Math.max(0, p - 1))} disabled={schemaPageClamp === 0}
+            title="Schemi precedenti"
+            className="px-1.5 py-1 rounded border border-[#cdd9c4] text-[#476540] disabled:opacity-30 hover:bg-[#eef3e8]">
+            <ChevronLeft size={14} />
+          </button>
+        )}
+        {schemiVisibili.map(n => (
           <button key={n} onClick={() => vaiASchema(n)} title={titoloDi(n) || `Schema ${n}`}
             className="px-3 py-1 rounded font-semibold text-sm border transition-colors"
             style={schemaNum === n ? { background: '#476540', color: '#fff', borderColor: '#2b3c24' } : { background: '#fff', color: '#476540', borderColor: '#cdd9c4' }}>
             {n}
           </button>
         ))}
+        {usaPagerSchemi && (
+          <button onClick={() => setSchemaPage(p => Math.min(totPagineSchemi - 1, p + 1))} disabled={schemaPageClamp >= totPagineSchemi - 1}
+            title="Schemi successivi"
+            className="px-1.5 py-1 rounded border border-[#cdd9c4] text-[#476540] disabled:opacity-30 hover:bg-[#eef3e8]">
+            <ChevronRight size={14} />
+          </button>
+        )}
         <button onClick={aggiungiSchema} title="Aggiungi un nuovo schema"
           className="px-2 py-1 rounded font-bold text-sm border border-dashed border-[#9ab488] text-[#476540] hover:bg-[#eef3e8]">
           <Plus size={14} className="inline -mt-0.5" />
@@ -645,8 +680,9 @@ export function SchemaDesignerNuovo() {
           className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border border-amber-300 text-amber-700 hover:bg-amber-50 shrink-0">
           <Eraser size={13} /> Azzera
         </button>
-        <button onClick={eliminaSchema} title="Elimina lo schema e rinumera gli altri"
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border border-red-300 text-red-700 hover:bg-red-50">
+        <button onClick={eliminaSchema} disabled={schemiList.length <= 1}
+          title={schemiList.length <= 1 ? "Non puoi eliminare l'unico schema (usa Azzera per svuotarlo)" : 'Elimina lo schema e rinumera gli altri'}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed">
           <Trash2 size={13} /> Elimina
         </button>
       </div>
