@@ -455,13 +455,23 @@ export function GestioneMediciPage() {
 
   // Utenti globali che NON sono già turnisti di questo reparto (per id o nome),
   // in ordine alfabetico → base della griglia "Aggiungi al reparto".
+  // Ottimistico: id appena cliccati (la lista medici si rinfresca in modo
+  // asincrono → senza questo un click rapido li mostrerebbe ancora aggiungibili).
+  const [appenaAggiunti, setAppenaAggiunti] = useState<Set<string>>(new Set())
   const eligibili = useMemo(() => {
-    const nomiPresenti = new Set(localMedici.map(m => m.nome.toUpperCase().trim()))
-    const idPresenti = new Set(localMedici.map(m => m.utente_id).filter(Boolean))
+    // Esclude chi è GIÀ nel reparto in QUALSIASI ruolo (turnisti + OSPITI → uso
+    // `medici`, non `localMedici` che ha i soli turnisti), per id o per nome,
+    // più quelli appena cliccati.
+    const nomiPresenti = new Set(medici.map(m => (m.nome ?? '').toUpperCase().trim()))
+    const idPresenti = new Set(medici.map(m => m.utente_id).filter(Boolean))
     return utenti
-      .filter(u => u.attivo && !idPresenti.has(u.id) && !nomiPresenti.has((u.nome ?? '').toUpperCase().trim()))
+      .filter(u => u.attivo && !appenaAggiunti.has(u.id)
+        && !idPresenti.has(u.id) && !nomiPresenti.has((u.nome ?? '').toUpperCase().trim()))
       .sort((a, b) => (a.nome ?? a.email ?? '').localeCompare(b.nome ?? b.email ?? '', 'it'))
-  }, [utenti, localMedici])
+  }, [utenti, medici, appenaAggiunti])
+
+  // Cambio reparto → azzera l'esclusione ottimistica (medici diversi).
+  useEffect(() => { setAppenaAggiunti(new Set()) }, [repartoAttivo])
 
   // Filtro della griglia: sotto i 3 caratteri mostra TUTTI, da 3 in su filtra
   // LATO CLIENT per token (nessuna query per carattere). "mar stef" trova
@@ -479,18 +489,18 @@ export function GestioneMediciPage() {
   // Aggiunge un utente globale ESISTENTE come turnista del reparto.
   async function aggiungiDaUtente(u: UtenteAutorizzato) {
     setErrore('')
+    setAppenaAggiunti(prev => new Set(prev).add(u.id))   // ottimistico: sparisce subito dalla griglia
+    const annulla = () => setAppenaAggiunti(prev => { const n = new Set(prev); n.delete(u.id); return n })
     let ordine: number | null
     try { ordine = ruoloNuovo === 'ospite' ? null : await nextOrdineFresh() }
-    catch (e) { setErrore(e instanceof Error ? e.message : 'Errore nel calcolo ordine'); return }
+    catch (e) { setErrore(e instanceof Error ? e.message : 'Errore nel calcolo ordine'); annulla(); return }
     const { error } = await supabase.from('medici').insert({
       nome: u.nome || u.email, cognome: u.cognome ?? null, nome_proprio: u.nome_proprio ?? null,
       numero_ordine: ordine, ruolo_reparto: ruoloNuovo,
       is_reperibilita: false, attivo: true, reparto_id: repartoAttivo, utente_id: u.id,
     })
-    if (error) { setErrore(error.message); return }
-    setSearchTerm('')
-    const msg = `${u.nome || u.email} aggiunto come turnista`
-    setAvviso(msg + '.')
+    if (error) { setErrore(error.message); annulla(); return }
+    setAvviso(`${u.nome || u.email} aggiunto come ${ruoloNuovo === 'ospite' ? 'ospite' : 'turnista'}.`)
     qc.invalidateQueries({ queryKey: ['medici'] })
     qc.invalidateQueries({ queryKey: ['medici-tutti', repartoAttivo] })
   }
