@@ -29,6 +29,7 @@ import { useReparto, REPARTO_11N } from '../../contexts/RepartoContext'
 import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useConfirm } from '../../hooks/useConfirm'
 import { useCambiTurnoRealtime } from '../../hooks/useCambiTurnoRealtime'
+import { useEvidenziaRichiesta } from '../../hooks/useEvidenziaRichiesta'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { eseguiRicalcoloGiorno, generaColonne } from '../../lib/algorithm'
 import { useFestivitaCustom } from '../../hooks/useFestivitaCustom'
@@ -155,6 +156,7 @@ export function GestioneCambiPage() {
 
   const pending  = cambi.filter(c => c.stato === 'pending')
   const archivio = cambi.filter(c => c.stato !== 'pending')
+  const highlightId = useEvidenziaRichiesta(pending.length > 0)   // #33 scroll+flash
 
   // ── Helper: genera messaggi per TUTTI i medici coinvolti in un cambio ─
   // I medici coinvolti = richiedente + tutti i medico_id presenti nelle
@@ -674,7 +676,12 @@ export function GestioneCambiPage() {
           <div className="text-stone-500 text-xs italic">Nessuna richiesta in attesa.</div>
         ) : (
           <div className="space-y-2">
-            {pending.map(c => <RichiestaCard key={c.id} c={c} />)}
+            {pending.map(c => (
+              <div key={c.id} id={`richiesta-${c.id}`}
+                className={`transition-all duration-500 ${highlightId === c.id ? 'ring-2 ring-amber-500 rounded-lg' : ''}`}>
+                <RichiestaCard c={c} />
+              </div>
+            ))}
           </div>
         )}
       </section>

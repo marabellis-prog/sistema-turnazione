@@ -6,6 +6,7 @@ import { useReparto } from '../../contexts/RepartoContext'
 import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useConfirm } from '../../hooks/useConfirm'
 import { useFerieRealtime } from '../../hooks/useFerieRealtime'
+import { useEvidenziaRichiesta } from '../../hooks/useEvidenziaRichiesta'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { FerieModal, expandRange, toRanges, type DayChange } from '../../components/FerieModal'
 import { useFestivitaCustom } from '../../hooks/useFestivitaCustom'
@@ -101,6 +102,7 @@ export function GestioneFeriePage() {
   }, [ferie])
 
   const ferieInAttesa = useMemo(() => ferie.filter(f => !f.approvate), [ferie])
+  const highlightId = useEvidenziaRichiesta(ferieInAttesa.length > 0)   // #33 scroll+flash
 
   // ── Salva modifiche da modal ─────────────────────────────────
   async function handleSaveChanges(medicoId: string, changes: Map<string, DayChange>) {
@@ -386,7 +388,8 @@ export function GestioneFeriePage() {
         ) : (
           <div className="divide-y divide-stone-100">
             {ferieInAttesa.map(f => (
-              <div key={f.id} className="flex items-center gap-3 px-4 py-3">
+              <div key={f.id} id={`richiesta-${f.id}`}
+                className={`flex items-center gap-3 px-4 py-3 transition-all duration-500 ${highlightId === f.id ? 'ring-2 ring-amber-500 bg-amber-50 rounded-lg' : ''}`}>
                 <div className="w-2 h-2 rounded-full shrink-0"
                   style={{ background: '#f59e0b' }} />
                 <div className="flex-1 min-w-0">
