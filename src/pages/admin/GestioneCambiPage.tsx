@@ -25,7 +25,7 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { useReparto } from '../../contexts/RepartoContext'
+import { useReparto, REPARTO_11N } from '../../contexts/RepartoContext'
 import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useConfirm } from '../../hooks/useConfirm'
 import { useCambiTurnoRealtime } from '../../hooks/useCambiTurnoRealtime'
@@ -87,6 +87,10 @@ function diversa(m: ModificaCambio): boolean {
 export function GestioneCambiPage() {
   const qc = useQueryClient()
   const { repartoAttivo } = useReparto()
+  // Reparto dinamico (≠ 11N classico): l'upsert dei turni all'approvazione deve
+  // mantenere turno_sigla + proprieta allineati al nuovo turno (come in
+  // ModificaTurni), altrimenti resterebbero i valori pre-cambio.
+  const repartoDinamico = repartoAttivo !== REPARTO_11N
   const { confirm, confirmState } = useConfirm()
   const [msg,        setMsg]        = useState<string | null>(null)
   const [err,        setErr]        = useState<string | null>(null)
@@ -215,18 +219,29 @@ export function GestioneCambiPage() {
       // 1) Upsert dei turni — calcolando is_sub / is_med come OR sui placement
       // (backward compat con le colonne legacy che servono per il colore
       // del riepilogo).
-      const turniRows = c.modifiche.map(m => ({
-        medico_id:               m.medico_id,
-        data:                    m.data,
-        turno_clinico:           m.a.tc,
-        turno_ricerca:           m.a.tr,
-        modificato_manualmente:  true,
-        slot_mattina:            m.a.slot_mattina,
-        slot_pomeriggio:         m.a.slot_pomeriggio,
-        is_sub: m.a.slot_mattina === 'SUB' || m.a.slot_pomeriggio === 'SUB',
-        is_med: m.a.slot_mattina === 'MED' || m.a.slot_pomeriggio === 'MED',
-        is_ferie: false,    // un cambio turno non tocca le ferie
-      }))
+      const turniRows = c.modifiche.map(m => {
+        const isSub = m.a.slot_mattina === 'SUB' || m.a.slot_pomeriggio === 'SUB'
+        const isMed = m.a.slot_mattina === 'MED' || m.a.slot_pomeriggio === 'MED'
+        return {
+          medico_id:               m.medico_id,
+          data:                    m.data,
+          turno_clinico:           m.a.tc,
+          turno_ricerca:           m.a.tr,
+          modificato_manualmente:  true,
+          slot_mattina:            m.a.slot_mattina,
+          slot_pomeriggio:         m.a.slot_pomeriggio,
+          is_sub: isSub,
+          is_med: isMed,
+          is_ferie: false,    // un cambio turno non tocca le ferie
+          // Reparti DINAMICI: turno_sigla + proprieta coerenti col nuovo turno
+          // (sigla = turno_clinico negli schemi M/P/L/REP; proprietà = SUB/MED
+          // dagli slot). Sui CLASSICI (11N) NO-OP → colonne non toccate.
+          ...(repartoDinamico ? {
+            turno_sigla: m.a.tc === '' ? null : m.a.tc,
+            proprieta: [...(isSub ? ['SUB'] : []), ...(isMed ? ['MED'] : [])],
+          } : {}),
+        }
+      })
       const { error: upErr } = await supabase.from('turni')
         .upsert(turniRows, { onConflict: 'medico_id,data' })
       if (upErr) throw upErr
