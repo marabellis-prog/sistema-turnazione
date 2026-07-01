@@ -119,7 +119,7 @@ function RepartiSection() {
     const src = reparti.find(x => x.id === sourceId)
     const ok = await confirm({
       title:        'Copia setup da reparto',
-      message:      `Copia tipi di turno, proprietà, schemi e regole da "${src?.nome}" in questo reparto. (Non copia turnisti né turni.) Procedere?`,
+      message:      `Copia da "${src?.nome}" in questo reparto: turnisti e ospiti, festività, tipi di turno, proprietà e schemi. NON copia i turni (il calendario va generato dopo) né ferie/cambi. Procedere?`,
       confirmLabel: 'Copia',
     })
     if (!ok) return
@@ -227,7 +227,7 @@ function RepartiSection() {
                       {r.id !== REPARTO_11N && (
                         <button onClick={() => setCopyFor(copyFor === r.id ? null : r.id)}
                           className="p-1.5 rounded text-stone-500 hover:text-green-700 hover:bg-green-50"
-                          title="Copia setup (tipi, schemi, regole) da un altro reparto">
+                          title="Copia turnisti, festività, tipi, proprietà e schemi da un altro reparto (non i turni)">
                           <Copy size={14} />
                         </button>
                       )}
