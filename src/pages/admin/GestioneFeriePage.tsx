@@ -53,9 +53,14 @@ export function GestioneFeriePage() {
       const { data, error } = await supabase.from('medici').select('*')
         .eq('reparto_id', repartoAttivo).eq('attivo', true)
       if (error) throw error
-      return (data ?? []).sort((a, b) =>
-        a.nome.localeCompare(b.nome, 'it', { sensitivity: 'base' })
-      )
+      // Gli OSPITI non vanno in ferie (non le possono nemmeno richiedere):
+      // esclusi da Gestione Ferie. I turnisti legacy con ruolo_reparto NULL
+      // restano (filtro su !== 'ospite', non su === 'turnista').
+      return (data ?? [])
+        .filter(m => m.ruolo_reparto !== 'ospite')
+        .sort((a, b) =>
+          a.nome.localeCompare(b.nome, 'it', { sensitivity: 'base' })
+        )
     },
   })
 
