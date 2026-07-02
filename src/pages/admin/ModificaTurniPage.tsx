@@ -562,11 +562,13 @@ function EditableCell({
 // per-metà via setSlotHalf. Half-aware (mostra le metà che il turno lavora);
 // se il turno è di Reperibilità → niente proprietà.
 // ════════════════════════════════════════════════════════════════════
-function CellaAssegnaPopover({ anchorId, cur, turni, proprietaDin, onTurno, onProp, onClose }: {
+function CellaAssegnaPopover({ anchorId, cur, turni, proprietaDin, cambiato, onTurno, onProp, onClose }: {
   anchorId:     string
   cur:          { tc: TurnoClinico; slot_mattina: SlotPlacement; slot_pomeriggio: SlotPlacement }
   turni:        { sigla: string; nome: string; colore_bg: string; colore_fg: string; is_reperibilita: boolean }[]
   proprietaDin: { sigla: string; nome: string; colore_bg: string }[]
+  /** Se valorizzato, la cella deriva da un cambio turno: reminder + valore originale. */
+  cambiato:     { originario: string } | null
   onTurno:      (sigla: string) => void
   onProp:       (half: 'mattina' | 'pomeriggio', value: SlotPlacement) => void
   onClose:      () => void
@@ -616,6 +618,17 @@ function CellaAssegnaPopover({ anchorId, cur, turni, proprietaDin, onTurno, onPr
       <div className="fixed z-50 rounded-xl shadow-2xl border border-stone-200 bg-white p-2.5"
         style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width: 240 }}
         onClick={e => e.stopPropagation()}>
+        {/* Reminder: questa cella deriva da un cambio turno approvato. */}
+        {cambiato && (
+          <div className="flex items-start gap-1.5 mb-2 px-1.5 py-1 rounded-md"
+            style={{ background: '#fef3c7', color: '#92400e' }}>
+            <RefreshCw size={11} className="mt-0.5 shrink-0" />
+            <span className="text-[10px] leading-tight">
+              <strong>Turno cambiato</strong>
+              {cambiato.originario && <> — in origine era <strong>{cambiato.originario}</strong></>}
+            </span>
+          </div>
+        )}
         <div className="flex items-center justify-between mb-1">
           <span className="text-[10px] font-bold uppercase tracking-wide text-stone-400">Turno</span>
           <button onClick={onClose} className="text-stone-400 hover:text-stone-600" title="Chiudi"><X size={13} /></button>
@@ -2610,6 +2623,12 @@ export function ModificaTurniPage() {
           cur={getCella(cellPopover.medicoId, cellPopover.data)}
           turni={tipiTurnoUsati.filter(t => ['M', 'P', 'L', 'REP', 'EM', 'EP', 'EL'].includes(t.sigla))}
           proprietaDin={proprietaDin}
+          cambiato={(() => {
+            const dbT = turniByKey.get(`${cellPopover.medicoId}|${cellPopover.data}`)
+            return dbT?.turno_clinico_originario != null
+              ? { originario: (dbT.turno_clinico_originario || '(vuoto)') as string }
+              : null
+          })()}
           onTurno={sigla => handleDropFromLegend(cellPopover.medicoId, cellPopover.data, sigla === '' ? 'TC:' : `TC:${sigla}`)}
           onProp={(half, value) => setSlotHalf(cellPopover.medicoId, cellPopover.data, half, value)}
           onClose={() => setCellPopover(null)}

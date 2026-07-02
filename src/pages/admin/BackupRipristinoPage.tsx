@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useImpostazioniGlobali } from '../../hooks/useImpostazioniGlobali'
-import { useReparto } from '../../contexts/RepartoContext'
+import { useReparto, REPARTO_11N } from '../../contexts/RepartoContext'
 import { registraEventoCentro } from '../../lib/centroLog'
 import { useMediciReparto } from '../../hooks/useMediciReparto'
 import { useConfirm } from '../../hooks/useConfirm'
@@ -36,6 +36,21 @@ interface BackupRow {
   created_at:  string
   descrizione: string | null
   num_turni:   number | null
+}
+
+// Contenuto completo dello snapshot (v3): non solo turni, ma tutto il "mondo"
+// del reparto. Usato per il riepilogo e per un'anteprima storicamente accurata.
+interface BackupSnapshot {
+  versione?:          number
+  turni?:             Turno[]
+  medici?:            Medico[]
+  ferie?:             unknown[]
+  cambi_turno?:       unknown[]
+  schemi_modello?:    unknown[]
+  schema_cella?:      unknown[]
+  schema_fabbisogno?: unknown[]
+  festivita_custom?:  unknown[]
+  tipi_turno?:        unknown[]
 }
 
 function fmtDataOra(iso: string): string {
@@ -61,16 +76,14 @@ export function BackupRipristinoPage() {
   // Query separata che fetcha il JSONB snapshot (pesante: lo prendiamo
   // solo quando l'utente clicca Anteprima). enabled gating + staleTime
   // alto per evitare refetch inutili.
-  const { data: previewSnapshot, isLoading: previewLoading } = useQuery<
-    { turni: Turno[] } | null
-  >({
+  const { data: previewSnapshot, isLoading: previewLoading } = useQuery<BackupSnapshot | null>({
     queryKey: ['turni-backup-snapshot', previewId],
     queryFn: async () => {
       if (!previewId) return null
       const { data, error } = await supabase.from('turni_backup')
         .select('snapshot').eq('id', previewId).single()
       if (error) throw error
-      return (data as { snapshot: { turni: Turno[] } }).snapshot
+      return (data as { snapshot: BackupSnapshot }).snapshot
     },
     enabled: !!previewId,
     staleTime: 10 * 60_000,
@@ -339,11 +352,40 @@ export function BackupRipristinoPage() {
               <Loader2 size={14} className="animate-spin" /> Caricamento snapshot…
             </div>
           ) : previewSnapshot && Array.isArray(previewSnapshot.turni) ? (
-            <BackupTurniPreview
-              turni={previewSnapshot.turni}
-              medici={medici}
-              festivitaCustomSet={festivitaCustomSet}
-            />
+            <>
+              {/* Riepilogo del contenuto: il backup salva TUTTO il reparto, non
+                  solo i turni (turnisti, ferie, cambi, schema, festività…). */}
+              <div className="flex flex-wrap gap-1.5 text-[11px]">
+                {([
+                  ['turnisti',     previewSnapshot.medici?.length],
+                  ['turni',        previewSnapshot.turni?.length],
+                  ['ferie',        previewSnapshot.ferie?.length],
+                  ['cambi turno',  previewSnapshot.cambi_turno?.length],
+                  ['tipi turno',   previewSnapshot.tipi_turno?.length],
+                  ['celle schema', previewSnapshot.schema_cella?.length],
+                  ['fabbisogno',   previewSnapshot.schema_fabbisogno?.length],
+                  ['festività',    previewSnapshot.festivita_custom?.length],
+                ] as [string, number | undefined][]).filter(([, n]) => (n ?? 0) > 0).map(([label, n]) => (
+                  <span key={label} className="px-2 py-0.5 rounded-full font-semibold"
+                    style={{ background: '#e0e8d8', color: '#456b3a' }}>
+                    {n} {label}
+                  </span>
+                ))}
+                {previewSnapshot.versione !== 3 && (
+                  <span className="px-2 py-0.5 rounded-full font-semibold"
+                    style={{ background: '#fef3c7', color: '#92400e' }}
+                    title="Backup vecchio: salvava i soli turni. I nuovi backup salvano tutto il reparto.">
+                    backup vecchio (solo turni)
+                  </span>
+                )}
+              </div>
+              <BackupTurniPreview
+                turni={previewSnapshot.turni}
+                medici={(previewSnapshot.medici?.length ? previewSnapshot.medici : medici) as Medico[]}
+                festivitaCustomSet={festivitaCustomSet}
+                dinamico={repartoAttivo !== REPARTO_11N}
+              />
+            </>
           ) : (
             <div className="text-stone-500 text-sm italic p-4">
               Snapshot vuoto o non disponibile.

@@ -148,9 +148,11 @@ interface Props {
   turni:               Turno[]
   medici:              Medico[]
   festivitaCustomSet?: Set<string>
+  /** Reparto dinamico → niente tabella "Ricerca" (RM/RP): non esiste. */
+  dinamico?:           boolean
 }
 
-export function BackupTurniPreview({ turni, medici, festivitaCustomSet }: Props) {
+export function BackupTurniPreview({ turni, medici, festivitaCustomSet, dinamico }: Props) {
   const turniByKey = useMemo(() => {
     const m = new Map<string, Turno>()
     for (const t of turni) m.set(`${t.medico_id}|${t.data}`, t)
@@ -312,8 +314,14 @@ export function BackupTurniPreview({ turni, medici, festivitaCustomSet }: Props)
   return (
     <div className="overflow-auto rounded-lg border border-stone-300 bg-white">
       <Tabella tipo="clinica" />
-      <div style={{ height: 4 }} />
-      <Tabella tipo="ricerca" />
+      {/* Tabella "Ricerca" (RM/RP): solo reparti classici (11N). I reparti
+          dinamici non hanno la Ricerca → niente seconda tabella. */}
+      {!dinamico && (
+        <>
+          <div style={{ height: 4 }} />
+          <Tabella tipo="ricerca" />
+        </>
+      )}
     </div>
   )
 }

@@ -267,6 +267,16 @@ export function SchemaDesignerNuovo() {
       return { ...d, fabbisogno: fab }
     })
   }
+  // Riordino diretto (drag-and-drop): riassegna ordine secondo la sequenza data.
+  function riordinaAmbitiFab(ordered: string[]) {
+    muta(d => {
+      const fab = d.fabbisogno.map(r => ({
+        ...r, per_proprieta: { ...r.per_proprieta },
+        ordine: r.ambito === 'normale' ? 0 : (ordered.indexOf(r.ambito) >= 0 ? ordered.indexOf(r.ambito) + 1 : r.ordine),
+      }))
+      return { ...d, fabbisogno: fab }
+    })
+  }
 
   // Viste con id sintetici (stessi nomi/shape usati dalla JSX).
   const giorni = [...draftEff.giorni].sort((a, b) => a.giorno_settimana - b.giorno_settimana)
@@ -988,7 +998,8 @@ export function SchemaDesignerNuovo() {
         </div>
         <div className="shrink-0 sticky top-4 self-start">
           <FabbisognoPanel colsAmbito={colsAmbito} puoFabbisogno={puoFabbisogno}
-            fab={fabbisogno} onSet={setValFab} onRemove={rimuoviAmbitoFab} onSposta={spostaAmbitoFab} />
+            fab={fabbisogno} onSet={setValFab} onRemove={rimuoviAmbitoFab} onSposta={spostaAmbitoFab}
+            onRiordina={riordinaAmbitiFab} />
         </div>
         {showPreview && previewCells && (
           <ProvaSchemaPreview previewCells={previewCells} turnisti={turnistiProva} tipiTurno={tipiTurno}
@@ -1047,7 +1058,7 @@ const labelAmbito = (k: string) => k === 'normale' ? 'Normale' : (AMBITI_SPECIAL
 
 // Una griglia di fabbisogno per un ambito (Normale o uno speciale). Componente
 // a livello modulo (stabile): l'intestazione mostra SEMPRE il nome dell'ambito.
-function GrigliaAmbito({ amb, colsAmbito, fab, onSet, onRemove, onSu, onGiu, puoSu, puoGiu }: {
+function GrigliaAmbito({ amb, colsAmbito, fab, onSet, onRemove, onSu, onGiu, puoSu, puoGiu, onDragStartHandle, onDragEndHandle }: {
   amb: string
   colsAmbito: (amb: string) => { meta: string[]; proprieta: ProprietaTurno[] }
   fab: FabRow[]
@@ -1057,6 +1068,9 @@ function GrigliaAmbito({ amb, colsAmbito, fab, onSet, onRemove, onSu, onGiu, puo
   onGiu?: () => void
   puoSu?: boolean
   puoGiu?: boolean
+  /** Maniglia di trascinamento (drag-and-drop) per riordinare gli ambiti. */
+  onDragStartHandle?: () => void
+  onDragEndHandle?: () => void
 }) {
   const { meta, proprieta } = colsAmbito(amb)   // metà-giornata coperte + proprietà attive
   const valore = (turno: string, prop: string) =>
@@ -1068,7 +1082,14 @@ function GrigliaAmbito({ amb, colsAmbito, fab, onSet, onRemove, onSu, onGiu, puo
   return (
     <div className="border rounded-lg p-2" style={{ borderColor: speciale ? '#e3d4ad' : '#e7e5e4', background: speciale ? '#fbf7ee' : '#fff' }}>
       <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-bold" style={{ color: speciale ? '#7a5a2f' : '#476540' }}>
+        <span className="text-xs font-bold flex items-center gap-1" style={{ color: speciale ? '#7a5a2f' : '#476540' }}>
+          {onDragStartHandle && (
+            <span draggable onDragStart={onDragStartHandle} onDragEnd={onDragEndHandle}
+              className="cursor-grab active:cursor-grabbing text-stone-300 hover:text-stone-500"
+              title="Trascina per riordinare la cascata">
+              <GripVertical size={12} />
+            </span>
+          )}
           {labelAmbito(amb)}{speciale && <span className="font-normal text-[10px] text-stone-400"> · override</span>}
         </span>
         <div className="flex items-center gap-0.5">
@@ -1130,16 +1151,18 @@ function GrigliaAmbito({ amb, colsAmbito, fab, onSet, onRemove, onSu, onGiu, puo
   )
 }
 
-function FabbisognoPanel({ colsAmbito, puoFabbisogno, fab, onSet, onRemove, onSposta }: {
+function FabbisognoPanel({ colsAmbito, puoFabbisogno, fab, onSet, onRemove, onSposta, onRiordina }: {
   colsAmbito: (amb: string) => { meta: string[]; proprieta: ProprietaTurno[] }
   puoFabbisogno: boolean
   fab: FabRow[]
   onSet: (amb: string, turno: string, prop: string, n: number) => void
   onRemove: (amb: string) => void
   onSposta: (amb: string, dir: -1 | 1) => void
+  onRiordina: (ordered: string[]) => void
 }) {
   // Niente autosave: `fab` arriva dal draft dello schema, onSet/onRemove lo mutano.
   const [extra, setExtra] = useState<string[]>([])   // ambiti speciali aperti localmente
+  const [dragAmb, setDragAmb] = useState<string | null>(null)  // drag-and-drop riordino
   function handleRemove(amb: string) { setExtra(x => x.filter(a => a !== amb)); onRemove(amb) }
 
   // Ambiti con dati, ORDINATI per `ordine` (= cascata di override); poi quelli
@@ -1151,6 +1174,18 @@ function FabbisognoPanel({ colsAmbito, puoFabbisogno, fab, onSet, onRemove, onSp
   const extraSoli = extra.filter(a => !conDati.includes(a))
   const specialiAperti = [...conDati, ...extraSoli]
   const daAggiungere = AMBITI_SPECIALI.filter(a => !specialiAperti.includes(a.key))
+
+  // Drop del drag-and-drop: inserisce l'ambito trascinato nella posizione del target.
+  function handleDrop(target: string) {
+    if (!dragAmb || dragAmb === target) { setDragAmb(null); return }
+    const order = [...conDati]
+    const from = order.indexOf(dragAmb), to = order.indexOf(target)
+    if (from < 0 || to < 0) { setDragAmb(null); return }
+    order.splice(from, 1)
+    order.splice(to, 0, dragAmb)
+    onRiordina(order)
+    setDragAmb(null)
+  }
 
   return (
     <div className="card p-3 w-64 space-y-2">
@@ -1167,8 +1202,12 @@ function FabbisognoPanel({ colsAmbito, puoFabbisogno, fab, onSet, onRemove, onSp
           {specialiAperti.map(amb => {
             const idxDati = conDati.indexOf(amb)     // -1 se ancora senza valori
             const riordinabile = idxDati >= 0
+            const bersaglioDrop = !!dragAmb && dragAmb !== amb && riordinabile
             return (
-              <div key={amb} className="space-y-2">
+              <div key={amb} className="space-y-2 rounded-lg transition-all"
+                onDragOver={riordinabile ? (e => e.preventDefault()) : undefined}
+                onDrop={riordinabile ? (() => handleDrop(amb)) : undefined}
+                style={bersaglioDrop ? { outline: '2px dashed #bfa46a', outlineOffset: 2 } : undefined}>
                 {/* Connettore cascata: l'ambito qui sotto SOVRASCRIVE quelli sopra. */}
                 <div className="flex items-center justify-center gap-1 text-[9px] text-stone-400 select-none -my-0.5">
                   <ArrowDown size={10} /> viene sovrascritto da <ArrowDown size={10} />
@@ -1177,7 +1216,9 @@ function FabbisognoPanel({ colsAmbito, puoFabbisogno, fab, onSet, onRemove, onSp
                   onSu={riordinabile ? () => onSposta(amb, -1) : undefined}
                   onGiu={riordinabile ? () => onSposta(amb, 1) : undefined}
                   puoSu={riordinabile && idxDati > 0}
-                  puoGiu={riordinabile && idxDati < conDati.length - 1} />
+                  puoGiu={riordinabile && idxDati < conDati.length - 1}
+                  onDragStartHandle={riordinabile ? () => setDragAmb(amb) : undefined}
+                  onDragEndHandle={() => setDragAmb(null)} />
               </div>
             )
           })}
