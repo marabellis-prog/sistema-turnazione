@@ -1,15 +1,34 @@
 name: Deploy su GitHub Pages
 
+# METODO UFFICIALE GitHub Actions (dal 02/07/2026).
+#
+# Prima si usava peaceiris/actions-gh-pages → push sul branch gh-pages → la
+# pipeline NATIVA "pages build and deployment" pubblicava. Quel percorso, il
+# 02/07/2026, ha iniziato a fallire in modo persistente con
+# "Timeout reached, aborting!" nello step deploy-pages (default 10 min), che
+# NON è configurabile perché generato da GitHub. Passando al deploy diretto via
+# artifact possiamo alzare il timeout (backend Pages lento ma non fermo) ed
+# eliminare l'indirezione branch→pipeline nativa.
+
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
 
+# Permessi richiesti dal deploy ufficiale Pages.
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+# Un solo deploy Pages alla volta (non cancellare quello in corso).
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  # ── Build del sito statico + upload artifact ────────────────────────
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -33,71 +52,38 @@ jobs:
           # E' un valore pubblico (finisce nel bundle): nessun rischio a esporlo.
           VITE_GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.VITE_GOOGLE_OAUTH_CLIENT_ID }}
 
-      - name: Deploy su gh-pages
-        uses: peaceiris/actions-gh-pages@v4
+      # Configura Pages e, se serve, commuta la sorgente a "GitHub Actions"
+      # (enablement: true) — cosi' non serve toccare Settings a mano.
+      - name: Configura Pages
+        uses: actions/configure-pages@v5
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
-          force_orphan: true
+          enablement: true
 
-      # ─── PHASE 1: origin pronto ──────────────────────────────────
-      # peaceiris fa solo commit su gh-pages; GitHub Pages poi pubblica.
-      # Verifichiamo con query string univoca (bypassa cache CDN → forza
-      # fetch dall'origin) che il nuovo bundle sia effettivamente servito.
-      - name: Phase 1 — Attende che l'origin sia pronto
-        run: |
-          EXPECTED_SHA="${GITHUB_SHA:0:7}"
-          URL="https://marabellis-prog.github.io/sistema-turnazione/"
-          echo "Aspetto che '$EXPECTED_SHA' sia disponibile dall'origin..."
-          for i in $(seq 1 60); do
-            BODY=$(curl -fsS "$URL?_check=$(date +%s%N)" 2>/dev/null || true)
-            JS_URL=$(echo "$BODY" | grep -oE '/sistema-turnazione/assets/index-[A-Za-z0-9_-]+\.js' | head -1)
-            if [ -n "$JS_URL" ]; then
-              JS_BODY=$(curl -fsS "https://marabellis-prog.github.io$JS_URL?_check=$(date +%s%N)" 2>/dev/null || true)
-              if echo "$JS_BODY" | grep -q "$EXPECTED_SHA"; then
-                echo "✓ Origin pronto: $EXPECTED_SHA dopo $((i*5))s"
-                exit 0
-              fi
-            fi
-            echo "  tentativo $i/60 — non ancora pronto, attendo 5s…"
-            sleep 5
-          done
-          echo "⚠ Timeout phase 1 — notifico comunque"
+      # SPA: niente Jekyll. Carica ./dist come artifact Pages.
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
 
-      # ─── PHASE 2: purge CDN propagato ─────────────────────────────
-      # L'origin è pronto (phase 1) ma il CDN Fastly può ancora servire
-      # l'HTML VECCHIO per URL nuda (senza query string) finché il purge
-      # non si propaga fra i PoP. Senza questa attesa, l'utente che fa
-      # Ctrl+F5 — o anche solo apre il sito — riceve la versione vecchia
-      # nonostante il badge sia comparso.
-      # Qui pollianmo l'URL nuda (come farebbe il browser dell'utente)
-      # finché restituisce il nuovo bundle, indicando che il CDN ha
-      # invalidato la cache stale.
-      - name: Phase 2 — Attende propagazione purge CDN (URL nuda)
-        run: |
-          EXPECTED_SHA="${GITHUB_SHA:0:7}"
-          URL="https://marabellis-prog.github.io/sistema-turnazione/"
-          echo "Verifico che URL nuda restituisca $EXPECTED_SHA (post-purge)..."
-          for i in $(seq 1 60); do
-            # NIENTE query string: testiamo esattamente quello che vede
-            # il browser dell'utente quando fa refresh.
-            BODY=$(curl -fsS -H "Cache-Control: no-cache, no-store" "$URL" 2>/dev/null || true)
-            JS_URL=$(echo "$BODY" | grep -oE '/sistema-turnazione/assets/index-[A-Za-z0-9_-]+\.js' | head -1)
-            if [ -n "$JS_URL" ]; then
-              JS_BODY=$(curl -fsS -H "Cache-Control: no-cache, no-store" "https://marabellis-prog.github.io$JS_URL" 2>/dev/null || true)
-              if echo "$JS_BODY" | grep -q "$EXPECTED_SHA"; then
-                echo "✓ URL nuda ora serve $EXPECTED_SHA dopo $((i*5))s — CDN propagato"
-                exit 0
-              fi
-            fi
-            echo "  tentativo $i/60 — CDN ancora con vecchio, attendo 5s…"
-            sleep 5
-          done
-          echo "⚠ Timeout phase 2 — il client farà polling autonomo"
+  # ── Deploy dell'artifact su Pages ───────────────────────────────────
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy su GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          # Default 600000 (10 min): troppo poco quando il backend Pages e'
+          # lento. Alziamo a 20 min per lasciar completare il deployment.
+          timeout: 1200000
 
-      # Aggiorna app_version in Supabase → tutti i client connessi ricevono
-      # la notifica real-time via WebSocket e mostrano il badge "Aggiornamento disponibile".
-      # Richiede il secret SUPABASE_SERVICE_ROLE_KEY (Settings → Secrets → Actions).
+      # Aggiorna app_version in Supabase → tutti i client connessi ricevono la
+      # notifica real-time via WebSocket e mostrano il badge "Aggiornamento
+      # disponibile". Solo DOPO un deploy riuscito (step precedente ok).
       - name: Notifica nuova versione via Supabase Realtime
         run: |
           curl -s -o /dev/null -w "%{http_code}" -X PATCH \
