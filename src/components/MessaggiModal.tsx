@@ -25,14 +25,16 @@
  */
 
 import { useState, useMemo, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Mail, Check, X, RotateCcw, Plane, ChevronLeft, ChevronRight,
   ChevronsLeft, ChevronsRight,
   CheckCheck, Loader2, Clock, ArrowRightLeft, ArrowRight,
-  Send, Trash2, Shield,
+  Send, Trash2, Shield, ExternalLink,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { useReparto } from '../contexts/RepartoContext'
 import { fetchAllRows } from '../lib/fetchAll'
 import { useFerieRealtime } from '../hooks/useFerieRealtime'
 import { useCambiTurnoRealtime } from '../hooks/useCambiTurnoRealtime'
@@ -70,6 +72,10 @@ interface Props {
   /** Se valorizzata (turnista in più reparti), mostra il reparto di
    *  provenienza accanto a ogni messaggio/richiesta. Chiave = medico_id. */
   repartoNomeByMedicoId?: Map<string, string>
+  /** Solo mode='admin': id dei reparti che l'utente GESTISCE (super-admin =
+   *  tutti; responsabile = solo i suoi). Le richieste pending mostrate e il
+   *  pulsante "Vai a gestire" sono limitati a questi reparti. */
+  repartiGestitiIds?: string[]
   onClose: () => void
 }
 
@@ -109,11 +115,30 @@ function fmtDataBreve(sqlDate: string): string {
   return y !== curY ? `${d}/${m}/${y.slice(2)}` : `${d}/${m}`
 }
 
-export function MessaggiModal({ mode, medici, repartoNomeByMedicoId, onClose }: Props) {
+export function MessaggiModal({ mode, medici, repartoNomeByMedicoId, repartiGestitiIds, onClose }: Props) {
   const qc = useQueryClient()
+  const navigate = useNavigate()
+  const { setRepartoAttivo, reparti } = useReparto()
+  // Nome reparto per id — per etichettare le card "da approvare" in mode admin
+  // (super-admin/responsabile devono vedere DA QUALE reparto arriva la richiesta).
+  const repartoNomeById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const r of reparti) m.set(r.id, r.nome)
+    return m
+  }, [reparti])
   const [page,    setPage]    = useState(0)
   const [marking, setMarking] = useState<string | null>(null)
   const [bulkLoading, setBulkLoading] = useState(false)
+
+  // Vai a gestire una richiesta: imposta il reparto giusto, chiude la casella
+  // e apre la pagina admin (Ferie/Cambi) con ?richiesta=<id> → la pagina fa
+  // scroll+flash sulla riga (useEvidenziaRichiesta). Usato dai pulsanti sulle
+  // card "da approvare" (solo mode='admin': admin o responsabile del reparto).
+  function vaiAGestione(sezione: 'ferie' | 'cambi', repartoId: string, richiestaId: string) {
+    setRepartoAttivo(repartoId)
+    onClose()
+    navigate(`/admin/${sezione}?richiesta=${richiestaId}`)
+  }
 
   // Id di TUTTI i medici del turnista (uno per reparto). Ordinati → query-key
   // stabile a prescindere dall'ordine di caricamento.
@@ -126,6 +151,11 @@ export function MessaggiModal({ mode, medici, repartoNomeByMedicoId, onClose }: 
   // suoi id; per l'admin una stringa fissa cosi` ['messaggi', 'admin'] e
   // ['messaggi-unread-count', 'admin'] non si scontrano con quelle medico.
   const queryScopeId = mode === 'medico' ? mediciIds.join(',') : 'admin'
+  // Reparti gestiti (mode='admin'): ordinati per query-key stabile. Le richieste
+  // pending sono limitate a questi reparti (super-admin = tutti, responsabile =
+  // solo i suoi) → un responsabile non vede/gestisce richieste di altri reparti.
+  const gestitiIds  = useMemo(() => (repartiGestitiIds ?? []).slice().sort(), [repartiGestitiIds])
+  const gestitiKey  = gestitiIds.join(',')
 
   // Realtime su ferie e cambi turno: cosi` se il modal e` aperto e
   // arrivano nuove richieste (medico) o azioni dell'admin (altrove),
@@ -161,28 +191,30 @@ export function MessaggiModal({ mode, medici, repartoNomeByMedicoId, onClose }: 
   // ── Richieste pending visibili nel modal ─────────────────────────
   // Medico: SOLO le proprie. Admin: TUTTE le pending del sistema.
   const { data: feriePending = [] } = useQuery<Ferie[]>({
-    queryKey: ['ferie', mode === 'admin' ? 'pending-tutte' : 'pending-mie', queryScopeId],
+    queryKey: ['ferie', mode === 'admin' ? 'pending-tutte' : 'pending-mie', queryScopeId, gestitiKey],
     queryFn: async () => {
       let q = supabase.from('ferie').select('*').eq('approvate', false)
       if (mode === 'medico') q = q.in('medico_id', mediciIds)
+      else                   q = q.in('reparto_id', gestitiIds)   // solo i reparti gestiti
       const { data, error } = await q.order('created_at', { ascending: false })
       if (error) throw error
       return data ?? []
     },
-    enabled: mode === 'admin' || mediciIds.length > 0,
+    enabled: mode === 'admin' ? gestitiIds.length > 0 : mediciIds.length > 0,
     staleTime: 0,
     refetchOnMount: 'always',
   })
   const { data: cambiPending = [] } = useQuery<CambioTurno[]>({
-    queryKey: ['cambi-turno', mode === 'admin' ? 'pending-tutti' : 'pending-miei', queryScopeId],
+    queryKey: ['cambi-turno', mode === 'admin' ? 'pending-tutti' : 'pending-miei', queryScopeId, gestitiKey],
     queryFn: async () => {
       let q = supabase.from('cambi_turno').select('*').eq('stato', 'pending')
       if (mode === 'medico') q = q.in('medico_richiedente_id', mediciIds)
+      else                   q = q.in('reparto_id', gestitiIds)   // solo i reparti gestiti
       const { data, error } = await q.order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as CambioTurno[]
     },
-    enabled: mode === 'admin' || mediciIds.length > 0,
+    enabled: mode === 'admin' ? gestitiIds.length > 0 : mediciIds.length > 0,
     staleTime: 0,
     refetchOnMount: 'always',
   })
@@ -384,6 +416,22 @@ export function MessaggiModal({ mode, medici, repartoNomeByMedicoId, onClose }: 
                                   {repartoLabel(f.medico_id)}
                                 </span>
                               )}
+                              {mode === 'admin' && (
+                                <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                  {repartoNomeById.get(f.reparto_id) && (
+                                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                                      style={{ background: '#e0e8d8', color: '#456b3a' }}>
+                                      {repartoNomeById.get(f.reparto_id)}
+                                    </span>
+                                  )}
+                                  <button onClick={() => vaiAGestione('ferie', f.reparto_id, f.id)}
+                                    className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold text-white shadow-sm transition-opacity hover:opacity-90"
+                                    style={{ background: '#a16207' }}
+                                    title="Apri la pagina Ferie sul reparto giusto per approvare o rifiutare">
+                                    <ExternalLink size={11} /> Vai ad approvare
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -449,6 +497,22 @@ export function MessaggiModal({ mode, medici, repartoNomeByMedicoId, onClose }: 
                                   style={{ background: '#e0e8d8', color: '#456b3a' }}>
                                   {repartoLabel(c.medico_richiedente_id)}
                                 </span>
+                              )}
+                              {mode === 'admin' && (
+                                <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                  {repartoNomeById.get(c.reparto_id) && (
+                                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                                      style={{ background: '#e0e8d8', color: '#456b3a' }}>
+                                      {repartoNomeById.get(c.reparto_id)}
+                                    </span>
+                                  )}
+                                  <button onClick={() => vaiAGestione('cambi', c.reparto_id, c.id)}
+                                    className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold text-white shadow-sm transition-opacity hover:opacity-90"
+                                    style={{ background: '#a16207' }}
+                                    title="Apri la pagina Cambi turno sul reparto giusto per approvare o rifiutare">
+                                    <ExternalLink size={11} /> Vai ad approvare
+                                  </button>
+                                </div>
                               )}
                             </div>
                           </div>

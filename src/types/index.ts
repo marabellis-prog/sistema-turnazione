@@ -309,6 +309,7 @@ export interface FestivitaCustom {
 export interface Ferie {
   id: string
   medico_id: string
+  reparto_id: string
   data_inizio: string
   data_fine: string
   approvate: boolean
@@ -343,6 +344,7 @@ export interface CambioTurno {
   id:                    string
   created_at:            string
   medico_richiedente_id: string
+  reparto_id:            string
   /** Array JSONB di {medico_id, data, da, a}. Una richiesta puo` toccare
    *  piu` celle in una sola operazione (utile per scambi reciproci o
    *  multi-medico). */

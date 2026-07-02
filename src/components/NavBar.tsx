@@ -124,7 +124,11 @@ export function NavBar({ user, onSignOut }: Props) {
 
   // ── Debug: Modalità Admin (on/off) + Doppelgänger (solo admin reale) ──
   const { isRealAdmin, realUser, adminMode, doppleganger, setAdminMode, setDoppleganger } = useDebug()
-  const { hasAdminAccess } = useReparto()
+  const { hasAdminAccess, reparti, isSuperAdmin } = useReparto()
+  // Reparti che l'utente GESTISCE (super-admin = tutti; responsabile = i suoi).
+  // Scopano il conteggio + le richieste della bustina-scudo (notifiche di gestione).
+  const repartiGestitiIds = useMemo(() => reparti.map(r => r.id), [reparti])
+  const repartiGestitiKey = repartiGestitiIds.join(',')
   const { mieiReparti, repartoVista, setRepartoVista } = useMioReparto()
   const { data: utentiImp = [] } = useQuery<UtenteAutorizzato[]>({
     queryKey: ['utenti-impersonabili'],
@@ -149,7 +153,10 @@ export function NavBar({ user, onSignOut }: Props) {
   // Niente "prevalenza" admin sul medico: chi e` entrambi vede entrambe
   // le caselle con icone diverse (Mail per medico, Shield per admin).
   const showMedicoMail = !!mioMedico
-  const showAdminMail  = user?.ruolo === 'admin'
+  // Bustina-scudo (notifiche di GESTIONE): visibile a chi ha accesso admin =
+  // super-admin OPPURE responsabile di ≥1 reparto. Il contenuto è scopato ai
+  // reparti gestiti, così il responsabile vede solo le richieste dei suoi.
+  const showAdminMail  = hasAdminAccess
 
   // Count "items da vedere" per la bustina MEDICO: messaggi non letti del
   // medico + sue ferie/cambi pending.
@@ -179,19 +186,21 @@ export function NavBar({ user, onSignOut }: Props) {
   // tutte le ferie/cambi pending del sistema (cosi` il badge sale
   // appena qualcuno richiede qualcosa).
   const { data: unreadCountAdmin = 0 } = useQuery({
-    queryKey: ['messaggi-unread-count', 'admin'],
+    queryKey: ['messaggi-unread-count', 'admin', repartiGestitiKey],
     queryFn: async () => {
+      // ferie/cambi: scopati ai reparti gestiti (super-admin = tutti). I messaggi
+      // broadcast admin sono già limitati dalla RLS (solo i veri admin li vedono).
       const [msgRes, ferieRes, cambiRes] = await Promise.all([
         supabase.from('messaggi').select('*', { count: 'exact', head: true })
           .eq('destinatario_ruolo', 'admin').eq('letto', false),
         supabase.from('ferie').select('*', { count: 'exact', head: true })
-          .eq('approvate', false),
+          .eq('approvate', false).in('reparto_id', repartiGestitiIds),
         supabase.from('cambi_turno').select('*', { count: 'exact', head: true })
-          .eq('stato', 'pending'),
+          .eq('stato', 'pending').in('reparto_id', repartiGestitiIds),
       ])
       return (msgRes.count ?? 0) + (ferieRes.count ?? 0) + (cambiRes.count ?? 0)
     },
-    enabled:                     showAdminMail,
+    enabled:                     showAdminMail && repartiGestitiIds.length > 0,
     staleTime:                   0,
     refetchOnMount:              'always',
     refetchOnWindowFocus:        true,
@@ -209,7 +218,10 @@ export function NavBar({ user, onSignOut }: Props) {
     function onNuovoMessaggio(e: Event) {
       const m = (e as CustomEvent<Messaggio>).detail
       const mineMedico = showMedicoMail && m.medico_id != null && mieiMedici.some(md => md.id === m.medico_id)
-      const mineAdmin  = showAdminMail  && m.destinatario_ruolo === 'admin'
+      // Toast admin SOLO al super-admin: i messaggi broadcast non hanno reparto_id,
+      // quindi non sono scopabili per il responsabile (eviterei un leak cross-reparto).
+      // Il responsabile è comunque avvisato dal badge scopato sulla bustina-scudo.
+      const mineAdmin  = isSuperAdmin && m.destinatario_ruolo === 'admin'
       if (!mineMedico && !mineAdmin) return
       // Se e` entrambe le cose (improbabile ma possibile), prevale 'admin'
       // perche` di solito le azioni admin sono prioritarie da gestire.
@@ -223,7 +235,7 @@ export function NavBar({ user, onSignOut }: Props) {
     }
     window.addEventListener('messaggio-nuovo', onNuovoMessaggio)
     return () => window.removeEventListener('messaggio-nuovo', onNuovoMessaggio)
-  }, [mieiMedici, multiReparto, repartoNomeByMedicoId, showMedicoMail, showAdminMail])
+  }, [mieiMedici, multiReparto, repartoNomeByMedicoId, showMedicoMail, isSuperAdmin])
 
   // Auto-rinomina la tab corrente in base alla "famiglia" di pagine.
   // - Su /admin/*       → window.name = TAB_ADMIN
@@ -564,6 +576,7 @@ export function NavBar({ user, onSignOut }: Props) {
         {showMessaggi === 'admin' && (
           <MessaggiModal
             mode="admin"
+            repartiGestitiIds={repartiGestitiIds}
             onClose={() => setShowMessaggi(null)}
           />
         )}
