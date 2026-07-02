@@ -170,6 +170,9 @@ export async function creaBozzaAggiornamento(
   for (const cur = new Date(startD); cur <= endD; cur.setDate(cur.getDate() + 1)) {
     const dataISO = iso(cur)
     const inFinestraNuova = dataISO >= cutoverISO && dataISO <= nuovoFineISO
+    // Giorni CHIUSI/archiviati (Chiudi turnazione fino-a): non ripopolarli →
+    // restano fuori dallo snapshot e quindi da pubblicaBozza.
+    if (config.chiusa_fino_a && dataISO <= config.chiusa_fino_a) continue
 
     for (const m of mediciAttivi) {
       const key = `${m.id}|${dataISO}`
@@ -365,6 +368,9 @@ export async function creaBozzaAggiornamentoDinamico(
   for (const cur = new Date(startD); cur <= endD; cur.setDate(cur.getDate() + 1)) {
     const dataISO = iso(cur)
     const inFinestraNuova = dataISO >= cutoverISO && dataISO <= nuovoFineISO
+    // Giorni CHIUSI/archiviati (Chiudi turnazione fino-a): non ripopolarli →
+    // restano fuori dallo snapshot e quindi da pubblicaBozza.
+    if (config.chiusa_fino_a && dataISO <= config.chiusa_fino_a) continue
 
     for (const m of mediciAttivi) {
       const key = `${m.id}|${dataISO}`

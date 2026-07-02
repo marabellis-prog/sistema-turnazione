@@ -163,7 +163,18 @@ export function SchemaDesignerNuovo() {
   // (da schema_storico). In tal caso si blocca salva/azzera/elimina: per
   // modificarlo va duplicato in un nuovo schema.
   const { data: config } = useConfigReparto()
-  const inUso = useMemo(() => schemiInUso(config).has(schemaNum), [config, schemaNum])
+  // Il reparto ha turni GENERATI? Senza turni nessuno schema è "in uso" → niente
+  // falso lock su reparti copiati / freschi / dopo una chiusura totale.
+  const { data: hasTurni = false } = useQuery<boolean>({
+    queryKey: ['reparto-ha-turni', repartoAttivo],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('turni').select('id')
+        .eq('reparto_id', repartoAttivo).limit(1)
+      if (error) throw error
+      return (data?.length ?? 0) > 0
+    },
+  })
+  const inUso = useMemo(() => schemiInUso(config, hasTurni).has(schemaNum), [config, hasTurni, schemaNum])
 
   const { data: tipiTurno = [] } = useQuery<TipoTurno[]>({
     queryKey: ['tipi_turno', repartoAttivo, schemaNum],

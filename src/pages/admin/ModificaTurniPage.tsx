@@ -2287,6 +2287,16 @@ export function ModificaTurniPage() {
     )
   }
 
+  // Turnazione vuota (nessun turno: reparto nuovo, appena copiato, o dopo una
+  // "Chiudi turnazione" totale) → prompt di generazione, come reparto fresco.
+  if (config && !loading && turni.length === 0 && modifiche.size === 0) {
+    return (
+      <div className="text-stone-600 text-sm">
+        Turnazione vuota, da generare. Vai a <strong>"Genera Calendario"</strong> per crearne una nuova.
+      </div>
+    )
+  }
+
   // ── Render principale ──────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-3">
@@ -2300,11 +2310,10 @@ export function ModificaTurniPage() {
           <p className="text-sm text-stone-600 mt-0.5">
             {repartoDinamico ? (
               <>
-                Clicca una cella per cambiare il turno (scrivi la sigla),{' '}
-                <kbd className="px-1 py-0.5 rounded text-[10px]" style={{background:'#f0ece4',border:'1px solid #d5ccb8'}}>Ctrl+V</kbd> da Excel,
-                oppure <strong>trascina turni e proprietà</strong> dalla legenda qui sotto.
-                In fondo trovi la <strong>copertura</strong> del fabbisogno (clic sulla proprietà per il dettaglio mattina/pomeriggio)
-                e il <strong>riepilogo</strong> per turnista.
+                Tre modi per fare un cambio: <strong>scrivi la sigla</strong> nella cella (clicca e digita),{' '}
+                <strong>trascina</strong> un turno o una proprietà dalla legenda qui sotto,
+                oppure <strong>clicca la cella</strong> e scegli dal menu. Da Excel incolli con{' '}
+                <kbd className="px-1 py-0.5 rounded text-[10px]" style={{background:'#f0ece4',border:'1px solid #d5ccb8'}}>Ctrl+V</kbd>.
               </>
             ) : (
               <>

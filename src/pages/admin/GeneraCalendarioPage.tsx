@@ -412,6 +412,10 @@ export function GeneraCalendarioPage() {
         anno_fine:   annoFine,   mese_fine:   meseFine,
         giorno_fine: giornoFine,
         schema_attivo: schemaNum,
+        // Una generazione completa riparte "aperta": azzera eventuali chiusure
+        // (Chiudi turnazione) del reparto, altrimenti i primi mesi resterebbero
+        // nascosti da generaColonne.
+        chiusa_fino_a: null,
         // Reset cronologia schemi: una generazione completa riparte pulita,
         // un solo elemento (schema corrente dalla data di inizio).
         schema_storico: [{ schema: schemaNum, dal: dataInizioStr }],

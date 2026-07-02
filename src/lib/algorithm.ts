@@ -587,11 +587,18 @@ export function generaColonne(
   else fine.setMonth(fine.getMonth() + 1, 0) // ultimo giorno del mese fine (legacy)
 
   while (corrente <= fine) {
+    const dataISO = formatDate(corrente)
+    // Salta i giorni CHIUSI/archiviati: non devono comparire come colonne
+    // (nemmeno vuote → niente avvisi di inconsistenza sui mesi chiusi).
+    if (config.chiusa_fino_a && dataISO <= config.chiusa_fino_a) {
+      corrente.setDate(corrente.getDate() + 1)
+      continue
+    }
     const festivo = isFestivo(corrente, festivitaCustomSet)
     const domenica = corrente.getDay() === 0
 
     colonne.push({
-      data:       formatDate(corrente),
+      data:       dataISO,
       giorno:     corrente.getDate(),
       mese:       corrente.getMonth() + 1,
       anno:       corrente.getFullYear(),

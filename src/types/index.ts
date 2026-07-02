@@ -96,6 +96,10 @@ export interface Configurazione {
   /** Giorno del mese_fine = fine esatta del calendario. null/undefined =
    *  ultimo giorno del mese_fine (comportamento storico). */
   giorno_fine?: number | null
+  /** Ultimo giorno CHIUSO/archiviato (Chiudi turnazione). generaColonne nasconde
+   *  le colonne con data <= chiusa_fino_a; aggiornaTurnazione non ripopola quei
+   *  giorni. null = niente chiuso. Anchor di rotazione invariato. */
+  chiusa_fino_a?: string | null
   /** Cronologia degli schemi (per "Schemi aggiornati" nella sidebar admin):
    *  una generazione completa = 1 elemento, ogni Aggiorna turnazione approvato
    *  appende {schema_nuovo, cutover}. Ordine cronologico. */

@@ -22,9 +22,13 @@ function fineTurnazione(c: Configurazione): string {
   return ymd(c.anno_fine, c.mese_fine, lastDay)
 }
 
-export function schemiInUso(config: Configurazione | null | undefined): Set<number> {
+export function schemiInUso(config: Configurazione | null | undefined, hasTurni: boolean = true): Set<number> {
   const out = new Set<number>()
   if (!config) return out
+  // Senza turni generati non c'è turnazione attiva → nessuno schema è "in uso"
+  // (evita il falso lock su reparti COPIATI / freschi / dopo chiusura totale,
+  // dove config.schema_attivo è valorizzato ma non esiste alcun turno).
+  if (!hasTurni) return out
 
   const epoche = (config.schema_storico ?? [])
     .filter(e => e && e.dal)
