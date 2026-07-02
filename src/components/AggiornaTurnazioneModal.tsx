@@ -106,9 +106,18 @@ export function AggiornaTurnazioneModal({ config, schemi, medici, params, onClos
               <ul className="text-xs text-stone-600 mt-3 space-y-1.5 leading-relaxed">
                 <li>• I giorni del mese di inizio <strong>prima</strong> del primo lunedì restano sulla vecchia turnazione.</li>
                 <li>• La rotazione <strong>prosegue</strong> (i turnisti riprendono dal numero giusto, non si riparte da 1).</li>
-                <li>• I <strong>cambi turno</strong> e le modifiche già fatte vengono <strong>mantenuti</strong> e segnati in rosso.</li>
+                <li>• I <strong>cambi turno</strong> dal primo lunedì in poi <strong>non</strong> vengono mantenuti: il calendario nuovo li riscrive (vanno rifatti dopo).</li>
                 <li>• Verrà creata una <strong>anteprima</strong> da far vedere ai turnisti: la produzione non cambia finché non approvi.</li>
               </ul>
+              <div className="mt-3 rounded-lg p-3 text-xs flex items-start gap-2"
+                style={{ background: '#fef3c7', border: '1px solid #fcd34d', color: '#92400e' }}>
+                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                <span>
+                  La turnazione attuale verrà <strong>troncata</strong>: dal primo lunedì viene rigenerata col nuovo schema
+                  fino a <strong>{MESI_IT[params.meseFine]} {params.annoFine}</strong>; eventuali turni <strong>oltre</strong> quella
+                  data vengono <strong>eliminati</strong> (all'approvazione viene comunque salvato un backup).
+                </span>
+              </div>
 
               {!valid.ok && (
                 <div className="mt-4 rounded-lg p-3 text-xs flex items-start gap-2"

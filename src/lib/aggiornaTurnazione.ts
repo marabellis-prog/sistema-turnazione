@@ -130,7 +130,10 @@ export async function creaBozzaAggiornamento(
   const nuovoFineISO = iso(lastOfMonth(p.annoFine, p.meseFine))
 
   // ── Estensione finale del calendario = max(fine attuale, fine nuovo) ─
-  const fineIdx   = Math.max(monthIdx(config.anno_fine, config.mese_fine), monthIdx(p.annoFine, p.meseFine))
+  // TRONCAMENTO: la nuova turnazione FINISCE alla data scelta nel form. I turni
+  // della vecchia "coda" oltre questa data NON entrano nello snapshot → vengono
+  // cancellati alla pubblicazione (pubblicaBozza fa delete-all + insert snapshot).
+  const fineIdx   = monthIdx(p.annoFine, p.meseFine)
   const fineAnno  = Math.floor(fineIdx / 12)
   const fineMese  = (fineIdx % 12) + 1
   const origStartISO = iso(firstOfMonth(config.anno_inizio, config.mese_inizio))
@@ -323,7 +326,8 @@ export async function creaBozzaAggiornamentoDinamico(
   const cutoverISO   = iso(cutover)
   const nuovoFineISO = iso(lastOfMonth(p.annoFine, p.meseFine))
 
-  const fineIdx  = Math.max(monthIdx(config.anno_fine, config.mese_fine), monthIdx(p.annoFine, p.meseFine))
+  // TRONCAMENTO: fine = solo quella del form (vedi versione classica).
+  const fineIdx  = monthIdx(p.annoFine, p.meseFine)
   const fineAnno = Math.floor(fineIdx / 12)
   const fineMese = (fineIdx % 12) + 1
   const origStartISO = iso(firstOfMonth(config.anno_inizio, config.mese_inizio))
