@@ -226,6 +226,7 @@ export function GestioneCambiPage() {
         const isSub = m.a.slot_mattina === 'SUB' || m.a.slot_pomeriggio === 'SUB'
         const isMed = m.a.slot_mattina === 'MED' || m.a.slot_pomeriggio === 'MED'
         return {
+          reparto_id:              repartoAttivo,   // ⚠️ SEMPRE: senza, l'upsert usa il DEFAULT (11N) → contamina 11N
           medico_id:               m.medico_id,
           data:                    m.data,
           turno_clinico:           m.a.tc,
@@ -273,7 +274,7 @@ export function GestioneCambiPage() {
 
         // b) Per ogni giorno, ricalcola e accumula le celle da aggiornare
         const ricalcRows: Array<{
-          medico_id: string; data: string;
+          reparto_id: string; medico_id: string; data: string;
           turno_clinico: TurnoClinico; turno_ricerca: TurnoRicerca;
           modificato_manualmente: boolean;
           slot_mattina: SlotPlacement; slot_pomeriggio: SlotPlacement;
@@ -296,6 +297,7 @@ export function GestioneCambiPage() {
             // aggiorno solo TR se cambiato.
             if (newCell.tr === dbTr) continue
             ricalcRows.push({
+              reparto_id: repartoAttivo,   // ⚠️ SEMPRE (default colonna = 11N)
               medico_id: medId, data,
               turno_clinico:          dbTc,
               turno_ricerca:          newCell.tr,
@@ -404,6 +406,7 @@ export function GestioneCambiPage() {
     try {
       // 1) Upsert ROLLBACK: applica m.da (i valori originali) ai turni
       const turniRows = c.modifiche.map(m => ({
+        reparto_id:              repartoAttivo,   // ⚠️ SEMPRE (default colonna = 11N)
         medico_id:               m.medico_id,
         data:                    m.data,
         turno_clinico:           m.da.tc,
