@@ -146,19 +146,34 @@ export function AnteprimaTurnazionePage() {
   async function handleApprova() {
     if (!anteprima || !config) return
     if (dirty) { setErr('Hai modifiche non salvate: premi prima Salva.'); return }
+    const cutover = anteprima.meta?.cutover as string | undefined
+    const cutoverIt = cutover ? cutover.split('-').reverse().join('/') : 'primo giorno della nuova turnazione'
     const ok = await confirm({
       title:        'Pubblica la turnazione',
-      message:      'La bozza diventerà il calendario in produzione (sostituisce quello attuale). Procedere?',
+      message:      `La bozza diventerà il calendario in produzione (sostituisce quello attuale).\n\n⚠️ Tutti i CAMBI TURNO dal ${cutoverIt} in poi verranno ELIMINATI: il nuovo calendario li sostituisce e andranno rifatti (ricalcolati). Prima di procedere viene creato un BACKUP di sicurezza.\n\nProcedere?`,
       confirmLabel: 'Approva e pubblica',
+      danger: true,
     })
     if (!ok) return
     setBusy('approva'); setErr(null)
     try {
+      // 1) Backup di sicurezza PRIMA di toccare turni e cambi.
+      await supabase.rpc('backup_reparto', {
+        p_reparto_id: repartoAttivo,
+        p_descrizione: `Pre-aggiornamento turnazione${cutover ? ' dal ' + cutoverIt : ''}`,
+      })
+      // 2) Pubblica la bozza (sostituisce i turni).
       const nInseriti = await pubblicaBozza(anteprima, config.id, repartoAttivo)
+      // 3) Cancella i cambi turno dal cutover e riporta i turni al valore pulito.
+      let nCambi = 0
+      if (cutover) {
+        const { data: pul } = await supabase.rpc('pulisci_cambi_turnazione', { p_reparto: repartoAttivo, p_dal: cutover })
+        nCambi = (pul as { cambi_eliminati?: number } | null)?.cambi_eliminati ?? 0
+      }
       await registraEventoCentro('aggiornamento_approvato', repartoAttivo, repartoCorrente?.nome ?? 'Reparto',
-        `Approvato e pubblicato un aggiornamento della turnazione (${nInseriti} turni).`)
+        `Approvato e pubblicato un aggiornamento della turnazione (${nInseriti} turni)${nCambi ? `; ${nCambi} cambi turno dal ${cutoverIt} eliminati` : ''}. Backup creato.`)
       clearAll()
-      ;['turni', 'turni-modifica', 'ferie-ranges', 'configurazione', 'cambi-turno', 'turnazione-anteprima', 'centro-eventi']
+      ;['turni', 'turni-modifica', 'ferie-ranges', 'configurazione', 'cambi-turno', 'turnazione-anteprima', 'centro-eventi', 'turni-backup']
         .forEach(k => qc.invalidateQueries({ queryKey: [k] }))
     } catch (e) {
       setErr((e as Error).message)
