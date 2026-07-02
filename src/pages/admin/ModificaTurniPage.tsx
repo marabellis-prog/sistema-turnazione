@@ -615,7 +615,7 @@ function CellaAssegnaPopover({ anchorId, cur, turni, proprietaDin, cambiato, onT
   turni:        { sigla: string; nome: string; colore_bg: string; colore_fg: string; is_reperibilita: boolean }[]
   proprietaDin: { sigla: string; nome: string; colore_bg: string }[]
   /** Se valorizzato, la cella deriva da un cambio turno: reminder + valore originale. */
-  cambiato:     { originario: string } | null
+  cambiato:     { originario: string; manuale?: boolean } | null
   onTurno:      (sigla: string) => void
   onProp:       (half: 'mattina' | 'pomeriggio', value: SlotPlacement) => void
   onClose:      () => void
@@ -666,13 +666,15 @@ function CellaAssegnaPopover({ anchorId, cur, turni, proprietaDin, cambiato, onT
       <div className="fixed z-50 rounded-xl shadow-2xl border border-stone-200 bg-white p-2.5"
         style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width: 240 }}
         onClick={e => e.stopPropagation()}>
-        {/* Reminder: questa cella deriva da un cambio turno approvato. */}
+        {/* Reminder: la cella è stata modificata a mano (bordo blu) o deriva
+            da un cambio turno approvato trascinato oltre un aggiornamento
+            (bordo rosso). In entrambi i casi mostriamo il valore originario. */}
         {cambiato && (
           <div className="flex items-start gap-1.5 mb-2 px-1.5 py-1 rounded-md"
             style={{ background: '#fef3c7', color: '#92400e' }}>
             <RefreshCw size={11} className="mt-0.5 shrink-0" />
             <span className="text-[10px] leading-tight">
-              <strong>Turno cambiato</strong>
+              <strong>{cambiato.manuale ? 'Modificato a mano' : 'Turno cambiato'}</strong>
               {cambiato.originario && <> — in origine era <strong>{cambiato.originario}</strong></>}
             </span>
           </div>
@@ -2691,9 +2693,18 @@ export function ModificaTurniPage() {
           proprietaDin={proprietaDin}
           cambiato={(() => {
             const dbT = turniByKey.get(`${cellPopover.medicoId}|${cellPopover.data}`)
-            return dbT?.turno_clinico_originario != null
-              ? { originario: (dbT.turno_clinico_originario || '(vuoto)') as string }
-              : null
+            // Bordo ROSSO: cambio turno approvato trascinato oltre un Aggiorna
+            // turnazione (turno_clinico_originario = valore pre-cambio).
+            if (dbT?.turno_clinico_originario != null)
+              return { originario: (dbT.turno_clinico_originario || '(vuoto)') as string }
+            // Bordo BLU: modifica manuale — il valore corrente differisce dalla
+            // rotazione base. L'"originario" è il valore base (getOriginale),
+            // stessa condizione che accende il bordo blu (isMod).
+            const curC  = getCella(cellPopover.medicoId, cellPopover.data)
+            const origC = getOriginale(cellPopover.medicoId, cellPopover.data)
+            if (curC.tc !== origC.tc)
+              return { originario: (origC.tc || '(vuoto)') as string, manuale: true }
+            return null
           })()}
           onTurno={sigla => handleDropFromLegend(cellPopover.medicoId, cellPopover.data, sigla === '' ? 'TC:' : `TC:${sigla}`)}
           onProp={(half, value) => setSlotHalf(cellPopover.medicoId, cellPopover.data, half, value)}
