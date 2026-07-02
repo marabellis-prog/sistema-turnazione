@@ -452,10 +452,21 @@ export function SchemaDesignerNuovo() {
       const p_checks  = draft.checks.map(c => ({ giorno_settimana: c.giorno_settimana, colonna_sigla: c.colonna_sigla }))
       const p_celle   = draft.celle
       const p_fabbisogno = draft.fabbisogno
-      const { error } = await supabase.rpc('salva_schema_struttura', {
-        p_reparto: repartoAttivo, p_num: schemaNum, p_giorni, p_colonne, p_checks, p_celle, p_fabbisogno,
-      })
-      if (error) throw error
+      // Schema IN USO: la struttura è bloccata (protegge i turni), ma il
+      // FABBISOGNO no (tocca solo il controllo copertura) → salvo solo quello
+      // via salva_fabbisogno (senza la guardia schema_in_uso). Altrimenti salvo
+      // tutto (struttura + fabbisogno) con salva_schema_struttura.
+      if (inUso) {
+        const { error } = await supabase.rpc('salva_fabbisogno', {
+          p_reparto: repartoAttivo, p_num: schemaNum, p_fabbisogno,
+        })
+        if (error) throw error
+      } else {
+        const { error } = await supabase.rpc('salva_schema_struttura', {
+          p_reparto: repartoAttivo, p_num: schemaNum, p_giorni, p_colonne, p_checks, p_celle, p_fabbisogno,
+        })
+        if (error) throw error
+      }
       setDraft(null)
       qc.invalidateQueries({ queryKey: ['schema-fabbisogno', repartoAttivo] })
       invalida(); invalidaSchemi()
@@ -851,8 +862,9 @@ export function SchemaDesignerNuovo() {
           style={{ background: '#fef3c7', border: '1px solid #fbbf24', color: '#92400e' }}>
           <Info size={16} className="mt-0.5 shrink-0" />
           <span>
-            <strong>Schema in uso</strong> nella turnazione attiva: salva, azzera ed elimina sono bloccati per non rompere i turni già generati.
-            Per modificarlo, <strong>duplicalo</strong> con “Copia da…” in un nuovo schema.
+            <strong>Schema in uso</strong> nella turnazione attiva: la <strong>struttura</strong> (turni, giorni, colonne, celle) è bloccata per non rompere i turni già generati — azzera/elimina disattivati.
+            Puoi però modificare e salvare il <strong>fabbisogno</strong> (non tocca i turni, solo il controllo copertura).
+            Per cambiare la struttura, <strong>duplica</strong> lo schema con “Copia da…”.
           </span>
         </div>
       )}
@@ -860,11 +872,11 @@ export function SchemaDesignerNuovo() {
       {/* Salva schema — subito SOTTO la struttura e SOPRA la griglia turnisti. */}
       {giorni.length > 0 && (
         <div className="flex items-center gap-3">
-          <button onClick={salvaSchema} disabled={!dirty || saving || inUso}
-            title={inUso ? 'Schema in uso: duplicalo (Copia da…) per modificarlo' : 'Salva lo schema (struttura e turni)'}
+          <button onClick={salvaSchema} disabled={!dirty || saving}
+            title={inUso ? 'Schema in uso: salvabile solo il FABBISOGNO (non tocca i turni). La struttura resta bloccata.' : 'Salva lo schema (struttura e turni)'}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white shadow transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ background: dirty && !saving && !inUso ? '#476540' : '#9ca3af' }}>
-            <Save size={15} /> {saving ? 'Salvataggio…' : 'Salva schema'}
+            style={{ background: dirty && !saving ? '#476540' : '#9ca3af' }}>
+            <Save size={15} /> {saving ? 'Salvataggio…' : (inUso ? 'Salva fabbisogno' : 'Salva schema')}
           </button>
           <button onClick={() => setShowPreview(v => !v)} disabled={giorniDB.length === 0}
             title={giorniDB.length === 0 ? 'Configura e salva almeno un giorno per provare lo schema' : 'Anteprima della rotazione (cicla la settimana per ogni turnista)'}
@@ -1069,7 +1081,7 @@ function GrigliaAmbito({ amb, colsAmbito, fab, onSet, onRemove, onSu, onGiu, puo
   puoSu?: boolean
   puoGiu?: boolean
   /** Maniglia di trascinamento (drag-and-drop) per riordinare gli ambiti. */
-  onDragStartHandle?: () => void
+  onDragStartHandle?: (e: React.DragEvent) => void
   onDragEndHandle?: () => void
 }) {
   const { meta, proprieta } = colsAmbito(amb)   // metà-giornata coperte + proprietà attive
@@ -1080,7 +1092,7 @@ function GrigliaAmbito({ amb, colsAmbito, fab, onSet, onRemove, onSu, onGiu, puo
   const speciale = amb !== 'normale'
   const vuoto = meta.length === 0 || proprieta.length === 0
   return (
-    <div className="border rounded-lg p-2" style={{ borderColor: speciale ? '#e3d4ad' : '#e7e5e4', background: speciale ? '#fbf7ee' : '#fff' }}>
+    <div data-ambito-card className="border rounded-lg p-2" style={{ borderColor: speciale ? '#e3d4ad' : '#e7e5e4', background: speciale ? '#fbf7ee' : '#fff' }}>
       <div className="flex items-center justify-between mb-1">
         <span className="text-xs font-bold flex items-center gap-1" style={{ color: speciale ? '#7a5a2f' : '#476540' }}>
           {onDragStartHandle && (
@@ -1175,15 +1187,18 @@ function FabbisognoPanel({ colsAmbito, puoFabbisogno, fab, onSet, onRemove, onSp
   const specialiAperti = [...conDati, ...extraSoli]
   const daAggiungere = AMBITI_SPECIALI.filter(a => !specialiAperti.includes(a.key))
 
-  // Drop del drag-and-drop: inserisce l'ambito trascinato nella posizione del target.
+  // Drop del drag-and-drop: inserisce l'ambito trascinato nella posizione del
+  // target, considerando TUTTI gli speciali (con e senza dati). I pieni vengono
+  // persistiti (onRiordina); i vuoti riordinati nello stato locale (extra).
   function handleDrop(target: string) {
     if (!dragAmb || dragAmb === target) { setDragAmb(null); return }
-    const order = [...conDati]
+    const order = [...specialiAperti]
     const from = order.indexOf(dragAmb), to = order.indexOf(target)
     if (from < 0 || to < 0) { setDragAmb(null); return }
     order.splice(from, 1)
     order.splice(to, 0, dragAmb)
-    onRiordina(order)
+    onRiordina(order.filter(a => conDati.includes(a)))   // persiste i pieni
+    setExtra(order.filter(a => !conDati.includes(a)))     // riordina i vuoti
     setDragAmb(null)
   }
 
@@ -1201,23 +1216,32 @@ function FabbisognoPanel({ colsAmbito, puoFabbisogno, fab, onSet, onRemove, onSp
           <GrigliaAmbito amb="normale" colsAmbito={colsAmbito} fab={fab} onSet={onSet} />
           {specialiAperti.map(amb => {
             const idxDati = conDati.indexOf(amb)     // -1 se ancora senza valori
-            const riordinabile = idxDati >= 0
-            const bersaglioDrop = !!dragAmb && dragAmb !== amb && riordinabile
+            const filled = idxDati >= 0              // le frecce ↑/↓ solo sui pieni
+            const trascinato = dragAmb === amb
+            const bersaglioDrop = !!dragAmb && dragAmb !== amb
             return (
               <div key={amb} className="space-y-2 rounded-lg transition-all"
-                onDragOver={riordinabile ? (e => e.preventDefault()) : undefined}
-                onDrop={riordinabile ? (() => handleDrop(amb)) : undefined}
-                style={bersaglioDrop ? { outline: '2px dashed #bfa46a', outlineOffset: 2 } : undefined}>
+                onDragOver={e => e.preventDefault()}
+                onDrop={() => handleDrop(amb)}
+                style={{
+                  opacity: trascinato ? 0.4 : 1,   // il div trascinato appare in trasparenza
+                  ...(bersaglioDrop ? { outline: '2px dashed #bfa46a', outlineOffset: 2 } : {}),
+                }}>
                 {/* Connettore cascata: l'ambito qui sotto SOVRASCRIVE quelli sopra. */}
                 <div className="flex items-center justify-center gap-1 text-[9px] text-stone-400 select-none -my-0.5">
                   <ArrowDown size={10} /> viene sovrascritto da <ArrowDown size={10} />
                 </div>
                 <GrigliaAmbito amb={amb} colsAmbito={colsAmbito} fab={fab} onSet={onSet} onRemove={handleRemove}
-                  onSu={riordinabile ? () => onSposta(amb, -1) : undefined}
-                  onGiu={riordinabile ? () => onSposta(amb, 1) : undefined}
-                  puoSu={riordinabile && idxDati > 0}
-                  puoGiu={riordinabile && idxDati < conDati.length - 1}
-                  onDragStartHandle={riordinabile ? () => setDragAmb(amb) : undefined}
+                  onSu={filled ? () => onSposta(amb, -1) : undefined}
+                  onGiu={filled ? () => onSposta(amb, 1) : undefined}
+                  puoSu={filled && idxDati > 0}
+                  puoGiu={filled && idxDati < conDati.length - 1}
+                  onDragStartHandle={e => {
+                    setDragAmb(amb)
+                    // Ghost = l'intera card in trasparenza (non solo l'icona).
+                    const card = (e.currentTarget as HTMLElement).closest('[data-ambito-card]')
+                    if (card) { try { e.dataTransfer.setDragImage(card as Element, 16, 16) } catch { /* no-op */ } }
+                  }}
                   onDragEndHandle={() => setDragAmb(null)} />
               </div>
             )
