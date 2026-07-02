@@ -681,6 +681,51 @@ export function SchemaDesignerNuovo() {
         </p>
       </div>
 
+      {/* ── Toolbar azioni SCHEMA: header sticky, resta visibile scrollando ── */}
+      <div className="sticky top-0 z-30 -mx-6 px-6 py-2 flex items-center gap-2 flex-wrap border-b border-stone-200 shadow-sm"
+        style={{ background: 'rgba(244,241,234,0.97)', backdropFilter: 'blur(4px)' }}>
+        <button onClick={salvaSchema} disabled={!dirty || saving}
+          title={inUso ? 'Schema in uso: salvabile solo il FABBISOGNO (non tocca i turni). La struttura resta bloccata.' : 'Salva lo schema (struttura e turni)'}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold text-white shadow transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ background: dirty && !saving ? '#476540' : '#9ca3af' }}>
+          <Save size={15} /> {saving ? 'Salvataggio…' : (inUso ? 'Salva fabbisogno' : 'Salva schema')}
+        </button>
+        <button onClick={() => setShowPreview(v => !v)} disabled={giorniDB.length === 0}
+          title={giorniDB.length === 0 ? 'Configura e salva almeno un giorno per provare lo schema' : 'Anteprima della rotazione (cicla la settimana per ogni turnista)'}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          style={showPreview ? { background: '#e0e8d8', borderColor: '#9ab488', color: '#2b3c24' } : { background: '#fff', borderColor: '#cdd9c4', color: '#476540' }}>
+          {showPreview ? <><EyeOff size={15} /> Chiudi prova</> : <><Eye size={15} /> Prova Schema</>}
+        </button>
+        <button onClick={azzeraSchema} disabled={inUso}
+          title={inUso ? 'Schema in uso nella turnazione attiva: duplicalo (Copia da…) per modificarlo' : 'Svuota lo schema (mantiene il titolo)'}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border border-amber-300 text-amber-700 hover:bg-amber-50 disabled:opacity-40 disabled:cursor-not-allowed">
+          <Eraser size={13} /> Azzera
+        </button>
+        <button onClick={eliminaSchema} disabled={schemiList.length <= 1 || inUso}
+          title={inUso ? 'Schema in uso nella turnazione attiva: non eliminabile (duplicalo per modificarlo)' : schemiList.length <= 1 ? "Non puoi eliminare l'unico schema (usa Azzera per svuotarlo)" : 'Elimina lo schema e rinumera gli altri'}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed">
+          <Trash2 size={13} /> Elimina
+        </button>
+        {schemiList.length > 1 && (
+          <div className="flex items-center gap-1.5">
+            <Copy size={13} className="text-stone-400" />
+            <select value="" onChange={e => { if (e.target.value) { copiaDa(parseInt(e.target.value, 10)); e.target.value = '' } }}
+              className="input text-xs py-1" title="Copia tutto (turni, struttura, fabbisogno) da un altro schema">
+              <option value="" disabled>Copia da schema…</option>
+              {schemiList.filter(n => n !== schemaNum).map(n => (
+                <option key={n} value={n}>Schema {n}{titoloDi(n) ? ` · ${titoloDi(n)}` : ''}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        {dirty && (
+          <span className="ml-auto flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full shrink-0"
+            style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fbbf24' }}>
+            ● Modifiche non salvate
+          </span>
+        )}
+      </div>
+
       {tipiTurno.length === 0 && (
         <div className="flex gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
           <Info size={16} className="shrink-0 mt-0.5" />
@@ -718,21 +763,10 @@ export function SchemaDesignerNuovo() {
           className="px-2 py-1 rounded font-bold text-sm border border-dashed border-[#9ab488] text-[#476540] hover:bg-[#eef3e8]">
           <Plus size={14} className="inline -mt-0.5" />
         </button>
-        {schemiList.length > 1 && (
-          <div className="ml-auto flex items-center gap-1.5">
-            <Copy size={13} className="text-stone-400" />
-            <select value="" onChange={e => { if (e.target.value) { copiaDa(parseInt(e.target.value, 10)); e.target.value = '' } }}
-              className="input text-xs py-1" title="Copia tutto (turni, struttura, fabbisogno) da un altro schema">
-              <option value="" disabled>Copia da schema…</option>
-              {schemiList.filter(n => n !== schemaNum).map(n => (
-                <option key={n} value={n}>Schema {n}{titoloDi(n) ? ` · ${titoloDi(n)}` : ''}</option>
-              ))}
-            </select>
-          </div>
-        )}
       </div>
 
-      {/* Titolo dello schema (editabile inline) + azioni schema */}
+      {/* Titolo dello schema (editabile inline). Le azioni (Azzera/Elimina/…)
+          sono nella toolbar sticky in alto. */}
       <div className="flex items-center gap-2 flex-wrap">
         <Tag size={16} className="shrink-0" style={{ color: '#476540' }} />
         <input
@@ -742,16 +776,6 @@ export function SchemaDesignerNuovo() {
           onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
           placeholder={`Schema ${schemaNum} — dai un nome per riconoscerlo…`}
           className="flex-1 min-w-[140px] text-2xl font-bold bg-transparent border-b-2 border-stone-200 focus:border-[#476540] outline-none py-1 px-1 text-stone-800" />
-        <button onClick={azzeraSchema} disabled={inUso}
-          title={inUso ? 'Schema in uso nella turnazione attiva: duplicalo (Copia da…) per modificarlo' : 'Svuota lo schema (mantiene il titolo)'}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border border-amber-300 text-amber-700 hover:bg-amber-50 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed">
-          <Eraser size={13} /> Azzera
-        </button>
-        <button onClick={eliminaSchema} disabled={schemiList.length <= 1 || inUso}
-          title={inUso ? 'Schema in uso nella turnazione attiva: non eliminabile (duplicalo per modificarlo)' : schemiList.length <= 1 ? "Non puoi eliminare l'unico schema (usa Azzera per svuotarlo)" : 'Elimina lo schema e rinumera gli altri'}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed">
-          <Trash2 size={13} /> Elimina
-        </button>
       </div>
 
       {/* ① Definisci le caratteristiche dei turni (tipi di turno + proprietà) */}
@@ -888,29 +912,6 @@ export function SchemaDesignerNuovo() {
         <StepHeader n={3}>Disegna la rotazione dei turni e definisci il fabbisogno di copertura dei turni</StepHeader>
       )}
 
-      {/* Salva schema — subito SOTTO la struttura e SOPRA la griglia turnisti. */}
-      {giorni.length > 0 && (
-        <div className="flex items-center gap-3">
-          <button onClick={salvaSchema} disabled={!dirty || saving}
-            title={inUso ? 'Schema in uso: salvabile solo il FABBISOGNO (non tocca i turni). La struttura resta bloccata.' : 'Salva lo schema (struttura e turni)'}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white shadow transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ background: dirty && !saving ? '#476540' : '#9ca3af' }}>
-            <Save size={15} /> {saving ? 'Salvataggio…' : (inUso ? 'Salva fabbisogno' : 'Salva schema')}
-          </button>
-          <button onClick={() => setShowPreview(v => !v)} disabled={giorniDB.length === 0}
-            title={giorniDB.length === 0 ? 'Configura e salva almeno un giorno per provare lo schema' : 'Anteprima della rotazione (cicla la settimana per ogni turnista)'}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            style={showPreview ? { background: '#e0e8d8', borderColor: '#9ab488', color: '#2b3c24' } : { background: '#fff', borderColor: '#cdd9c4', color: '#476540' }}>
-            {showPreview ? <><EyeOff size={15} /> Chiudi prova</> : <><Eye size={15} /> Prova Schema</>}
-          </button>
-          {dirty && (
-            <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full"
-              style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fbbf24' }}>
-              ● Modifiche non salvate
-            </span>
-          )}
-        </div>
-      )}
 
       {/* ── TABELLA TURNI (slot) a sinistra · FABBISOGNO sticky a destra ──
           Sempre visibile (si aggiorna in tempo reale con la struttura). */}
