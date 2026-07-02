@@ -146,10 +146,6 @@ export async function creaBozzaAggiornamento(
   const nuovoBase = calcolaCalendarioCompleto(cfgNuovo, schemi, mediciAttivi, A_old)
   const nbMap = new Map(nuovoBase.map(t => [`${t.medico_id}|${t.data}`, t]))
 
-  // ── Old base (schema attuale) — fallback per "originario" ──────────
-  const oldBase = calcolaCalendarioCompleto(config, schemi, mediciAttivi)
-  const obMap = new Map(oldBase.map(t => [`${t.medico_id}|${t.data}`, t]))
-
   // ── Vecchia turnazione CONTINUATA (schema attuale) su TUTTO il range,
   //    per la riga di confronto B/N in anteprima. Riferimento FISSO: schema
   //    precedente come se non ci fosse mai stato lo stacco (anchor naturale =
@@ -191,36 +187,22 @@ export async function creaBozzaAggiornamento(
         const nb = nbMap.get(key)
         const nbTc = (nb?.turno_clinico ?? '') as TurnoClinico
         const nbTr = (nb?.turno_ricerca ?? '') as TurnoRicerca
-        if (pr && pr.modificato_manualmente) {
-          // Cambio/edit preservato → resta applicato, marcato "originario"
-          const originario = (pr.turno_clinico_base ?? obMap.get(key)?.turno_clinico ?? '') as TurnoClinico
-          nCambi++
-          snap.push({
-            medico_id: m.id, data: dataISO,
-            turno_clinico: pr.turno_clinico, turno_ricerca: pr.turno_ricerca,
-            slot_mattina: pr.slot_mattina, slot_pomeriggio: pr.slot_pomeriggio,
-            is_sub: pr.is_sub, is_med: pr.is_med,
-            is_ferie: pr.is_ferie, note: pr.note ?? null,
-            modificato_manualmente: true,
-            turno_clinico_base: nbTc, turno_ricerca_base: nbTr,
-            turno_clinico_originario: originario,
-            turno_clinico_vecchio: vecchioTc, turno_ricerca_vecchio: vecchioTr,
-          })
-        } else {
-          // Nuova rotazione pulita
-          snap.push({
-            medico_id: m.id, data: dataISO,
-            turno_clinico: nbTc, turno_ricerca: nbTr,
-            slot_mattina: (nb?.slot_mattina ?? null) as SlotPlacement,
-            slot_pomeriggio: (nb?.slot_pomeriggio ?? null) as SlotPlacement,
-            is_sub: nb?.is_sub ?? false, is_med: nb?.is_med ?? false,
-            is_ferie: pr?.is_ferie ?? false, note: pr?.note ?? null,
-            modificato_manualmente: false,
-            turno_clinico_base: nbTc, turno_ricerca_base: nbTr,
-            turno_clinico_originario: null,
-            turno_clinico_vecchio: vecchioTc, turno_ricerca_vecchio: vecchioTr,
-          })
-        }
+        // Dal cutover in poi: SEMPRE rotazione nuova pulita. I cambi turno e le
+        // modifiche manuali NON vengono più ricalcolati né portati avanti (vedi
+        // versione dinamica): il calendario nuovo riscrive quei giorni e i cambi
+        // vanno ricreati a mano dopo. Restano solo le FERIE approvate.
+        snap.push({
+          medico_id: m.id, data: dataISO,
+          turno_clinico: nbTc, turno_ricerca: nbTr,
+          slot_mattina: (nb?.slot_mattina ?? null) as SlotPlacement,
+          slot_pomeriggio: (nb?.slot_pomeriggio ?? null) as SlotPlacement,
+          is_sub: nb?.is_sub ?? false, is_med: nb?.is_med ?? false,
+          is_ferie: pr?.is_ferie ?? false, note: pr?.note ?? null,
+          modificato_manualmente: false,
+          turno_clinico_base: nbTc, turno_ricerca_base: nbTr,
+          turno_clinico_originario: null,
+          turno_clinico_vecchio: vecchioTc, turno_ricerca_vecchio: vecchioTr,
+        })
       } else if (pr) {
         // Fuori finestra → produzione invariata
         snap.push({
@@ -397,37 +379,25 @@ export async function creaBozzaAggiornamentoDinamico(
         const nb   = nbMap.get(key)
         const nbTc = (nb?.turno_clinico ?? '') as TurnoClinico
         const nbTr = (nb?.turno_ricerca ?? '') as TurnoRicerca
-        if (pr && pr.modificato_manualmente) {
-          // Cambio/edit manuale preservato (con turno_sigla/proprieta di produzione).
-          nCambi++
-          snap.push({
-            medico_id: m.id, data: dataISO,
-            turno_clinico: pr.turno_clinico, turno_ricerca: pr.turno_ricerca,
-            turno_sigla: pr.turno_sigla ?? null, proprieta: pr.proprieta ?? [],
-            slot_mattina: pr.slot_mattina, slot_pomeriggio: pr.slot_pomeriggio,
-            is_sub: pr.is_sub, is_med: pr.is_med,
-            is_ferie: pr.is_ferie, note: pr.note ?? null,
-            modificato_manualmente: true,
-            turno_clinico_base: nbTc, turno_ricerca_base: nbTr,
-            turno_clinico_originario: (pr.turno_clinico_base ?? null),
-            turno_clinico_vecchio: vecchioTc, turno_ricerca_vecchio: vecchioTr,
-          })
-        } else {
-          // Nuova rotazione pulita (turno_sigla/proprieta dal nuovo schema).
-          snap.push({
-            medico_id: m.id, data: dataISO,
-            turno_clinico: nbTc, turno_ricerca: nbTr,
-            turno_sigla: nb?.turno_sigla ?? null, proprieta: nb?.proprieta ?? [],
-            slot_mattina: (nb?.slot_mattina ?? null) as SlotPlacement,
-            slot_pomeriggio: (nb?.slot_pomeriggio ?? null) as SlotPlacement,
-            is_sub: nb?.is_sub ?? false, is_med: nb?.is_med ?? false,
-            is_ferie: pr?.is_ferie ?? false, note: pr?.note ?? null,
-            modificato_manualmente: false,
-            turno_clinico_base: nbTc, turno_ricerca_base: nbTr,
-            turno_clinico_originario: null,
-            turno_clinico_vecchio: vecchioTc, turno_ricerca_vecchio: vecchioTr,
-          })
-        }
+        // Dal cutover in poi: SEMPRE rotazione nuova pulita. I cambi turno e le
+        // modifiche manuali NON vengono più ricalcolati né portati avanti
+        // (richiesta esplicita: il calendario nuovo riscrive quei giorni; i
+        // vecchi cambi non vengono nemmeno mostrati in anteprima e vanno
+        // ricreati a mano dopo l'approvazione). Restano solo le FERIE approvate,
+        // che non sono cambi turno.
+        snap.push({
+          medico_id: m.id, data: dataISO,
+          turno_clinico: nbTc, turno_ricerca: nbTr,
+          turno_sigla: nb?.turno_sigla ?? null, proprieta: nb?.proprieta ?? [],
+          slot_mattina: (nb?.slot_mattina ?? null) as SlotPlacement,
+          slot_pomeriggio: (nb?.slot_pomeriggio ?? null) as SlotPlacement,
+          is_sub: nb?.is_sub ?? false, is_med: nb?.is_med ?? false,
+          is_ferie: pr?.is_ferie ?? false, note: pr?.note ?? null,
+          modificato_manualmente: false,
+          turno_clinico_base: nbTc, turno_ricerca_base: nbTr,
+          turno_clinico_originario: null,
+          turno_clinico_vecchio: vecchioTc, turno_ricerca_vecchio: vecchioTr,
+        })
       } else if (pr) {
         // Fuori finestra → produzione invariata (con turno_sigla/proprieta).
         snap.push({
