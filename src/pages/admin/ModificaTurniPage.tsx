@@ -1824,6 +1824,23 @@ export function ModificaTurniPage() {
     const out: Inconsistenza[] = []
     if (!config || colonne.length === 0 || medici.length === 0) return out
 
+    // Reparti DINAMICI: il fabbisogno vive in schema_fabbisogno → uso la
+    // copertura già calcolata (coperturaByData) invece delle soglie classiche.
+    // Per ogni giorno/metà, ogni proprietà con richiesto>0 e presente≠richiesto
+    // diventa un avviso (es. "MED mattina · manca 1" / "SUP pomeriggio · +1").
+    if (repartoDinamico) {
+      for (const [data, cop] of coperturaByData) {
+        for (const [meta, metaLabel] of [[cop.mattina, 'mattina'], [cop.pomeriggio, 'pomeriggio']] as const) {
+          for (const r of meta.righe) {
+            if (r.richiesto > 0 && r.presente !== r.richiesto) {
+              out.push({ kind: 'slot', data, slotLabel: `${r.sigla} ${metaLabel}`, expected: r.richiesto, actual: r.presente })
+            }
+          }
+        }
+      }
+      return out
+    }
+
     // Solo controllo per-GIORNO dei conteggi SUB / MED / Supporto.
     // (Niente più avviso per-cella "manca SUB/MED": una cella che lavora
     //  senza placement è un Supporto/jolly valido, conteggiato qui sotto.)
@@ -1876,7 +1893,7 @@ export function ModificaTurniPage() {
     }
 
     return out
-  }, [config, colonne, medici, getCella, ferieStatus])
+  }, [config, colonne, medici, getCella, ferieStatus, repartoDinamico, coperturaByData])
 
   // ── Dismiss avvisi inconsistenze (per-device) ────────────────────
   // L'admin puo` cliccare la X di un chip per nascondere quell'avviso
