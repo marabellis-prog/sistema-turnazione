@@ -384,13 +384,6 @@ export function NavBar({ user, onSignOut }: Props) {
           </select>
         )}
 
-        {/* Logo + nome app — sempre visibili */}
-        <div className="flex items-center gap-2 shrink-0">
-          <Calendar size={17} style={{ color: '#9ab488' }} />
-          <span className="font-bold text-sm tracking-tight" style={{ color: '#e0e8d8' }}>
-            Sistema Turni
-          </span>
-        </div>
 
         {/* ── Aggiornamento disponibile (tutti gli utenti) ─────── */}
         {updateAvailable && (
@@ -454,9 +447,9 @@ export function NavBar({ user, onSignOut }: Props) {
         {user && (
           <div className="flex items-center gap-1 ml-1">
             {user.ruolo !== 'ospite' &&
-              smartLink('/calendario',      hrefCalendario,     TAB_TURNI, 'Calendario',      Calendar)}
+              smartLink('/calendario',      hrefCalendario,     TAB_TURNI, 'Lineare',         Calendar)}
             {smartLink('/settimanale',      hrefSettimanale,    TAB_TURNI, 'Settimanale',     CalendarDays)}
-            {smartLink('/settimanale-alt',  hrefSettimanaleAlt, TAB_TURNI, 'Settimanale Alt', AltCalendarIcon)}
+            {smartLink('/settimanale-alt',  hrefSettimanaleAlt, TAB_TURNI, 'Agenda',          AltCalendarIcon)}
             {hasAdminAccess &&
               smartLink('/admin',           hrefAdmin,          TAB_ADMIN, 'Admin',           Settings)}
           </div>
