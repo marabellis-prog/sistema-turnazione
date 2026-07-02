@@ -142,25 +142,28 @@ function RigheCoperturaDinamica({ cols, copByData, proprieta, expanded, onToggle
     <>
       {proprieta.map(prop => {
         const open = expanded.has(prop.sigla)
-        // Mostra mattina/pomeriggio ANCHE senza espandere quando c'è uno split
-        // NASCOSTO: la somma combacia (sembrerebbe verde) ma una metà non torna.
-        const problemaNascosto = cols.some(c => {
-          const v = comb(c.data, prop.sigla)
-          return v.r > 0 && v.p === v.r && statoComb(c.data, prop.sigla) !== 'ok'
-        })
-        const mostraDett = open || problemaNascosto
+        // Una metà è "in errore" se ha un fabbisogno (r>0) e presente≠richiesto,
+        // su almeno un giorno. Se NON espando manualmente, mostro SOLO le metà in
+        // errore (non entrambe): appaiono quando serve e spariscono appena a posto.
+        const halfInError = (k: 'mattina' | 'pomeriggio') =>
+          cols.some(c => { const v = dett(c.data, prop.sigla, k); return v.r > 0 && v.p !== v.r })
+        const errM = halfInError('mattina'), errP = halfInError('pomeriggio')
+        const haErrore = errM || errP
+        const mostraDett = open || haErrore
+        const halves = (['mattina', 'pomeriggio'] as const)
+          .filter(k => open || (k === 'mattina' ? errM : errP))
         return (
           <Fragment key={prop.sigla}>
             {/* Riga proprietà (combinato) — clic per espandere mattina/pomeriggio */}
             <tr style={{ cursor: 'pointer' }} onClick={() => onToggle(prop.sigla)}
-              title={`${prop.nome} — clic per ${open ? 'nascondere' : 'mostrare'} mattina/pomeriggio${problemaNascosto ? ' · ⚠ ripartizione mattina/pomeriggio da sistemare' : ''}`}>
+              title={`${prop.nome} — clic per ${open ? 'nascondere' : 'mostrare'} mattina/pomeriggio${haErrore && !open ? ' · ⚠ ripartizione da sistemare' : ''}`}>
               <td style={labelTd(prop.colore_bg)}>
                 <span style={{ display: 'inline-block', width: 9 }}>{mostraDett ? '▾' : '▸'}</span> {prop.sigla}
-                {problemaNascosto && <span style={{ color: '#b45309' }}> ⚠</span>}
+                {haErrore && !open && <span style={{ color: '#b45309' }}> ⚠</span>}
               </td>
               {cols.map(c => { const v = comb(c.data, prop.sigla); return <td key={c.data} style={cellTd}><CellaCop p={v.p} r={v.r} state={statoComb(c.data, prop.sigla)} /></td> })}
             </tr>
-            {mostraDett && (['mattina', 'pomeriggio'] as const).map(k => (
+            {mostraDett && halves.map(k => (
               <tr key={prop.sigla + k}>
                 <td style={labelTd('#eef1ec', true)}>{k}</td>
                 {cols.map(c => { const v = dett(c.data, prop.sigla, k); return <td key={c.data} style={cellTd}><CellaCop p={v.p} r={v.r} /></td> })}
