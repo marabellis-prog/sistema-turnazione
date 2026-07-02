@@ -346,6 +346,9 @@ interface EditableCellProps {
    *  al banner warning "SUB/MED mancante" per fare scrollIntoView su
    *  una specifica cella. Solo le celle clinica lo ricevono. */
   cellAnchorId?:    string
+  /** #44 — click sulla cella (attivo ANCHE in readOnly): apre il popover di
+   *  assegnazione turno + proprietà. Il parent conosce medico/data. */
+  onCellClick?:     () => void
 }
 
 function EditableCell({
@@ -354,7 +357,7 @@ function EditableCell({
   slot_mattina = null, slot_pomeriggio = null, readOnly = false,
   onChangeClinico, onChangeRicerca, onPasteRange, onDropFromLegend,
   isSelected = false, pendingEditChar, onSelect, onEditEnd,
-  cellAnchorId,
+  cellAnchorId, onCellClick,
 }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   const [draft,   setDraft]   = useState('')
@@ -463,10 +466,11 @@ function EditableCell({
       // resettare la selezione corrente).
       data-clinica-cell={tipo === 'clinica' && !readOnly ? 'true' : undefined}
       onClick={() => {
-        if (readOnly || editing) return
-        // Click ora SELEZIONA la cella (non entra in edit). L'editing si
-        // attiva premendo una lettera, Enter o Canc — gestito dal parent
-        // via pendingEditChar.
+        if (editing) return
+        // #44: apre il popover di assegnazione (attivo anche in readOnly).
+        onCellClick?.()
+        if (readOnly) return
+        // Click SELEZIONA la cella (non entra in edit).
         onSelect?.()
       }}
       onDragOver={e => {
@@ -549,6 +553,100 @@ function EditableCell({
           : <LabelRicerca tr={tr} />
       ) : null}
     </td>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════════
+// #44 — Popover di assegnazione turno + proprietà (click su cella clinica).
+// Si affianca al drag-drop: turno via handleDropFromLegend(TC:), proprietà
+// per-metà via setSlotHalf. Half-aware (mostra le metà che il turno lavora);
+// se il turno è di Reperibilità → niente proprietà.
+// ════════════════════════════════════════════════════════════════════
+function CellaAssegnaPopover({ anchorId, cur, turni, proprietaDin, onTurno, onProp, onClose }: {
+  anchorId:     string
+  cur:          { tc: TurnoClinico; slot_mattina: SlotPlacement; slot_pomeriggio: SlotPlacement }
+  turni:        { sigla: string; nome: string; colore_bg: string; colore_fg: string; is_reperibilita: boolean }[]
+  proprietaDin: { sigla: string; nome: string; colore_bg: string }[]
+  onTurno:      (sigla: string) => void
+  onProp:       (half: 'mattina' | 'pomeriggio', value: SlotPlacement) => void
+  onClose:      () => void
+}) {
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  useEffect(() => {
+    const el = document.getElementById(anchorId)
+    if (!el) { onClose(); return }
+    const r = el.getBoundingClientRect()
+    const W = 240, H = 250
+    let left = r.right + 6
+    let top = r.top
+    if (left + W > window.innerWidth)  left = Math.max(6, r.left - W - 6)
+    if (top + H > window.innerHeight)  top = Math.max(6, window.innerHeight - H - 6)
+    setPos({ top, left })
+  }, [anchorId, onClose])
+
+  const tc = cur.tc
+  const canM = tc === 'M' || tc === 'L' || tc === 'EM' || tc === 'EL'
+  const canP = tc === 'P' || tc === 'L' || tc === 'EP' || tc === 'EL'
+  const reperibilita = (turni.find(t => t.sigla === tc)?.is_reperibilita) ?? (tc === 'REP')
+  const propColor = (sigla: string) => proprietaDin.find(p => p.sigla === sigla)?.colore_bg ?? '#dbeafe'
+
+  const PropChips = ({ half, val }: { half: 'mattina' | 'pomeriggio'; val: SlotPlacement }) => (
+    <div className="flex items-center gap-1 mb-1">
+      <span className="text-[10px] w-[70px] shrink-0" style={{ color: '#78716c' }}>
+        {half === 'mattina' ? 'Mattina' : 'Pomeriggio'}
+      </span>
+      {(['SUB', 'MED', null] as SlotPlacement[]).map(v => {
+        const sel = val === v
+        const label = v ?? 'Supp.'
+        const c = v ? propColor(v) : '#eef2ff'
+        return (
+          <button key={label} onClick={() => onProp(half, v)}
+            className="flex-1 px-1 py-1 rounded text-[11px] font-semibold border transition-colors"
+            style={sel ? { background: c, color: '#3a3d30', borderColor: '#78716c' } : { background: '#fff', color: '#78716c', borderColor: '#e5e7eb' }}>
+            {label}
+          </button>
+        )
+      })}
+    </div>
+  )
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="fixed z-50 rounded-xl shadow-2xl border border-stone-200 bg-white p-2.5"
+        style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width: 240 }}
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-stone-400">Turno</span>
+          <button onClick={onClose} className="text-stone-400 hover:text-stone-600" title="Chiudi"><X size={13} /></button>
+        </div>
+        <div className="flex flex-wrap gap-1 mb-2">
+          {turni.map(t => (
+            <button key={t.sigla} onClick={() => onTurno(t.sigla)}
+              className="px-2 py-1 rounded text-xs font-bold border transition-colors"
+              style={tc === t.sigla
+                ? { background: t.colore_bg, color: t.colore_fg, borderColor: t.colore_fg }
+                : { background: '#fff', color: t.colore_fg, borderColor: '#e5e7eb' }}
+              title={t.nome || t.sigla}>
+              {t.sigla}
+            </button>
+          ))}
+          <button onClick={() => onTurno('')} title="Vuota la cella"
+            className="px-2 py-1 rounded text-xs border border-stone-200 text-stone-400 hover:bg-stone-50">—</button>
+        </div>
+        {reperibilita ? (
+          <div className="text-[10px] text-stone-400 italic px-0.5">Reperibilità: nessuna proprietà.</div>
+        ) : (canM || canP) ? (
+          <>
+            <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1">Proprietà</div>
+            {canM && <PropChips half="mattina" val={cur.slot_mattina} />}
+            {canP && <PropChips half="pomeriggio" val={cur.slot_pomeriggio} />}
+          </>
+        ) : (
+          <div className="text-[10px] text-stone-400 italic px-0.5">Scegli un turno che lavora per assegnare le proprietà.</div>
+        )}
+      </div>
+    </>
   )
 }
 
@@ -777,6 +875,8 @@ export function ModificaTurniPage() {
   // Confronta i turni col Fabbisogno dello schema, per metà-giornata e per
   // OGNI proprietà configurata. 11N resta sulle soglie classiche (sotto).
   const repartoDinamico = repartoAttivo !== REPARTO_11N
+  // #44 — cella su cui è aperto il popover di assegnazione (solo dinamici).
+  const [cellPopover, setCellPopover] = useState<{ medicoId: string; data: string } | null>(null)
   const schemaAttivoNum = config?.schema_attivo ?? 1
   const { data: fabbisognoDin = [] } = useQuery<FabbisognoRiga[]>({
     queryKey: ['mod-fabbisogno', repartoAttivo, schemaAttivoNum],
@@ -1205,6 +1305,48 @@ export function ModificaTurniPage() {
       return next
     })
   }, [turniByKey, updateCella])
+
+  // #44 — setta la proprietà (SUB / MED / null=Supporto) di UNA metà specifica.
+  // Usato dal popover di assegnazione. Rispetta l'eligibilità della metà in base
+  // al TC (mattina solo se il turno lavora la mattina). Stesso "smart delta"
+  // (se torna uguale al DB, rimuove la modifica pendente).
+  const setSlotHalf = useCallback((medicoId: string, data: string, half: 'mattina' | 'pomeriggio', value: SlotPlacement) => {
+    setModifiche(prev => {
+      const next = new Map(prev)
+      const key = `${medicoId}|${data}`
+      const dbT = turniByKey.get(key)
+      const cur: RicalcCell = next.get(key) ?? {
+        tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
+        tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
+        slot_mattina:    dbT?.slot_mattina    ?? null,
+        slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
+      }
+      const tc = cur.tc
+      const canM = tc === 'M' || tc === 'L' || tc === 'EM' || tc === 'EL'
+      const canP = tc === 'P' || tc === 'L' || tc === 'EP' || tc === 'EL'
+      if (half === 'mattina' && !canM) return prev
+      if (half === 'pomeriggio' && !canP) return prev
+      const updated: RicalcCell = {
+        ...cur,
+        slot_mattina:    half === 'mattina'    ? value : cur.slot_mattina,
+        slot_pomeriggio: half === 'pomeriggio' ? value : cur.slot_pomeriggio,
+      }
+      const dbCur: RicalcCell = {
+        tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
+        tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
+        slot_mattina:    dbT?.slot_mattina    ?? null,
+        slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
+      }
+      if (updated.tc === dbCur.tc && updated.tr === dbCur.tr &&
+          updated.slot_mattina === dbCur.slot_mattina &&
+          updated.slot_pomeriggio === dbCur.slot_pomeriggio) {
+        next.delete(key)
+      } else {
+        next.set(key, updated)
+      }
+      return next
+    })
+  }, [turniByKey])
 
   // ── Paste multi-cella (clinica) ───────────────────────────────────
   // Riceve il testo TSV dal clipboard di Excel + ancora (medico/data della
@@ -1828,6 +1970,7 @@ export function ModificaTurniPage() {
         isSelected={isSel}
         pendingEditChar={undefined}
         cellAnchorId={tipo === 'clinica' ? `cell-${medicoId}-${col.data}` : undefined}
+        onCellClick={tipo === 'clinica' && repartoDinamico ? () => setCellPopover({ medicoId, data: col.data }) : undefined}
         onSelect={undefined}
         onEditEnd={undefined}
         onChangeClinico={tcNew => updateCella(medicoId, col.data, tcNew, cur.tr)}
@@ -2455,6 +2598,19 @@ export function ModificaTurniPage() {
           navigate(dest)
         }}
       />
+
+      {/* #44 — popover di assegnazione turno + proprietà (click su cella clinica) */}
+      {cellPopover && repartoDinamico && (
+        <CellaAssegnaPopover
+          anchorId={`cell-${cellPopover.medicoId}-${cellPopover.data}`}
+          cur={getCella(cellPopover.medicoId, cellPopover.data)}
+          turni={tipiTurnoUsati.filter(t => ['M', 'P', 'L', 'REP', 'EM', 'EP', 'EL'].includes(t.sigla))}
+          proprietaDin={proprietaDin}
+          onTurno={sigla => handleDropFromLegend(cellPopover.medicoId, cellPopover.data, sigla === '' ? 'TC:' : `TC:${sigla}`)}
+          onProp={(half, value) => setSlotHalf(cellPopover.medicoId, cellPopover.data, half, value)}
+          onClose={() => setCellPopover(null)}
+        />
+      )}
     </div>
   )
 }
