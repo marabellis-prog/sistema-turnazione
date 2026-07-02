@@ -518,14 +518,17 @@ export function CentroControlloPage() {
   // Un responsabile (admin del suo reparto) NON deve vederlo.
   if (!isSuperAdmin) return <Navigate to="/admin/medici" replace />
   return (
-    <div className="space-y-8 max-w-3xl">
-      {/* Monitoraggio globale del progetto Supabase (free tier) — solo admin */}
-      <DatabaseStatsBox />
-      <RepartiSection />
-      <div className="border-t-2 border-stone-200" />
-      <CentroLogSection />
-      <div className="border-t-2 border-stone-200" />
-      <ImpostazioniBackupBox />
+    <div className="space-y-6 max-w-6xl">
+      {/* Su schermi larghi (lg+) due colonne "a mattoncini" (masonry) così la
+          pagina non diventa lunghissima; sotto lg torna a colonna unica.
+          Gli Utenti restano a tutta larghezza (tabella larga). */}
+      <div className="lg:columns-2 gap-6 [&>*]:mb-6 [&>*]:break-inside-avoid space-y-6 lg:space-y-0">
+        {/* Monitoraggio globale del progetto Supabase (free tier) — solo admin */}
+        <DatabaseStatsBox />
+        <RepartiSection />
+        <CentroLogSection />
+        <ImpostazioniBackupBox />
+      </div>
       <div className="border-t-2 border-stone-200" />
       <GestioneUtentiPage />
     </div>
