@@ -147,31 +147,36 @@ function RigheCoperturaDinamica({ cols, copByData, proprieta, expanded, onToggle
         // Mostro SOLO le metà che non quadrano (presente≠richiesto) — incluse quelle
         // "di troppo" dove non servono — così si capisce cosa manca e dove. Appena
         // una metà torna a posto la sua riga sparisce; se poi la scombini riappare.
-        const problema = cols.some(c => { const s = statoComb(c.data, prop.sigla); return s === 'deficit' || s === 'surplus' })
-        // Proprietà interamente a posto (verde ogni giorno) → NON la mostro: nel
-        // controllo compare SOLO ciò che non torna. I "totali" (TURNI TOTALI / IN
-        // SUB / IN MED) restano sempre visibili qui sotto.
-        if (!problema) return null
-        const mismatch = (k: 'mattina' | 'pomeriggio') =>
-          cols.some(c => { const v = dett(c.data, prop.sigla, k); return v.p !== v.r })
-        const halves = (['mattina', 'pomeriggio'] as const)
-          .filter(k => open || mismatch(k))
+        // Una cella parziale è "incompleta" se ha un fabbisogno (r>0) e
+        // presente≠richiesto. Una metà si mostra solo se ha ≥1 cella incompleta,
+        // e in quella riga compaiono SOLO le celle incomplete (le altre vuote).
+        const cellIncompleta = (c: ColonnaCal, k: 'mattina' | 'pomeriggio') => {
+          const v = dett(c.data, prop.sigla, k); return v.r > 0 && v.p !== v.r
+        }
+        const halfHasProblem = (k: 'mattina' | 'pomeriggio') => cols.some(c => cellIncompleta(c, k))
+        const haProblema = halfHasProblem('mattina') || halfHasProblem('pomeriggio')
+        const halves = (['mattina', 'pomeriggio'] as const).filter(k => open || halfHasProblem(k))
         return (
           <Fragment key={prop.sigla}>
-            {/* Riga proprietà (combinato) — mostrata solo se NON è tutta verde;
-                clic per vedere entrambe le metà (di default solo quelle in errore). */}
+            {/* Riga COMBINATA (totale della proprietà) — SEMPRE visibile.
+                Clic = mostra/nascondi il dettaglio completo mattina/pomeriggio. */}
             <tr style={{ cursor: 'pointer' }} onClick={() => onToggle(prop.sigla)}
-              title={`${prop.nome} — clic per ${open ? 'mostrare solo le metà in errore' : 'mostrare entrambe le metà'}`}>
+              title={`${prop.nome} — clic per ${open ? 'nascondere' : 'mostrare tutte'} le metà mattina/pomeriggio`}>
               <td style={labelTd(prop.colore_bg)}>
                 <span style={{ display: 'inline-block', width: 9 }}>{open ? '▾' : '▸'}</span> {prop.sigla}
-                {!open && <span style={{ color: '#b45309' }}> ⚠</span>}
+                {haProblema && !open && <span style={{ color: '#b45309' }}> ⚠</span>}
               </td>
               {cols.map(c => { const v = comb(c.data, prop.sigla); return <td key={c.data} style={cellTd}><CellaCop p={v.p} r={v.r} state={statoComb(c.data, prop.sigla)} /></td> })}
             </tr>
             {halves.map(k => (
               <tr key={prop.sigla + k}>
                 <td style={labelTd('#eef1ec', true)}>{k}</td>
-                {cols.map(c => { const v = dett(c.data, prop.sigla, k); return <td key={c.data} style={cellTd}><CellaCop p={v.p} r={v.r} /></td> })}
+                {cols.map(c => {
+                  const v = dett(c.data, prop.sigla, k)
+                  // Solo la cella INCOMPLETA è mostrata (le altre restano vuote),
+                  // a meno che la proprietà sia espansa a mano (open) → tutte.
+                  return <td key={c.data} style={cellTd}>{(open || cellIncompleta(c, k)) ? <CellaCop p={v.p} r={v.r} /> : null}</td>
+                })}
               </tr>
             ))}
           </Fragment>
