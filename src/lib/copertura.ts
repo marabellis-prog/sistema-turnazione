@@ -84,12 +84,23 @@ export function risolviAmbito(
   ambiti: { ambito: string; ordine: number }[],
 ): string {
   const dow = new Date(dataISO + 'T00:00:00').getDay()
+  // Specificità = tie-break a PARITÀ di `ordine`: un ambito specifico che
+  // combacia deve battere `normale` (base), a prescindere dall'ORDINE con cui
+  // gli ambiti arrivano dal DB (che varia tra schemi). Precedenza storica:
+  // festivi > prefestivo > sabato > normale. Un `ordine` esplicito più ALTO
+  // (riordino manuale nella cascata) vince comunque sulla specificità.
+  const spec = (a: string) =>
+    a === 'festivi' ? 3 : a === 'prefestivo' ? 2 : a === 'sabato' ? 1 : 0
   let scelto = 'normale'
   let ordScelto = -Infinity
+  let specScelto = -Infinity
   for (const a of ambiti) {
-    if (ambitoCombacia(a.ambito, dow, isFestivo) && a.ordine >= ordScelto) {
+    if (!ambitoCombacia(a.ambito, dow, isFestivo)) continue
+    const s = spec(a.ambito)
+    if (a.ordine > ordScelto || (a.ordine === ordScelto && s > specScelto)) {
       scelto = a.ambito
       ordScelto = a.ordine
+      specScelto = s
     }
   }
   return scelto
