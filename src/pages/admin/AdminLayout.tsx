@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
-import { Users, Calendar, Zap, Table2, AlertCircle, ArrowRightLeft, CalendarDays, Archive, CalendarClock, ChevronRight, ChevronDown, SlidersHorizontal, Tag } from 'lucide-react'
+import { Users, Calendar, Zap, Table2, AlertCircle, ArrowRightLeft, CalendarDays, Archive, CalendarClock, SlidersHorizontal, Tag } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
 import { useReparto, REPARTO_11N } from '../../contexts/RepartoContext'
@@ -34,7 +34,6 @@ export function AdminLayout() {
   const location = useLocation()
   const { navGuard } = usePendingActions()
   const { reparti, repartoAttivo, setRepartoAttivo, repartoCorrente, isSuperAdmin } = useReparto()
-  const [schemaStoricoOpen, setSchemaStoricoOpen] = useState(false)
 
   // Realtime sulle ferie + cambi turno: garantisce che i count dei badge
   // si aggiornino istantaneamente qualunque sia la sotto-pagina admin
@@ -89,12 +88,6 @@ export function AdminLayout() {
   // Config: schema attivo + cronologia switch (per la sezione in fondo).
   const { data: config } = useConfigReparto()
   const labelSchema     = useSchemaLabeler(repartoAttivo)
-  const schemaStorico   = config?.schema_storico ?? []
-  const schemaAggiornato = schemaStorico.length >= 2   // >= 1 switch oltre la generazione
-  const fmtData = (iso: string) => {
-    const [y, m, d] = iso.split('-')
-    return d && m && y ? `${d}/${m}/${y}` : iso
-  }
 
   function handleNav(to: string) {
     if (location.pathname === to) return   // già sulla pagina
@@ -207,41 +200,14 @@ export function AdminLayout() {
           <p className="text-sm font-bold mt-0.5 mb-2.5" style={{ color: '#e8f0e0' }}>
             {repartoCorrente?.nome ?? '—'}
           </p>
-          {!schemaAggiornato ? (
-            <>
-              <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: '#577a45' }}>
-                Schema Attivo:
-              </p>
-              <p className="text-sm font-bold mt-0.5" style={{ color: '#e8f0e0' }}>
-                {config?.schema_attivo != null ? labelSchema(config.schema_attivo) : '—'}
-              </p>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => setSchemaStoricoOpen(o => !o)}
-                className="flex items-center gap-1 text-left w-full"
-                title="Mostra/nascondi la cronologia degli schemi"
-              >
-                {schemaStoricoOpen
-                  ? <ChevronDown size={13} style={{ color: '#9ab488' }} />
-                  : <ChevronRight size={13} style={{ color: '#9ab488' }} />}
-                <span className="text-[11px] uppercase tracking-widest font-semibold" style={{ color: '#9ab488' }}>
-                  Schemi aggiornati
-                </span>
-              </button>
-              {schemaStoricoOpen && (
-                <ol className="mt-1.5 ml-1.5 space-y-1">
-                  {schemaStorico.map((e, i) => (
-                    <li key={i} className="text-[11px] leading-tight" style={{ color: '#c0d0b0' }}>
-                      <span className="font-bold">{labelSchema(e.schema)}</span>
-                      <span style={{ color: '#9ab488' }}> — dal {fmtData(e.dal)}</span>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </>
-          )}
+          {/* Ultimo schema attivo generato — solo questo (niente cronologia:
+              la lista degli aggiornamenti era poco chiara). */}
+          <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: '#577a45' }}>
+            Schema Attivo:
+          </p>
+          <p className="text-sm font-bold mt-0.5" style={{ color: '#e8f0e0' }}>
+            {config?.schema_attivo != null ? labelSchema(config.schema_attivo) : '—'}
+          </p>
         </div>
 
         {/* Badge pending — sotto la lista link, una riga ciascuno (se presenti).
