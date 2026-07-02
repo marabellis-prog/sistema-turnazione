@@ -86,9 +86,15 @@ function fgPerSfondo(bg: string): string {
   return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#1f2937' : '#fff'
 }
 /** Cella copertura: "presente/richiesto", colore = stato (verde ok, rosso sotto,
- *  ambra sopra, grigio = nessun fabbisogno). */
-function CellaCop({ p, r }: { p: number; r: number }) {
-  const color = r === 0 ? '#9ca3af' : p === r ? '#16a34a' : p < r ? '#dc2626' : '#d97706'
+ *  ambra sopra, grigio = nessun fabbisogno).
+ *  `state` (opzionale) forza il colore a prescindere da p/r: serve alla riga
+ *  COMBINATA, che è verde solo se ANCHE lo split mattina/pomeriggio è a posto
+ *  (non basta che la somma combaci). */
+type StatoCop = 'ok' | 'deficit' | 'surplus' | 'none'
+function CellaCop({ p, r, state }: { p: number; r: number; state?: StatoCop }) {
+  const color = state
+    ? (state === 'none' ? '#9ca3af' : state === 'ok' ? '#16a34a' : state === 'deficit' ? '#dc2626' : '#d97706')
+    : (r === 0 ? '#9ca3af' : p === r ? '#16a34a' : p < r ? '#dc2626' : '#d97706')
   return <span style={{ fontWeight: 800, color, fontSize: 11 }}>{r > 0 ? `${p}/${r}` : (p || '')}</span>
 }
 function RigheCoperturaDinamica({ cols, copByData, proprieta, expanded, onToggle }: {
@@ -119,21 +125,42 @@ function RigheCoperturaDinamica({ cols, copByData, proprieta, expanded, onToggle
     const r = copByData.get(data)?.[k].righe.find(x => x.sigla === sigla)
     return { p: r?.presente ?? 0, r: r?.richiesto ?? 0 }
   }
+  // Stato del combinato: VERDE solo se OGNI metà richiesta è esatta. Se la somma
+  // combacia ma lo split mattina/pomeriggio no → deficit/surplus (non verde).
+  const statoComb = (data: string, sigla: string): StatoCop => {
+    const halves = [dett(data, sigla, 'mattina'), dett(data, sigla, 'pomeriggio')]
+    let deficit = false, surplus = false, anyReq = false
+    for (const h of halves) {
+      if (h.r > 0) { anyReq = true; if (h.p < h.r) deficit = true; else if (h.p > h.r) surplus = true }
+    }
+    if (!anyReq) return 'none'
+    if (deficit) return 'deficit'
+    if (surplus) return 'surplus'
+    return 'ok'
+  }
   return (
     <>
       {proprieta.map(prop => {
         const open = expanded.has(prop.sigla)
+        // Mostra mattina/pomeriggio ANCHE senza espandere quando c'è uno split
+        // NASCOSTO: la somma combacia (sembrerebbe verde) ma una metà non torna.
+        const problemaNascosto = cols.some(c => {
+          const v = comb(c.data, prop.sigla)
+          return v.r > 0 && v.p === v.r && statoComb(c.data, prop.sigla) !== 'ok'
+        })
+        const mostraDett = open || problemaNascosto
         return (
           <Fragment key={prop.sigla}>
             {/* Riga proprietà (combinato) — clic per espandere mattina/pomeriggio */}
             <tr style={{ cursor: 'pointer' }} onClick={() => onToggle(prop.sigla)}
-              title={`${prop.nome} — clic per ${open ? 'nascondere' : 'mostrare'} mattina/pomeriggio`}>
+              title={`${prop.nome} — clic per ${open ? 'nascondere' : 'mostrare'} mattina/pomeriggio${problemaNascosto ? ' · ⚠ ripartizione mattina/pomeriggio da sistemare' : ''}`}>
               <td style={labelTd(prop.colore_bg)}>
-                <span style={{ display: 'inline-block', width: 9 }}>{open ? '▾' : '▸'}</span> {prop.sigla}
+                <span style={{ display: 'inline-block', width: 9 }}>{mostraDett ? '▾' : '▸'}</span> {prop.sigla}
+                {problemaNascosto && <span style={{ color: '#b45309' }}> ⚠</span>}
               </td>
-              {cols.map(c => { const v = comb(c.data, prop.sigla); return <td key={c.data} style={cellTd}><CellaCop p={v.p} r={v.r} /></td> })}
+              {cols.map(c => { const v = comb(c.data, prop.sigla); return <td key={c.data} style={cellTd}><CellaCop p={v.p} r={v.r} state={statoComb(c.data, prop.sigla)} /></td> })}
             </tr>
-            {open && (['mattina', 'pomeriggio'] as const).map(k => (
+            {mostraDett && (['mattina', 'pomeriggio'] as const).map(k => (
               <tr key={prop.sigla + k}>
                 <td style={labelTd('#eef1ec', true)}>{k}</td>
                 {cols.map(c => { const v = dett(c.data, prop.sigla, k); return <td key={c.data} style={cellTd}><CellaCop p={v.p} r={v.r} /></td> })}
