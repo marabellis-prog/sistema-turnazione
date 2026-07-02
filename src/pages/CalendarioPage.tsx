@@ -32,6 +32,7 @@ interface CellDisplay {
   is_ferie:               boolean
   slot_mattina:           SlotPlacement
   slot_pomeriggio:        SlotPlacement
+  sup:                    boolean       // Supporto esplicito (flag SUP)
 }
 
 // Stessi colori del "Prova Schema" in GestioneSchemaPage
@@ -62,10 +63,12 @@ const SUPPORTO_BG_PUB = '#d4d4d4'
  *  - M: cerchio pieno colore di slot_mattina
  *  - P: cerchio pieno colore di slot_pomeriggio
  *  - L: cerchio diviso (sx mattina, dx pomeriggio) o pieno se uguali */
-function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
+function LabelClinico({ tc, slot_mattina, slot_pomeriggio, sup }: {
   tc: string
   slot_mattina?:    SlotPlacement
   slot_pomeriggio?: SlotPlacement
+  /** Supporto esplicito (flag SUP) → grigio; attivo senza slot e senza SUP = neutro. */
+  sup?: boolean
 }) {
   if (!tc) return null
   const isTwoChar = tc === 'REP' || tc === 'EM' || tc === 'EP' || tc === 'EL'
@@ -78,8 +81,9 @@ function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
                  : isE          ? '#36495a'   // Esterno: slate
                  : '#3a3d30'
 
-  // Metà attiva senza placement = Supporto/jolly → cerchio grigio.
-  const half = (s: SlotPlacement) => (s ? PLACEMENT_BG_PUB[s] : SUPPORTO_BG_PUB)
+  // Metà attiva senza placement: grigio SOLO se Supporto esplicito (SUP);
+  // altrimenti NEUTRO (undefined = nessun cerchio, testo nudo).
+  const half = (s: SlotPlacement): string | undefined => (s ? PLACEMENT_BG_PUB[s] : (sup ? SUPPORTO_BG_PUB : undefined))
   let bg: string | undefined
   if (tc === 'M' || tc === 'EM') {
     bg = half(slot_mattina ?? null)
@@ -88,9 +92,9 @@ function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
   } else if (tc === 'L' || tc === 'EL') {
     const colSX = half(slot_mattina ?? null)
     const colDX = half(slot_pomeriggio ?? null)
-    bg = colSX === colDX
-      ? colSX
-      : `linear-gradient(90deg, ${colSX} 0%, ${colSX} 50%, ${colDX} 50%, ${colDX} 100%)`
+    if (!colSX && !colDX) bg = undefined
+    else if (colSX === colDX) bg = colSX
+    else bg = `linear-gradient(90deg, ${colSX ?? '#fff'} 0%, ${colSX ?? '#fff'} 50%, ${colDX ?? '#fff'} 50%, ${colDX ?? '#fff'} 100%)`
   }
 
   if (!bg) {
@@ -410,6 +414,7 @@ export function CalendarioPage() {
         is_ferie:        t.is_ferie,
         slot_mattina:    t.slot_mattina    ?? null,
         slot_pomeriggio: t.slot_pomeriggio ?? null,
+        sup:             (t.proprieta ?? []).includes('SUP'),
       })
     }
     return map
@@ -744,7 +749,7 @@ export function CalendarioPage() {
                       }}
                       title={cell?.note || undefined}>
                       {tipo === 'clinica'
-                        ? (tc ? <LabelClinico tc={tc} slot_mattina={cell?.slot_mattina} slot_pomeriggio={cell?.slot_pomeriggio} /> : null)
+                        ? (tc ? <LabelClinico tc={tc} slot_mattina={cell?.slot_mattina} slot_pomeriggio={cell?.slot_pomeriggio} sup={cell?.sup ?? false} /> : null)
                         : (tr ? <LabelRicerca tr={tr} /> : null)}
                     </td>
                   )

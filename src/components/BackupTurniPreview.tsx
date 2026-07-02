@@ -51,16 +51,18 @@ const SUPPORTO_BG = '#d4d4d4'  // grigio del Supporto/jolly
 const MONTH_END_BORDER = '2px solid #1a1a1a'
 
 /** Etichetta TC con cerchio mezzo/mezzo per SUB/MED. */
-function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
+function LabelClinico({ tc, slot_mattina, slot_pomeriggio, sup }: {
   tc: string
   slot_mattina?:    SlotPlacement
   slot_pomeriggio?: SlotPlacement
+  /** Supporto esplicito (flag SUP) → grigio; attivo senza slot e senza SUP = neutro. */
+  sup?: boolean
 }) {
   if (!tc) return null
   const isTwoChar = tc === 'REP' || tc === 'EM' || tc === 'EP' || tc === 'EL'
   const fontSize = isTwoChar ? 10 : 12
   const color    = tc === 'REP' ? '#b91c1c' : (CELL_COLORS[tc]?.fg ?? '#3a3d30')
-  const half = (s: SlotPlacement) => (s ? PLACEMENT_BG[s] : SUPPORTO_BG)
+  const half = (s: SlotPlacement): string | undefined => (s ? PLACEMENT_BG[s] : (sup ? SUPPORTO_BG : undefined))
   let bg: string | undefined
   if (tc === 'M' || tc === 'EM') {
     bg = half(slot_mattina ?? null)
@@ -69,8 +71,9 @@ function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
   } else if (tc === 'L' || tc === 'EL') {
     const colSX = half(slot_mattina ?? null)
     const colDX = half(slot_pomeriggio ?? null)
-    bg = colSX === colDX ? colSX
-       : `linear-gradient(90deg, ${colSX} 0%, ${colSX} 50%, ${colDX} 50%, ${colDX} 100%)`
+    if (!colSX && !colDX) bg = undefined
+    else if (colSX === colDX) bg = colSX
+    else bg = `linear-gradient(90deg, ${colSX ?? '#fff'} 0%, ${colSX ?? '#fff'} 50%, ${colDX ?? '#fff'} 50%, ${colDX ?? '#fff'} 100%)`
   }
   if (!bg) {
     return <span style={{ fontSize, fontWeight: 700, color, letterSpacing: tc === 'REP' ? '-0.3px' : undefined }}>{tc}</span>
@@ -294,7 +297,7 @@ export function BackupTurniPreview({ turni, medici, festivitaCustomSet, dinamico
                     padding: 0,
                   }}>
                     {tipo === 'clinica' && tc
-                      ? <LabelClinico tc={tc} slot_mattina={t?.slot_mattina} slot_pomeriggio={t?.slot_pomeriggio} />
+                      ? <LabelClinico tc={tc} slot_mattina={t?.slot_mattina} slot_pomeriggio={t?.slot_pomeriggio} sup={(t?.proprieta ?? []).includes('SUP')} />
                       : tipo === 'ricerca' && tr
                         ? <LabelRicerca tr={tr} />
                         : null}

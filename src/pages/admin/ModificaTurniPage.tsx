@@ -170,10 +170,13 @@ const SUPPORTO_BG = '#d4d4d4'
  *  - Se P: solo pomeriggio conta → cerchio pieno del colore di slot_pomeriggio
  *  - Se L: cerchio diviso (sx = mattina, dx = pomeriggio)
  *  - Senza placement: testo nudo, no cerchio */
-function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
+function LabelClinico({ tc, slot_mattina, slot_pomeriggio, sup }: {
   tc: string
   slot_mattina?:    'SUB'|'MED'|null
   slot_pomeriggio?: 'SUB'|'MED'|null
+  /** true = la cella è un Supporto ESPLICITO (flag SUP) → cerchio grigio.
+   *  Una metà attiva senza slot e senza SUP è NEUTRA (bianca, nessun cerchio). */
+  sup?: boolean
 }) {
   if (!tc) return null
   // Due caratteri (REP, EM, EP, EL) hanno bisogno di font piu` piccolo
@@ -185,7 +188,10 @@ function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
   // Calcola lo sfondo del cerchio. Una metà ATTIVA senza placement
   // (SUB/MED) è un "Supporto"/jolly → cerchio GRIGIO. Le varianti Esterno
   // seguono le controparti (EM~M, EP~P, EL~L).
-  const half = (s: 'SUB' | 'MED' | null | undefined) => (s ? PLACEMENT_BG[s] : SUPPORTO_BG)
+  // Metà attiva: colore placement (SUB/MED); se manca lo slot → grigio SOLO se
+  // Supporto esplicito (sup), altrimenti NEUTRO (undefined = nessun cerchio).
+  const half = (s: 'SUB' | 'MED' | null | undefined): string | undefined =>
+    s ? PLACEMENT_BG[s] : (sup ? SUPPORTO_BG : undefined)
   let bg: string | undefined
   if (tc === 'M' || tc === 'EM') {
     bg = half(slot_mattina)
@@ -194,9 +200,9 @@ function LabelClinico({ tc, slot_mattina, slot_pomeriggio }: {
   } else if (tc === 'L' || tc === 'EL') {
     const colSX = half(slot_mattina)
     const colDX = half(slot_pomeriggio)
-    bg = colSX === colDX
-      ? colSX
-      : `linear-gradient(90deg, ${colSX} 0%, ${colSX} 50%, ${colDX} 50%, ${colDX} 100%)`
+    if (!colSX && !colDX) bg = undefined                       // L neutra → nessun cerchio
+    else if (colSX === colDX) bg = colSX
+    else bg = `linear-gradient(90deg, ${colSX ?? '#fff'} 0%, ${colSX ?? '#fff'} 50%, ${colDX ?? '#fff'} 50%, ${colDX ?? '#fff'} 100%)`
   }
 
   const baseProps = {
@@ -307,6 +313,7 @@ interface EditableCellProps {
   ferieGiornoColore?: 'verde'|'azzurro'|'arancione'|'rosso'|null
   slot_mattina?:    'SUB'|'MED'|null   // placement mattina (per cerchio sinistro)
   slot_pomeriggio?: 'SUB'|'MED'|null   // placement pomeriggio (per cerchio destro)
+  sup?:             boolean       // Supporto esplicito (flag SUP) → cerchio grigio
   readOnly?:        boolean       // se true, niente click/editing (es. tabella ricerca)
   onChangeClinico:  (tc: TurnoClinico) => void
   onChangeRicerca:  (tr: TurnoRicerca) => void
@@ -354,7 +361,7 @@ interface EditableCellProps {
 function EditableCell({
   tipo, tc, tr, isModified, isCambioRosso = false, isFerieApproved, isFeriePending, isRedDay,
   ferieGiornoColore = null,
-  slot_mattina = null, slot_pomeriggio = null, readOnly = false,
+  slot_mattina = null, slot_pomeriggio = null, sup = false, readOnly = false,
   onChangeClinico, onChangeRicerca, onPasteRange, onDropFromLegend,
   isSelected = false, pendingEditChar, onSelect, onEditEnd,
   cellAnchorId, onCellClick,
@@ -549,7 +556,7 @@ function EditableCell({
         />
       ) : hasValue ? (
         tipo === 'clinica'
-          ? <LabelClinico tc={tc} slot_mattina={slot_mattina} slot_pomeriggio={slot_pomeriggio} />
+          ? <LabelClinico tc={tc} slot_mattina={slot_mattina} slot_pomeriggio={slot_pomeriggio} sup={sup} />
           : <LabelRicerca tr={tr} />
       ) : null}
     </td>
@@ -599,12 +606,13 @@ function CellaAssegnaPopover({ anchorId, cur, turni, proprietaDin, cambiato, onT
       </span>
       {(['SUB', 'MED', null] as SlotPlacement[]).map(v => {
         const sel = val === v
-        const label = v ?? 'Supp.'
-        const c = v ? propColor(v) : '#eef2ff'
+        const label = v ?? '—'
+        const c = v ? propColor(v) : '#f5f5f4'
         return (
           <button key={label} onClick={() => onProp(half, v)}
             className="flex-1 px-1 py-1 rounded text-[11px] font-semibold border transition-colors"
-            style={sel ? { background: c, color: '#3a3d30', borderColor: '#78716c' } : { background: '#fff', color: '#78716c', borderColor: '#e5e7eb' }}>
+            style={sel ? { background: c, color: '#3a3d30', borderColor: '#78716c' } : { background: '#fff', color: '#78716c', borderColor: '#e5e7eb' }}
+            title={v ?? 'Neutro (nessuna proprietà — cella bianca)'}>
             {label}
           </button>
         )
@@ -1980,6 +1988,7 @@ export function ModificaTurniPage() {
         ferieGiornoColore={ferieColore}
         slot_mattina={cur.slot_mattina}
         slot_pomeriggio={cur.slot_pomeriggio}
+        sup={(turniByKey.get(`${medicoId}|${col.data}`)?.proprieta ?? []).includes('SUP')}
         // Editing da tastiera/click globalmente disabilitato: l'unico modo
         // di cambiare un turno e` il drag dalla legenda. EditableCell
         // resta come "drop target + render", niente piu` modalita` edit.
