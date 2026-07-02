@@ -1029,11 +1029,16 @@ export function ModificaTurniPage() {
   // Righe da mostrare = proprietà richieste nel fabbisogno o presenti in almeno
   // un turno (così "Supporto" e nuove proprietà compaiono appena usate).
   const proprietaDaMostrare = useMemo(() => {
+    // Solo gli schemi EFFETTIVAMENTE usati nel periodo visibile (schema_storico):
+    // altrimenti una proprietà presente solo in uno schema NON usato (es. SUP in
+    // uno schema alternativo) comparirebbe a sproposito nella copertura.
+    const schemiUsati = new Set(colonne.map(c => schemaEffettivoPerGiorno(config, c.data) ?? schemaAttivoNum))
     const viste = new Set<string>()
-    for (const f of fabbisognoRows) for (const k of Object.keys(f.per_proprieta)) viste.add(k)
+    for (const f of fabbisognoRows) if (schemiUsati.has(f.schema_num))
+      for (const k of Object.keys(f.per_proprieta)) viste.add(k)
     for (const t of turni) for (const p of (t.proprieta ?? [])) viste.add(p)
     return proprietaOrd.filter(p => viste.has(p.sigla))
-  }, [fabbisognoRows, proprietaOrd, turni])
+  }, [fabbisognoRows, proprietaOrd, turni, colonne, config, schemaAttivoNum])
   // Copertura per giorno: totale/coperti live (getCella) + proprietà dal DB.
   const coperturaByData = useMemo(() => {
     const map = new Map<string, CoperturaGiorno>()
