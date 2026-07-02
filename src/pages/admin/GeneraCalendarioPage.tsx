@@ -225,6 +225,17 @@ export function GeneraCalendarioPage() {
 
   // ── Queries ──────────────────────────────────────────────────
   const { data: config } = useConfigReparto()
+  // Il reparto ha turni GENERATI? Senza, "Aggiorna turnazione" non ha senso
+  // (non c'e' nulla da continuare) → pulsante disabilitato.
+  const { data: hasTurni = false } = useQuery<boolean>({
+    queryKey: ['reparto-ha-turni', repartoAttivo],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('turni').select('id')
+        .eq('reparto_id', repartoAttivo).limit(1)
+      if (error) throw error
+      return (data?.length ?? 0) > 0
+    },
+  })
 
   const { data: medici = [] } = useMediciReparto()
 
@@ -718,7 +729,7 @@ export function GeneraCalendarioPage() {
                 attuale col nuovo schema, crea un'anteprima da approvare. */}
             <button
               onClick={() => setShowAggiorna(true)}
-              disabled={!conferma || medici.length === 0 || slotSchema === 0 || !config || !rangeValido}
+              disabled={!conferma || medici.length === 0 || slotSchema === 0 || !config || !rangeValido || !hasTurni}
               className="w-full justify-center py-2.5 rounded-lg font-medium text-white shadow inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               style={{ background: '#0284c7' }}
             >

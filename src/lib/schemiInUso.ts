@@ -56,3 +56,24 @@ export function schemiInUso(config: Configurazione | null | undefined, hasTurni:
   }
   return out
 }
+
+// ════════════════════════════════════════════════════════════════════
+// Schema EFFETTIVO per un singolo giorno (da schema_storico). Stessa logica
+// per-giorno di schemiInUso ma ritorna lo schema di QUEL giorno. Serve al
+// controllo di copertura: dopo un Aggiorna turnazione periodi diversi usano
+// schemi diversi → ogni giorno va controllato col fabbisogno del suo schema.
+// ════════════════════════════════════════════════════════════════════
+export function schemaEffettivoPerGiorno(
+  config: Configurazione | null | undefined,
+  dataISO: string,
+): number | null {
+  if (!config) return null
+  const epoche = (config.schema_storico ?? [])
+    .filter(e => e && e.dal)
+    .map((e, i) => ({ schema: e.schema, dal: e.dal, i }))
+    .sort((a, b) => (a.dal < b.dal ? -1 : a.dal > b.dal ? 1 : a.i - b.i))
+  if (epoche.length === 0) return config.schema_attivo ?? null
+  let eff = epoche[0].schema   // giorni prima della prima `dal` → prima epoca
+  for (const e of epoche) { if (e.dal <= dataISO) eff = e.schema; else break }
+  return eff
+}

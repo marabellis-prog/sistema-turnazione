@@ -38,6 +38,7 @@ import {
 } from '../../lib/algorithm'
 import { soglieForDay } from '../../lib/soglieImpostazioni'
 import { calcolaCoperturaGiorno, risolviAmbito, type FabbisognoRiga, type CoperturaGiorno } from '../../lib/copertura'
+import { schemaEffettivoPerGiorno } from '../../lib/schemiInUso'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { useConfirm } from '../../hooks/useConfirm'
 import { RiepilogoTurni, aggiustaConteggiRiepilogo } from '../../components/RiepilogoTurni'
@@ -941,16 +942,20 @@ export function ModificaTurniPage() {
   // #44 — cella su cui è aperto il popover di assegnazione (solo dinamici).
   const [cellPopover, setCellPopover] = useState<{ medicoId: string; data: string } | null>(null)
   const schemaAttivoNum = config?.schema_attivo ?? 1
-  const { data: fabbisognoDin = [] } = useQuery<FabbisognoRiga[]>({
-    queryKey: ['mod-fabbisogno', repartoAttivo, schemaAttivoNum],
+  // Fabbisogno di TUTTI gli schemi del reparto (non solo l'attivo): dopo un
+  // Aggiorna turnazione periodi diversi usano schemi diversi, e OGNI giorno va
+  // controllato col fabbisogno del SUO schema effettivo (via schema_storico).
+  const { data: fabbisognoRows = [] } = useQuery<(FabbisognoRiga & { schema_num: number })[]>({
+    queryKey: ['mod-fabbisogno-all', repartoAttivo],
     enabled: repartoDinamico && !!config,
     staleTime: 0, refetchOnMount: 'always',
     queryFn: async () => {
       const { data, error } = await supabase.from('schema_fabbisogno')
-        .select('ambito, turno_sigla, totale, per_proprieta, ordine')
-        .eq('reparto_id', repartoAttivo).eq('schema_num', schemaAttivoNum)
+        .select('schema_num, ambito, turno_sigla, totale, per_proprieta, ordine')
+        .eq('reparto_id', repartoAttivo)
       if (error) throw error
       return (data ?? []).map(r => ({
+        schema_num: r.schema_num as number,
         ambito: r.ambito as string,
         meta: r.turno_sigla as 'mattina' | 'pomeriggio',
         totale: (r.totale ?? 0) as number,
@@ -959,6 +964,14 @@ export function ModificaTurniPage() {
       }))
     },
   })
+  const fabbisognoBySchema = useMemo(() => {
+    const m = new Map<number, FabbisognoRiga[]>()
+    for (const r of fabbisognoRows) {
+      const arr = m.get(r.schema_num) ?? []
+      arr.push(r); m.set(r.schema_num, arr)
+    }
+    return m
+  }, [fabbisognoRows])
   const { data: proprietaDin = [] } = useQuery<{ sigla: string; nome: string; colore_bg: string; ordine: number }[]>({
     queryKey: ['mod-proprieta', repartoAttivo, schemaAttivoNum],
     enabled: repartoDinamico && !!config,
@@ -1017,21 +1030,25 @@ export function ModificaTurniPage() {
   // un turno (così "Supporto" e nuove proprietà compaiono appena usate).
   const proprietaDaMostrare = useMemo(() => {
     const viste = new Set<string>()
-    for (const f of fabbisognoDin) for (const k of Object.keys(f.per_proprieta)) viste.add(k)
+    for (const f of fabbisognoRows) for (const k of Object.keys(f.per_proprieta)) viste.add(k)
     for (const t of turni) for (const p of (t.proprieta ?? [])) viste.add(p)
     return proprietaOrd.filter(p => viste.has(p.sigla))
-  }, [fabbisognoDin, proprietaOrd, turni])
+  }, [fabbisognoRows, proprietaOrd, turni])
   // Copertura per giorno: totale/coperti live (getCella) + proprietà dal DB.
   const coperturaByData = useMemo(() => {
     const map = new Map<string, CoperturaGiorno>()
     if (!repartoDinamico) return map
     const sigle = proprietaOrd.map(p => p.sigla)
-    // Ambiti definiti col loro ordine di override (per la risoluzione per-giorno).
-    const ambitiOrd = [...new Map(fabbisognoDin.map(f => [f.ambito, f.ordine ?? 0])).entries()]
-      .map(([ambito, ordine]) => ({ ambito, ordine }))
     for (const c of colonne) {
+      // Schema EFFETTIVO del giorno → fabbisogno del SUO schema (non sempre
+      // l'attivo: dopo un Aggiorna turnazione i periodi hanno schemi diversi).
+      const eff = schemaEffettivoPerGiorno(config, c.data) ?? schemaAttivoNum
+      const fabSchema = fabbisognoBySchema.get(eff) ?? []
+      // Ambiti (col loro ordine di override) DELLO schema del giorno.
+      const ambitiOrd = [...new Map(fabSchema.map(f => [f.ambito, f.ordine ?? 0])).entries()]
+        .map(([ambito, ordine]) => ({ ambito, ordine }))
       const amb = risolviAmbito(c.data, !!(c.isFestivo || c.isDomenica), ambitiOrd)
-      const fabAmb = fabbisognoDin.filter(f => f.ambito === amb)
+      const fabAmb = fabSchema.filter(f => f.ambito === amb)
       const turniGiorno = mediciVisibili.map(m => {
         const cell = getCella(m.id, c.data)   // tc + slot LIVE (con le modifiche)
         return {
@@ -1044,7 +1061,7 @@ export function ModificaTurniPage() {
       map.set(c.data, calcolaCoperturaGiorno(turniGiorno, sigle, fabAmb))
     }
     return map
-  }, [repartoDinamico, colonne, mediciVisibili, getCella, turniByKey, fabbisognoDin, proprietaOrd])
+  }, [repartoDinamico, colonne, mediciVisibili, getCella, turniByKey, fabbisognoBySchema, proprietaOrd, config, schemaAttivoNum])
   // Espansione righe copertura: click su una proprietà → dettaglio mattina/pom.
   const [expandedCop, setExpandedCop] = useState<Set<string>>(() => new Set())
   const toggleCop = (sigla: string) => setExpandedCop(prev => {
