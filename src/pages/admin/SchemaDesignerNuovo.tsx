@@ -19,7 +19,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Table2, Tag, Flag, Trash2, GripVertical, Info, Plus, Copy, ListChecks, Eraser, Save, Eye, EyeOff, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Table2, Tag, Flag, Trash2, GripVertical, Info, Plus, Copy, ListChecks, Eraser, Save, Eye, EyeOff, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ArrowDown } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { schemiInUso } from '../../lib/schemiInUso'
 import { useReparto } from '../../contexts/RepartoContext'
@@ -59,7 +59,7 @@ interface CellaRow { id: string; giorno_settimana: number; slot_idx: number; col
 // identifica per (giorno, slot, colonna). Persistita solo con "Salva schema".
 interface CellaDraft { giorno_settimana: number; slot_idx: number; colonna_sigla: string; numero: number | null; attivo: boolean }
 // Riga di fabbisogno (per ambito × turno): totale + ripartizione per proprietà.
-interface FabRow { ambito: string; turno_sigla: string; totale: number; per_proprieta: Record<string, number> }
+interface FabRow { ambito: string; turno_sigla: string; totale: number; per_proprieta: Record<string, number>; ordine: number }
 // DRAFT dell'INTERO schema (struttura + celle + fabbisogno): nessun autosave,
 // si persiste solo con "Salva schema". checks = solo le caselle spuntate.
 interface SchemaDraft {
@@ -207,7 +207,7 @@ export function SchemaDesignerNuovo() {
     queryKey: ['schema-fabbisogno', repartoAttivo, schemaNum],
     queryFn: async () => {
       const { data, error } = await supabase.from('schema_fabbisogno')
-        .select('ambito, turno_sigla, totale, per_proprieta')
+        .select('ambito, turno_sigla, totale, per_proprieta, ordine')
         .eq('reparto_id', repartoAttivo).eq('schema_num', schemaNum)
       if (error) throw error; return (data ?? []) as FabRow[]
     },
@@ -221,7 +221,7 @@ export function SchemaDesignerNuovo() {
     colonne: colonneDB.map(c => ({ tipo: c.tipo, sigla: c.sigla })),
     checks:  checksDB.filter(c => c.attivo).map(c => ({ giorno_settimana: c.giorno_settimana, colonna_sigla: c.colonna_sigla })),
     celle:   celleDB.map(c => ({ giorno_settimana: c.giorno_settimana, slot_idx: c.slot_idx, colonna_sigla: c.colonna_sigla, numero: c.numero, attivo: c.attivo })),
-    fabbisogno: fabDB.map(f => ({ ambito: f.ambito, turno_sigla: f.turno_sigla, totale: f.totale, per_proprieta: { ...f.per_proprieta } })),
+    fabbisogno: fabDB.map(f => ({ ambito: f.ambito, turno_sigla: f.turno_sigla, totale: f.totale, per_proprieta: { ...f.per_proprieta }, ordine: f.ordine ?? 0 })),
   })
   const draftEff = draft ?? baseline()
   const dirty = draft !== null
@@ -232,7 +232,16 @@ export function SchemaDesignerNuovo() {
     muta(d => {
       const fab = d.fabbisogno.map(r => ({ ...r, per_proprieta: { ...r.per_proprieta } }))
       let row = fab.find(r => r.ambito === amb && r.turno_sigla === turno)
-      if (!row) { row = { ambito: amb, turno_sigla: turno, totale: 0, per_proprieta: {} }; fab.push(row) }
+      if (!row) {
+        // ordine dell'ambito: normale = 0 (base); un ambito esistente riusa il suo;
+        // uno nuovo va in fondo (precedenza massima) = max speciali + 1.
+        const ordEsistente = fab.find(r => r.ambito === amb)?.ordine
+        const ordine = amb === 'normale'
+          ? 0
+          : ordEsistente ?? (Math.max(0, ...fab.filter(r => r.ambito !== 'normale').map(r => r.ordine)) + 1)
+        row = { ambito: amb, turno_sigla: turno, totale: 0, per_proprieta: {}, ordine }
+        fab.push(row)
+      }
       if (n > 0) row.per_proprieta[prop] = n; else delete row.per_proprieta[prop]
       row.totale = Object.values(row.per_proprieta).reduce((a, b) => a + (b || 0), 0)
       return { ...d, fabbisogno: fab.filter(r => Object.keys(r.per_proprieta).length > 0) }
@@ -240,6 +249,23 @@ export function SchemaDesignerNuovo() {
   }
   function rimuoviAmbitoFab(amb: string) {
     muta(d => ({ ...d, fabbisogno: d.fabbisogno.filter(r => r.ambito !== amb) }))
+  }
+  // Sposta un ambito speciale su/giù nella cascata di override. Riassegna ordine
+  // a TUTTE le righe: normale = 0, speciali = 1..N secondo la nuova sequenza.
+  function spostaAmbitoFab(amb: string, dir: -1 | 1) {
+    muta(d => {
+      const ordDi = (a: string) => d.fabbisogno.find(r => r.ambito === a)?.ordine ?? 0
+      const specials = [...new Set(d.fabbisogno.filter(r => r.ambito !== 'normale').map(r => r.ambito))]
+        .sort((a, b) => ordDi(a) - ordDi(b))
+      const i = specials.indexOf(amb), j = i + dir
+      if (i < 0 || j < 0 || j >= specials.length) return d
+      ;[specials[i], specials[j]] = [specials[j], specials[i]]
+      const fab = d.fabbisogno.map(r => ({
+        ...r, per_proprieta: { ...r.per_proprieta },
+        ordine: r.ambito === 'normale' ? 0 : specials.indexOf(r.ambito) + 1,
+      }))
+      return { ...d, fabbisogno: fab }
+    })
   }
 
   // Viste con id sintetici (stessi nomi/shape usati dalla JSX).
@@ -962,7 +988,7 @@ export function SchemaDesignerNuovo() {
         </div>
         <div className="shrink-0 sticky top-4 self-start">
           <FabbisognoPanel colsAmbito={colsAmbito} puoFabbisogno={puoFabbisogno}
-            fab={fabbisogno} onSet={setValFab} onRemove={rimuoviAmbitoFab} />
+            fab={fabbisogno} onSet={setValFab} onRemove={rimuoviAmbitoFab} onSposta={spostaAmbitoFab} />
         </div>
         {showPreview && previewCells && (
           <ProvaSchemaPreview previewCells={previewCells} turnisti={turnistiProva} tipiTurno={tipiTurno}
@@ -1021,12 +1047,16 @@ const labelAmbito = (k: string) => k === 'normale' ? 'Normale' : (AMBITI_SPECIAL
 
 // Una griglia di fabbisogno per un ambito (Normale o uno speciale). Componente
 // a livello modulo (stabile): l'intestazione mostra SEMPRE il nome dell'ambito.
-function GrigliaAmbito({ amb, colsAmbito, fab, onSet, onRemove }: {
+function GrigliaAmbito({ amb, colsAmbito, fab, onSet, onRemove, onSu, onGiu, puoSu, puoGiu }: {
   amb: string
   colsAmbito: (amb: string) => { meta: string[]; proprieta: ProprietaTurno[] }
   fab: FabRow[]
   onSet: (amb: string, turno: string, prop: string, n: number) => void
   onRemove?: (amb: string) => void
+  onSu?: () => void
+  onGiu?: () => void
+  puoSu?: boolean
+  puoGiu?: boolean
 }) {
   const { meta, proprieta } = colsAmbito(amb)   // metà-giornata coperte + proprietà attive
   const valore = (turno: string, prop: string) =>
@@ -1041,11 +1071,27 @@ function GrigliaAmbito({ amb, colsAmbito, fab, onSet, onRemove }: {
         <span className="text-xs font-bold" style={{ color: speciale ? '#7a5a2f' : '#476540' }}>
           {labelAmbito(amb)}{speciale && <span className="font-normal text-[10px] text-stone-400"> · override</span>}
         </span>
-        {onRemove && (
-          <button onClick={() => onRemove(amb)} className="text-stone-300 hover:text-red-500" title="Rimuovi questo fabbisogno speciale">
-            <Trash2 size={12} />
-          </button>
-        )}
+        <div className="flex items-center gap-0.5">
+          {(onSu || onGiu) && (
+            <>
+              <button onClick={onSu} disabled={!puoSu}
+                className="text-stone-300 hover:text-stone-600 disabled:opacity-20"
+                title="Sposta su (meno prioritario)">
+                <ChevronUp size={13} />
+              </button>
+              <button onClick={onGiu} disabled={!puoGiu}
+                className="text-stone-300 hover:text-stone-600 disabled:opacity-20"
+                title="Sposta giù (più prioritario: sovrascrive quelli sopra)">
+                <ChevronDown size={13} />
+              </button>
+            </>
+          )}
+          {onRemove && (
+            <button onClick={() => onRemove(amb)} className="text-stone-300 hover:text-red-500" title="Rimuovi questo fabbisogno speciale">
+              <Trash2 size={12} />
+            </button>
+          )}
+        </div>
       </div>
       {vuoto ? (
         <p className="text-[10px] text-stone-400 italic py-0.5">Nessun turno attivo in questo ambito.</p>
@@ -1084,20 +1130,26 @@ function GrigliaAmbito({ amb, colsAmbito, fab, onSet, onRemove }: {
   )
 }
 
-function FabbisognoPanel({ colsAmbito, puoFabbisogno, fab, onSet, onRemove }: {
+function FabbisognoPanel({ colsAmbito, puoFabbisogno, fab, onSet, onRemove, onSposta }: {
   colsAmbito: (amb: string) => { meta: string[]; proprieta: ProprietaTurno[] }
   puoFabbisogno: boolean
   fab: FabRow[]
   onSet: (amb: string, turno: string, prop: string, n: number) => void
   onRemove: (amb: string) => void
+  onSposta: (amb: string, dir: -1 | 1) => void
 }) {
   // Niente autosave: `fab` arriva dal draft dello schema, onSet/onRemove lo mutano.
   const [extra, setExtra] = useState<string[]>([])   // ambiti speciali aperti localmente
   function handleRemove(amb: string) { setExtra(x => x.filter(a => a !== amb)); onRemove(amb) }
 
-  // Ambiti mostrati: Normale sempre + quelli con dati + quelli aperti localmente.
+  // Ambiti con dati, ORDINATI per `ordine` (= cascata di override); poi quelli
+  // appena aggiunti localmente e ancora senza valori (non riordinabili finché
+  // vuoti). Normale è sempre la base (in cima, non riordinabile).
+  const ordDi = (a: string) => fab.find(f => f.ambito === a)?.ordine ?? 999
   const conDati = [...new Set(fab.map(f => f.ambito))].filter(a => a !== 'normale')
-  const specialiAperti = [...new Set([...conDati, ...extra])]
+    .sort((a, b) => ordDi(a) - ordDi(b))
+  const extraSoli = extra.filter(a => !conDati.includes(a))
+  const specialiAperti = [...conDati, ...extraSoli]
   const daAggiungere = AMBITI_SPECIALI.filter(a => !specialiAperti.includes(a.key))
 
   return (
@@ -1112,9 +1164,23 @@ function FabbisognoPanel({ colsAmbito, puoFabbisogno, fab, onSet, onRemove }: {
       ) : (
         <>
           <GrigliaAmbito amb="normale" colsAmbito={colsAmbito} fab={fab} onSet={onSet} />
-          {specialiAperti.map(amb => (
-            <GrigliaAmbito key={amb} amb={amb} colsAmbito={colsAmbito} fab={fab} onSet={onSet} onRemove={handleRemove} />
-          ))}
+          {specialiAperti.map(amb => {
+            const idxDati = conDati.indexOf(amb)     // -1 se ancora senza valori
+            const riordinabile = idxDati >= 0
+            return (
+              <div key={amb} className="space-y-2">
+                {/* Connettore cascata: l'ambito qui sotto SOVRASCRIVE quelli sopra. */}
+                <div className="flex items-center justify-center gap-1 text-[9px] text-stone-400 select-none -my-0.5">
+                  <ArrowDown size={10} /> viene sovrascritto da <ArrowDown size={10} />
+                </div>
+                <GrigliaAmbito amb={amb} colsAmbito={colsAmbito} fab={fab} onSet={onSet} onRemove={handleRemove}
+                  onSu={riordinabile ? () => onSposta(amb, -1) : undefined}
+                  onGiu={riordinabile ? () => onSposta(amb, 1) : undefined}
+                  puoSu={riordinabile && idxDati > 0}
+                  puoGiu={riordinabile && idxDati < conDati.length - 1} />
+              </div>
+            )
+          })}
           {daAggiungere.length > 0 && (
             <div className="flex flex-wrap gap-1 pt-0.5">
               <span className="w-full text-[10px] text-stone-400">+ Aggiungi fabbisogno speciale:</span>
@@ -1129,7 +1195,9 @@ function FabbisognoPanel({ colsAmbito, puoFabbisogno, fab, onSet, onRemove }: {
           )}
           <p className="text-[10px] text-stone-400 leading-tight">
             Quanti turnisti servono di mattina e pomeriggio (per proprietà). La Lunga vale 1 mattina +
-            1 pomeriggio; la reperibilità non conta. Gli speciali sovrascrivono il Normale.
+            1 pomeriggio; la reperibilità non conta. La cascata va dall'alto in basso: ogni riquadro
+            <strong> sovrascrive quelli sopra</strong> per i giorni che gli competono (usa ↑/↓ per
+            cambiare la precedenza). Vale per il controllo copertura.
           </p>
         </>
       )}

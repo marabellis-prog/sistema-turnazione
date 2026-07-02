@@ -19,10 +19,13 @@ export type AmbitoCopertura = 'normale' | 'sabato' | 'festivi'
 
 /** Riga di `schema_fabbisogno` (una per ambito × metà-giornata). */
 export interface FabbisognoRiga {
-  ambito: string                         // 'normale' | 'sabato' | 'festivi'
+  ambito: string                         // 'normale' | 'sabato' | 'festivi' | ...
   meta: 'mattina' | 'pomeriggio'         // colonna `turno_sigla` nel DB
   totale: number
   per_proprieta: Record<string, number>  // es. { SUB: 2, MED: 2 }
+  /** Precedenza di override: a parità di giorno che combacia più ambiti, vince
+   *  l'ordine più ALTO (l'ultimo nella cascata). normale = 0 (base). */
+  ordine?: number
 }
 
 /** Turno di un medico in un giorno (solo i campi utili alla copertura). */
@@ -46,12 +49,50 @@ export interface CoperturaGiorno { mattina: MetaCopertura; pomeriggio: MetaCoper
 const COPRE_MATTINA    = new Set(['M', 'L', 'EM', 'EL'])
 const COPRE_POMERIGGIO = new Set(['P', 'L', 'EP', 'EL'])
 
-/** Ambito del giorno a partire dalla data ISO + flag festivo. */
+/** Ambito del giorno a partire dalla data ISO + flag festivo (precedenza fissa
+ *  storica: festivi > sabato > normale). Mantenuto per compatibilità. */
 export function ambitoGiorno(dataISO: string, isFestivo: boolean): AmbitoCopertura {
   const dow = new Date(dataISO + 'T00:00:00').getDay()   // 0 = domenica
   if (dow === 0 || isFestivo) return 'festivi'
   if (dow === 6) return 'sabato'
   return 'normale'
+}
+
+/** Condizione di un ambito per un dato giorno. `prefestivo` NON è ancora
+ *  risolto (servirebbe il look-ahead sulle festività) → non combacia mai. */
+function ambitoCombacia(ambito: string, dow: number, isFestivo: boolean): boolean {
+  switch (ambito) {
+    case 'normale':    return true                    // base: vale sempre
+    case 'sabato':     return dow === 6
+    case 'festivi':    return dow === 0 || isFestivo
+    case 'prefestivo': return false
+    default:           return false
+  }
+}
+
+/**
+ * Ambito EFFETTIVO del giorno rispettando l'ORDINE di override definito
+ * nello schema: tra gli ambiti che combaciano col giorno, vince quello con
+ * `ordine` più ALTO (l'ultimo nella cascata "…viene sovrascritto da…").
+ * `normale` è sempre la base (fallback), anche se non presente nell'elenco.
+ *
+ * @param ambiti  ambiti definiti nel fabbisogno, con il loro `ordine`
+ */
+export function risolviAmbito(
+  dataISO: string,
+  isFestivo: boolean,
+  ambiti: { ambito: string; ordine: number }[],
+): string {
+  const dow = new Date(dataISO + 'T00:00:00').getDay()
+  let scelto = 'normale'
+  let ordScelto = -Infinity
+  for (const a of ambiti) {
+    if (ambitoCombacia(a.ambito, dow, isFestivo) && a.ordine >= ordScelto) {
+      scelto = a.ambito
+      ordScelto = a.ordine
+    }
+  }
+  return scelto
 }
 
 /**

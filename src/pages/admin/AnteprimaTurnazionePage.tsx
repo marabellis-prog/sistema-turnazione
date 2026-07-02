@@ -16,6 +16,7 @@ import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useMediciReparto } from '../../hooks/useMediciReparto'
 import { useReparto, REPARTO_11N } from '../../contexts/RepartoContext'
 import { registraEventoCentro } from '../../lib/centroLog'
+import { risolviAmbito } from '../../lib/copertura'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
@@ -90,15 +91,15 @@ export function AnteprimaTurnazionePage() {
   // Fabbisogno DINAMICO (schema_fabbisogno) di tutti gli schemi del reparto:
   // l'atteso per giorno usa lo schema vecchio (prima del cutover) o nuovo (dal
   // cutover) e l'ambito del giorno (normale/sabato/festivi).
-  const { data: fabbisognoAll = [] } = useQuery<{ schema_num: number; ambito: string; turno_sigla: string; totale: number; per_proprieta: Record<string, number> }[]>({
+  const { data: fabbisognoAll = [] } = useQuery<{ schema_num: number; ambito: string; turno_sigla: string; totale: number; per_proprieta: Record<string, number>; ordine: number }[]>({
     queryKey: ['antep-fabbisogno', repartoAttivo],
     enabled: repartoDinamico,
     staleTime: 0,
     queryFn: async () => {
       const { data, error } = await supabase.from('schema_fabbisogno')
-        .select('schema_num, ambito, turno_sigla, totale, per_proprieta').eq('reparto_id', repartoAttivo)
+        .select('schema_num, ambito, turno_sigla, totale, per_proprieta, ordine').eq('reparto_id', repartoAttivo)
       if (error) throw error
-      return (data ?? []) as { schema_num: number; ambito: string; turno_sigla: string; totale: number; per_proprieta: Record<string, number> }[]
+      return (data ?? []) as { schema_num: number; ambito: string; turno_sigla: string; totale: number; per_proprieta: Record<string, number>; ordine: number }[]
     },
   })
   const attesoDin = useMemo(() => {
@@ -108,8 +109,11 @@ export function AnteprimaTurnazionePage() {
     return (data: string) => {
       const dd = new Date(data + 'T00:00:00')
       const fest = dd.getDay() === 0 || isFestivo(dd, festivitaCustomSet)
-      const ambito = fest ? 'festivi' : dd.getDay() === 6 ? 'sabato' : 'normale'
       const schema = data >= cutover ? schemaNew : schemaOld
+      // Ambito effettivo rispettando l'ordine di override definito nello schema.
+      const ambitiOrd = [...new Map(fabbisognoAll.filter(r => r.schema_num === schema)
+        .map(r => [r.ambito, r.ordine ?? 0])).entries()].map(([ambito, ordine]) => ({ ambito, ordine }))
+      const ambito = risolviAmbito(data, fest, ambitiOrd)
       let sub = 0, med = 0, tot = 0
       for (const r of fabbisognoAll) {
         if (r.schema_num !== schema || r.ambito !== ambito) continue

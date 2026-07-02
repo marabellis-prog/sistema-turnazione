@@ -37,7 +37,7 @@ import {
   type RicalcCell,
 } from '../../lib/algorithm'
 import { soglieForDay } from '../../lib/soglieImpostazioni'
-import { calcolaCoperturaGiorno, ambitoGiorno, type FabbisognoRiga, type CoperturaGiorno } from '../../lib/copertura'
+import { calcolaCoperturaGiorno, risolviAmbito, type FabbisognoRiga, type CoperturaGiorno } from '../../lib/copertura'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { useConfirm } from '../../hooks/useConfirm'
 import { RiepilogoTurni, aggiustaConteggiRiepilogo } from '../../components/RiepilogoTurni'
@@ -884,7 +884,7 @@ export function ModificaTurniPage() {
     staleTime: 0, refetchOnMount: 'always',
     queryFn: async () => {
       const { data, error } = await supabase.from('schema_fabbisogno')
-        .select('ambito, turno_sigla, totale, per_proprieta')
+        .select('ambito, turno_sigla, totale, per_proprieta, ordine')
         .eq('reparto_id', repartoAttivo).eq('schema_num', schemaAttivoNum)
       if (error) throw error
       return (data ?? []).map(r => ({
@@ -892,6 +892,7 @@ export function ModificaTurniPage() {
         meta: r.turno_sigla as 'mattina' | 'pomeriggio',
         totale: (r.totale ?? 0) as number,
         per_proprieta: (r.per_proprieta ?? {}) as Record<string, number>,
+        ordine: (r.ordine ?? 0) as number,
       }))
     },
   })
@@ -962,8 +963,11 @@ export function ModificaTurniPage() {
     const map = new Map<string, CoperturaGiorno>()
     if (!repartoDinamico) return map
     const sigle = proprietaOrd.map(p => p.sigla)
+    // Ambiti definiti col loro ordine di override (per la risoluzione per-giorno).
+    const ambitiOrd = [...new Map(fabbisognoDin.map(f => [f.ambito, f.ordine ?? 0])).entries()]
+      .map(([ambito, ordine]) => ({ ambito, ordine }))
     for (const c of colonne) {
-      const amb = ambitoGiorno(c.data, !!(c.isFestivo || c.isDomenica))
+      const amb = risolviAmbito(c.data, !!(c.isFestivo || c.isDomenica), ambitiOrd)
       const fabAmb = fabbisognoDin.filter(f => f.ambito === amb)
       const turniGiorno = mediciVisibili.map(m => {
         const cell = getCella(m.id, c.data)   // tc + slot LIVE (con le modifiche)
