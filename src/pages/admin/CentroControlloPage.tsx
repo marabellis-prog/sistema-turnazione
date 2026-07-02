@@ -9,12 +9,15 @@
  * I Reparti hanno RLS modify = is_super_admin → solo l'admin opera qui.
  */
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Building2, Plus, Trash2, Pencil, Save, X, UserCog, Power, Lock, Copy,
+  AlertTriangle, Calendar, RefreshCw, RotateCcw, ChevronLeft, ChevronRight,
+  History, Loader2,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { registraEventoCentro, type CentroEvento, type CentroEventoTipo } from '../../lib/centroLog'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { Navigate } from 'react-router-dom'
@@ -23,6 +26,16 @@ import { DatabaseStatsBox } from '../../components/DatabaseStatsBox'
 import { ImpostazioniBackupBox } from '../../components/ImpostazioniBackupBox'
 import { REPARTO_11N, useReparto } from '../../contexts/RepartoContext'
 import type { Reparto, RepartoResponsabile, UtenteAutorizzato } from '../../types'
+
+/** Parola casuale 4-10 caratteri alfanumerici (niente speciali, niente
+ *  caratteri ambigui) da riscrivere a mano per confermare un'eliminazione. */
+function generaParolaConferma(): string {
+  const chars = 'abcdefghijkmnpqrstuvwxyz23456789'   // no 0/o/1/l ambigui
+  const len = 4 + Math.floor(Math.random() * 7)      // 4..10
+  let w = ''
+  for (let i = 0; i < len; i++) w += chars[Math.floor(Math.random() * chars.length)]
+  return w
+}
 
 function RepartiSection() {
   const qc = useQueryClient()
@@ -33,6 +46,12 @@ function RepartiSection() {
   const [addRespFor, setAddRespFor] = useState<string | null>(null)
   const [copyFor, setCopyFor]       = useState<string | null>(null)
   const [err, setErr]             = useState('')
+  // Modal eliminazione reparto: 2 passi (avviso → riscrivi-parola).
+  const [delFor, setDelFor]       = useState<Reparto | null>(null)
+  const [delStep, setDelStep]     = useState<'warn' | 'confirm'>('warn')
+  const [delWord, setDelWord]     = useState('')
+  const [delTyped, setDelTyped]   = useState('')
+  const [delBusy, setDelBusy]     = useState(false)
 
   const { data: reparti = [] } = useQuery<Reparto[]>({
     queryKey: ['reparti'],
@@ -73,9 +92,10 @@ function RepartiSection() {
     setErr('')
     // Reparto NUOVO = vuoto (niente copia automatica). Il setup si copia poi
     // a richiesta con l'icona "Copia da reparto".
-    const { error } = await supabase.from('reparti').insert({ nome })
+    const { data, error } = await supabase.from('reparti').insert({ nome }).select('id').single()
     if (error) { setErr(error.message); return }
-    setNuovoNome(''); reload()
+    await registraEventoCentro('reparto_creato', data?.id ?? null, nome, `Creato il reparto "${nome}".`)
+    setNuovoNome(''); reload(); qc.invalidateQueries({ queryKey: ['centro-eventi'] })
   }
   async function salvaNome(id: string) {
     const nome = editNome.trim(); if (!nome) return
@@ -86,32 +106,34 @@ function RepartiSection() {
   }
   async function toggleAttivo(r: Reparto) {
     setErr('')
-    const { error } = await supabase.from('reparti').update({ attivo: !r.attivo }).eq('id', r.id)
+    const nuovoAttivo = !r.attivo
+    const { error } = await supabase.from('reparti').update({ attivo: nuovoAttivo }).eq('id', r.id)
     if (error) { setErr(error.message); return }
+    // Log SOLO della disattivazione (da spec). La riattivazione non è tracciata.
+    if (!nuovoAttivo) {
+      await registraEventoCentro('reparto_disattivato', r.id, r.nome, `Disattivato il reparto "${r.nome}".`)
+      qc.invalidateQueries({ queryKey: ['centro-eventi'] })
+    }
     reload()
   }
-  async function elimina(r: Reparto) {
+  // Eliminazione reparto: apre il modal a 2 passi (avviso → riscrivi-parola).
+  // NIENTE più blocco "svuotalo prima": il reparto viene eliminato con TUTTI i
+  // suoi dati (solo suoi) tramite la RPC elimina_reparto, dietro conferma forte.
+  function apriElimina(r: Reparto) {
     if (r.id === REPARTO_11N) return
     setErr('')
-    // Blocco se il reparto NON e' vuoto (turnisti, turni o responsabili).
-    const [m, t, rr] = await Promise.all([
-      supabase.from('medici').select('id', { count: 'exact', head: true }).eq('reparto_id', r.id),
-      supabase.from('turni').select('id', { count: 'exact', head: true }).eq('reparto_id', r.id),
-      supabase.from('reparto_responsabili').select('reparto_id', { count: 'exact', head: true }).eq('reparto_id', r.id),
-    ])
-    const nM = m.count ?? 0, nT = t.count ?? 0, nR = rr.count ?? 0
-    if (nM + nT + nR > 0) {
-      setErr(`Impossibile eliminare "${r.nome}": ha ${nM} turnisti, ${nT} turni e ${nR} responsabili. Svuotalo prima (o disattivalo).`)
-      return
-    }
-    const ok = await confirm({
-      title:        `Elimina reparto "${r.nome}"`,
-      message:      'Il reparto è vuoto e verrà eliminato definitivamente. Procedere?',
-      confirmLabel: 'Elimina', danger: true,
-    })
-    if (!ok) return
-    const { error } = await supabase.from('reparti').delete().eq('id', r.id)
+    setDelFor(r); setDelStep('warn'); setDelWord(generaParolaConferma()); setDelTyped('')
+  }
+  async function confermaElimina() {
+    if (!delFor) return
+    if (delTyped.trim().toLowerCase() !== delWord.toLowerCase()) return
+    setDelBusy(true); setErr('')
+    const { error } = await supabase.rpc('elimina_reparto', { p_reparto: delFor.id })
+    setDelBusy(false)
     if (error) { setErr(error.message); return }
+    setDelFor(null); setDelStep('warn'); setDelTyped('')
+    qc.invalidateQueries({ queryKey: ['reparti-gestiti'] })
+    qc.invalidateQueries({ queryKey: ['centro-eventi'] })
     reload()
   }
 
@@ -152,6 +174,82 @@ function RepartiSection() {
     <div className="space-y-4">
       <ConfirmModal {...confirmState.opts} open={confirmState.open}
         onConfirm={confirmState.onConfirm} onCancel={confirmState.onCancel} />
+
+      {/* Modal eliminazione reparto — 2 passi: avviso pericolosità → riscrivi
+          la parola a mano (copia-incolla disabilitato) → Cancella. */}
+      {delFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3"
+          style={{ background: 'rgba(0,0,0,0.55)' }}
+          onClick={() => !delBusy && setDelFor(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5"
+            onClick={e => e.stopPropagation()}>
+            {delStep === 'warn' ? (
+              <>
+                <h3 className="font-bold text-red-700 text-base mb-2 flex items-center gap-2">
+                  <AlertTriangle size={18} /> Elimina "{delFor.nome}"
+                </h3>
+                <div className="text-sm text-stone-700 space-y-2 mb-4">
+                  <p>Stai per eliminare <strong>definitivamente</strong> il reparto <strong>"{delFor.nome}"</strong> e <strong>tutti i suoi dati</strong>:</p>
+                  <ul className="list-disc pl-5 text-xs text-stone-600 space-y-0.5">
+                    <li>turnisti, ospiti e responsabili</li>
+                    <li>turni, ferie e cambi turno</li>
+                    <li>schemi, tipi/proprietà di turno e festività</li>
+                    <li>anteprime, backup e notifiche del reparto</li>
+                  </ul>
+                  <p className="text-red-700 font-semibold">L'azione è irreversibile e riguarda SOLO questo reparto: gli altri reparti non vengono toccati.</p>
+                  {delFor.attivo && (
+                    <p className="text-amber-700 text-xs bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                      ⚠️ Il reparto è ancora <strong>attivo</strong>: valuta se disattivarlo prima.
+                    </p>
+                  )}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setDelFor(null)} className="btn-secondary text-sm py-2 px-4">Annulla</button>
+                  <button onClick={() => setDelStep('confirm')}
+                    className="inline-flex items-center gap-1.5 text-sm py-2 px-4 rounded-lg font-semibold text-white transition-opacity hover:opacity-90"
+                    style={{ background: '#dc2626' }}>
+                    Continua <ChevronRight size={15} />
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="font-bold text-red-700 text-base mb-2 flex items-center gap-2">
+                  <AlertTriangle size={18} /> Conferma eliminazione
+                </h3>
+                <p className="text-sm text-stone-700 mb-1">
+                  Per confermare l'eliminazione di <strong>"{delFor.nome}"</strong>, riscrivi <strong>a mano</strong> questa parola
+                  <span className="text-stone-500"> (copia-incolla disabilitato)</span>:
+                </p>
+                <div className="text-center my-3">
+                  <span className="inline-block px-4 py-2 rounded-lg text-lg font-mono font-bold select-none"
+                    style={{ background: '#fee2e2', color: '#991b1b', letterSpacing: '0.35em' }}>
+                    {delWord}
+                  </span>
+                </div>
+                <input
+                  value={delTyped}
+                  onChange={e => setDelTyped(e.target.value)}
+                  onPaste={e => e.preventDefault()}
+                  onDrop={e => e.preventDefault()}
+                  onContextMenu={e => e.preventDefault()}
+                  autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+                  placeholder="Riscrivi qui la parola"
+                  className="input text-sm w-full text-center font-mono tracking-widest" autoFocus />
+                <div className="flex justify-end gap-2 mt-4">
+                  <button onClick={() => setDelFor(null)} disabled={delBusy} className="btn-secondary text-sm py-2 px-4">Annulla</button>
+                  <button onClick={confermaElimina}
+                    disabled={delBusy || delTyped.trim().toLowerCase() !== delWord.toLowerCase()}
+                    className="inline-flex items-center gap-1.5 text-sm py-2 px-4 rounded-lg font-semibold text-white disabled:opacity-40"
+                    style={{ background: '#dc2626' }}>
+                    {delBusy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Cancella definitivamente
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       <div>
         <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
@@ -232,7 +330,7 @@ function RepartiSection() {
                         </button>
                       )}
                       {r.id !== REPARTO_11N && (
-                        <button onClick={() => elimina(r)}
+                        <button onClick={() => apriElimina(r)}
                           className="p-1.5 rounded text-stone-500 hover:text-red-600 hover:bg-red-50" title="Elimina">
                           <Trash2 size={14} />
                         </button>
@@ -306,6 +404,114 @@ function RepartiSection() {
   )
 }
 
+// ── Log eventi (notifiche di sistema) ────────────────────────────────────────
+const EVENTO_CFG: Record<CentroEventoTipo, { Icon: typeof Plus; color: string; bg: string; label: string }> = {
+  reparto_creato:          { Icon: Plus,      color: '#166534', bg: '#dcfce7', label: 'Reparto creato' },
+  calendario_generato:     { Icon: Calendar,  color: '#1d4ed8', bg: '#dbeafe', label: 'Calendario generato' },
+  aggiornamento_approvato: { Icon: RefreshCw, color: '#0e7490', bg: '#cffafe', label: 'Aggiornamento approvato' },
+  backup_ripristinato:     { Icon: RotateCcw, color: '#7c3aed', bg: '#ede9fe', label: 'Backup ripristinato' },
+  reparto_disattivato:     { Icon: Power,     color: '#a16207', bg: '#fef3c7', label: 'Reparto disattivato' },
+  reparto_eliminato:       { Icon: Trash2,    color: '#991b1b', bg: '#fee2e2', label: 'Reparto eliminato' },
+}
+const fmtEventoData = (iso: string) => {
+  const d = new Date(iso); const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${String(d.getFullYear()).slice(2)} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+const LOG_PER_PAGE = 20
+
+function CentroLogSection() {
+  const [page, setPage] = useState(0)
+  const { data: eventi = [], isLoading } = useQuery<CentroEvento[]>({
+    queryKey: ['centro-eventi'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('centro_eventi').select('*')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as CentroEvento[]
+    },
+    staleTime: 0, refetchOnMount: 'always',
+  })
+  const totPag  = Math.max(1, Math.ceil(eventi.length / LOG_PER_PAGE))
+  const curPage = Math.min(page, totPag - 1)
+  const slice   = useMemo(
+    () => eventi.slice(curPage * LOG_PER_PAGE, (curPage + 1) * LOG_PER_PAGE),
+    [eventi, curPage],
+  )
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
+          <History size={20} style={{ color: '#476540' }} />
+          Notifiche di sistema
+        </h2>
+        <p className="text-sm text-stone-600 mt-0.5">
+          Registro degli eventi importanti: creazione, generazione del calendario, aggiornamenti approvati,
+          ripristino di backup, disattivazione ed eliminazione dei reparti. Resta traccia anche dei reparti eliminati.
+        </p>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-stone-500 text-sm py-6">
+          <Loader2 size={16} className="animate-spin" /> Caricamento…
+        </div>
+      ) : eventi.length === 0 ? (
+        <div className="card p-6 text-sm text-stone-500 text-center">
+          Nessun evento registrato finora.
+        </div>
+      ) : (
+        <>
+          <div className="rounded-lg border border-stone-200 divide-y divide-stone-100 bg-white">
+            {slice.map(ev => {
+              const cfg = EVENTO_CFG[ev.tipo] ?? { Icon: History, color: '#57534e', bg: '#e7e5e4', label: ev.tipo }
+              const Icon = cfg.Icon
+              return (
+                <div key={ev.id} className="flex items-start gap-3 px-3 py-2.5">
+                  <div className="rounded-full p-1.5 shrink-0 mt-0.5" style={{ background: cfg.bg }}>
+                    <Icon size={13} style={{ color: cfg.color }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-sm font-semibold text-stone-800 truncate">
+                        {cfg.label} · <span className="font-normal text-stone-600">{ev.reparto_nome}</span>
+                      </span>
+                      <span className="text-[10px] text-stone-400 font-mono shrink-0">{fmtEventoData(ev.created_at)}</span>
+                    </div>
+                    {ev.descrizione && (
+                      <p className="text-xs text-stone-600 mt-0.5 leading-relaxed">{ev.descrizione}</p>
+                    )}
+                    {ev.autore && (
+                      <p className="text-[10px] text-stone-400 mt-0.5 font-mono">{ev.autore}</p>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {eventi.length > LOG_PER_PAGE && (
+            <div className="flex items-center justify-center gap-2">
+              <button onClick={() => setPage(Math.max(0, curPage - 1))} disabled={curPage === 0}
+                className="flex items-center justify-center w-8 h-8 rounded border text-xs disabled:opacity-30"
+                style={{ background: '#faf8f3', borderColor: '#d5ccb8', color: '#3a3d30' }}>
+                <ChevronLeft size={15} />
+              </button>
+              <span className="text-xs text-stone-500 font-medium">
+                Pagina {curPage + 1} di {totPag}
+              </span>
+              <button onClick={() => setPage(Math.min(totPag - 1, curPage + 1))} disabled={curPage >= totPag - 1}
+                className="flex items-center justify-center w-8 h-8 rounded border text-xs disabled:opacity-30"
+                style={{ background: '#faf8f3', borderColor: '#d5ccb8', color: '#3a3d30' }}>
+                <ChevronRight size={15} />
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 export function CentroControlloPage() {
   const { isSuperAdmin } = useReparto()
   // Solo il super-admin: gestione reparti, utenti globali, responsabili.
@@ -316,6 +522,8 @@ export function CentroControlloPage() {
       {/* Monitoraggio globale del progetto Supabase (free tier) — solo admin */}
       <DatabaseStatsBox />
       <RepartiSection />
+      <div className="border-t-2 border-stone-200" />
+      <CentroLogSection />
       <div className="border-t-2 border-stone-200" />
       <ImpostazioniBackupBox />
       <div className="border-t-2 border-stone-200" />

@@ -15,6 +15,7 @@ import { supabase } from '../../lib/supabase'
 import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useMediciReparto } from '../../hooks/useMediciReparto'
 import { useReparto, REPARTO_11N } from '../../contexts/RepartoContext'
+import { registraEventoCentro } from '../../lib/centroLog'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { usePendingActions } from '../../contexts/PendingActionsContext'
@@ -31,7 +32,7 @@ export function AnteprimaTurnazionePage() {
   const qc = useQueryClient()
   const { confirm, confirmState } = useConfirm()
   const { clearAll } = usePendingActions()
-  const { repartoAttivo } = useReparto()
+  const { repartoAttivo, repartoCorrente } = useReparto()
   const { set: festivitaCustomSet } = useFestivitaCustom(repartoAttivo)
   const [busy, setBusy] = useState<null | 'approva' | 'scarta' | 'salva'>(null)
   const [err, setErr]   = useState<string | null>(null)
@@ -149,9 +150,11 @@ export function AnteprimaTurnazionePage() {
     if (!ok) return
     setBusy('approva'); setErr(null)
     try {
-      await pubblicaBozza(anteprima, config.id, repartoAttivo)
+      const nInseriti = await pubblicaBozza(anteprima, config.id, repartoAttivo)
+      await registraEventoCentro('aggiornamento_approvato', repartoAttivo, repartoCorrente?.nome ?? 'Reparto',
+        `Approvato e pubblicato un aggiornamento della turnazione (${nInseriti} turni).`)
       clearAll()
-      ;['turni', 'turni-modifica', 'ferie-ranges', 'configurazione', 'cambi-turno', 'turnazione-anteprima']
+      ;['turni', 'turni-modifica', 'ferie-ranges', 'configurazione', 'cambi-turno', 'turnazione-anteprima', 'centro-eventi']
         .forEach(k => qc.invalidateQueries({ queryKey: [k] }))
     } catch (e) {
       setErr((e as Error).message)

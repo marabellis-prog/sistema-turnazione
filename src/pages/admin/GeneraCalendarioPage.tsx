@@ -4,6 +4,7 @@ import { Zap, AlertTriangle, CheckCircle, Info, RefreshCw } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useReparto, REPARTO_11N } from '../../contexts/RepartoContext'
+import { registraEventoCentro } from '../../lib/centroLog'
 import { useConfigReparto } from '../../hooks/useConfigReparto'
 import { useMediciReparto } from '../../hooks/useMediciReparto'
 import { calcolaCalendarioCompleto, primoLunediDelPeriodo, MESI_IT } from '../../lib/algorithm'
@@ -195,7 +196,7 @@ function AntepremaSchema({
 // ════════════════════════════════════════════════════════════════
 export function GeneraCalendarioPage() {
   const qc = useQueryClient()
-  const { repartoAttivo } = useReparto()
+  const { repartoAttivo, repartoCorrente } = useReparto()
   const { confirm, confirmState } = useConfirm()
   const { clearAll } = usePendingActions()
   const tableRef = useRef<HTMLDivElement>(null)
@@ -511,6 +512,10 @@ export function GeneraCalendarioPage() {
 
       setStato('ok')
       setMessaggio(`✓ Generati ${turniGenerati.length} turni · ${schemaLabel} · ${periodoLabel}`)
+      // Log evento nel Centro di Controllo (non blocca in caso di errore).
+      await registraEventoCentro('calendario_generato', repartoAttivo, repartoCorrente?.nome ?? 'Reparto',
+        `Generato il calendario: ${turniGenerati.length} turni · ${schemaLabel} · ${periodoLabel}.`)
+      qc.invalidateQueries({ queryKey: ['centro-eventi'] })
       // Invalida tutte le cache che ora sono stale dopo la rigenerazione:
       // - 'turni'         → CalendarioPage fetch manuale (key invalidata
       //                     come segnale, in pratica la pagina pubblica

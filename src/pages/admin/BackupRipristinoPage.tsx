@@ -19,6 +19,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useImpostazioniGlobali } from '../../hooks/useImpostazioniGlobali'
 import { useReparto } from '../../contexts/RepartoContext'
+import { registraEventoCentro } from '../../lib/centroLog'
 import { useMediciReparto } from '../../hooks/useMediciReparto'
 import { useConfirm } from '../../hooks/useConfirm'
 import { ConfirmModal } from '../../components/ConfirmModal'
@@ -157,6 +158,8 @@ export function BackupRipristinoPage() {
         (res.completo ? 'Ripristino completo del reparto' : 'Ripristino turni') +
         ` eseguito (${res.inserted} turni). Backup pre-ripristino creato.`
       )
+      await registraEventoCentro('backup_ripristinato', repartoAttivo, repartoCorrente?.nome ?? 'Reparto',
+        `Ripristinato il backup "${b.descrizione ?? '?'}" del ${fmtDataOra(b.created_at)} (${res.inserted} turni).`)
       // Ripristino completo → tutto può essere cambiato: refresh totale.
       qc.invalidateQueries()
       setTimeout(() => setMsg(null), 6000)
