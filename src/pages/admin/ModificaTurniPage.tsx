@@ -142,24 +142,25 @@ function RigheCoperturaDinamica({ cols, copByData, proprieta, expanded, onToggle
     <>
       {proprieta.map(prop => {
         const open = expanded.has(prop.sigla)
-        // Una metà è "in errore" se ha un fabbisogno (r>0) e presente≠richiesto,
-        // su almeno un giorno. Se NON espando manualmente, mostro SOLO le metà in
-        // errore (non entrambe): appaiono quando serve e spariscono appena a posto.
-        const halfInError = (k: 'mattina' | 'pomeriggio') =>
-          cols.some(c => { const v = dett(c.data, prop.sigla, k); return v.r > 0 && v.p !== v.r })
-        const errM = halfInError('mattina'), errP = halfInError('pomeriggio')
-        const haErrore = errM || errP
-        const mostraDett = open || haErrore
+        // Auto-mostra le metà OGNI VOLTA che i conti non tornano (il combinato non
+        // è 'ok'): sia col totale giusto ma split sbagliato, sia col totale errato.
+        // Mostro SOLO le metà che non quadrano (presente≠richiesto) — incluse quelle
+        // "di troppo" dove non servono — così si capisce cosa manca e dove. Appena
+        // una metà torna a posto la sua riga sparisce; se poi la scombini riappare.
+        const problema = cols.some(c => { const s = statoComb(c.data, prop.sigla); return s === 'deficit' || s === 'surplus' })
+        const mismatch = (k: 'mattina' | 'pomeriggio') =>
+          cols.some(c => { const v = dett(c.data, prop.sigla, k); return v.p !== v.r })
+        const mostraDett = open || problema
         const halves = (['mattina', 'pomeriggio'] as const)
-          .filter(k => open || (k === 'mattina' ? errM : errP))
+          .filter(k => open || mismatch(k))
         return (
           <Fragment key={prop.sigla}>
             {/* Riga proprietà (combinato) — clic per espandere mattina/pomeriggio */}
             <tr style={{ cursor: 'pointer' }} onClick={() => onToggle(prop.sigla)}
-              title={`${prop.nome} — clic per ${open ? 'nascondere' : 'mostrare'} mattina/pomeriggio${haErrore && !open ? ' · ⚠ ripartizione da sistemare' : ''}`}>
+              title={`${prop.nome} — clic per ${open ? 'nascondere' : 'mostrare'} mattina/pomeriggio${problema && !open ? ' · ⚠ ripartizione da sistemare' : ''}`}>
               <td style={labelTd(prop.colore_bg)}>
                 <span style={{ display: 'inline-block', width: 9 }}>{mostraDett ? '▾' : '▸'}</span> {prop.sigla}
-                {haErrore && !open && <span style={{ color: '#b45309' }}> ⚠</span>}
+                {problema && !open && <span style={{ color: '#b45309' }}> ⚠</span>}
               </td>
               {cols.map(c => { const v = comb(c.data, prop.sigla); return <td key={c.data} style={cellTd}><CellaCop p={v.p} r={v.r} state={statoComb(c.data, prop.sigla)} /></td> })}
             </tr>

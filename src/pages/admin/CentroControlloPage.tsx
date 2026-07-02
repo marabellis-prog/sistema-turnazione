@@ -518,11 +518,12 @@ export function CentroControlloPage() {
   // Un responsabile (admin del suo reparto) NON deve vederlo.
   if (!isSuperAdmin) return <Navigate to="/admin/medici" replace />
   return (
-    <div className="space-y-6 max-w-6xl">
-      {/* Su schermi larghi (lg+) due colonne "a mattoncini" (masonry) così la
-          pagina non diventa lunghissima; sotto lg torna a colonna unica.
-          Gli Utenti restano a tutta larghezza (tabella larga). */}
-      <div className="lg:columns-2 gap-6 [&>*]:mb-6 [&>*]:break-inside-avoid space-y-6 lg:space-y-0">
+    <div className="space-y-6">
+      {/* Masonry a larghezza fissa: entrano quante più colonne possibili
+          (larghezza minima ~620px = quella attuale +10%), altrimenti si va a
+          capo. Sfrutta tutta la larghezza dell'area admin (che non ha cap).
+          Gli Utenti restano a tutta larghezza sotto (tabella larga). */}
+      <div className="columns-[620px] gap-6 [&>*]:mb-6 [&>*]:break-inside-avoid">
         {/* Monitoraggio globale del progetto Supabase (free tier) — solo admin */}
         <DatabaseStatsBox />
         <RepartiSection />
