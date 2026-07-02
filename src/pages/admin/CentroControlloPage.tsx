@@ -522,16 +522,16 @@ export function CentroControlloPage() {
       {/* Masonry a larghezza fissa: entrano quante più colonne possibili
           (larghezza minima ~620px = quella attuale +10%), altrimenti si va a
           capo. Sfrutta tutta la larghezza dell'area admin (che non ha cap).
-          Gli Utenti restano a tutta larghezza sotto (tabella larga). */}
+          TUTTI i riquadri (Utenti compreso) sono nel masonry → riempiono anche
+          lo spazio vuoto sotto le colonne più corte. */}
       <div className="columns-[620px] gap-6 [&>*]:mb-6 [&>*]:break-inside-avoid">
         {/* Monitoraggio globale del progetto Supabase (free tier) — solo admin */}
         <DatabaseStatsBox />
         <RepartiSection />
         <CentroLogSection />
         <ImpostazioniBackupBox />
+        <GestioneUtentiPage />
       </div>
-      <div className="border-t-2 border-stone-200" />
-      <GestioneUtentiPage />
     </div>
   )
 }

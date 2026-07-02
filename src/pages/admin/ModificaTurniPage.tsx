@@ -148,23 +148,27 @@ function RigheCoperturaDinamica({ cols, copByData, proprieta, expanded, onToggle
         // "di troppo" dove non servono — così si capisce cosa manca e dove. Appena
         // una metà torna a posto la sua riga sparisce; se poi la scombini riappare.
         const problema = cols.some(c => { const s = statoComb(c.data, prop.sigla); return s === 'deficit' || s === 'surplus' })
+        // Proprietà interamente a posto (verde ogni giorno) → NON la mostro: nel
+        // controllo compare SOLO ciò che non torna. I "totali" (TURNI TOTALI / IN
+        // SUB / IN MED) restano sempre visibili qui sotto.
+        if (!problema) return null
         const mismatch = (k: 'mattina' | 'pomeriggio') =>
           cols.some(c => { const v = dett(c.data, prop.sigla, k); return v.p !== v.r })
-        const mostraDett = open || problema
         const halves = (['mattina', 'pomeriggio'] as const)
           .filter(k => open || mismatch(k))
         return (
           <Fragment key={prop.sigla}>
-            {/* Riga proprietà (combinato) — clic per espandere mattina/pomeriggio */}
+            {/* Riga proprietà (combinato) — mostrata solo se NON è tutta verde;
+                clic per vedere entrambe le metà (di default solo quelle in errore). */}
             <tr style={{ cursor: 'pointer' }} onClick={() => onToggle(prop.sigla)}
-              title={`${prop.nome} — clic per ${open ? 'nascondere' : 'mostrare'} mattina/pomeriggio${problema && !open ? ' · ⚠ ripartizione da sistemare' : ''}`}>
+              title={`${prop.nome} — clic per ${open ? 'mostrare solo le metà in errore' : 'mostrare entrambe le metà'}`}>
               <td style={labelTd(prop.colore_bg)}>
-                <span style={{ display: 'inline-block', width: 9 }}>{mostraDett ? '▾' : '▸'}</span> {prop.sigla}
-                {problema && !open && <span style={{ color: '#b45309' }}> ⚠</span>}
+                <span style={{ display: 'inline-block', width: 9 }}>{open ? '▾' : '▸'}</span> {prop.sigla}
+                {!open && <span style={{ color: '#b45309' }}> ⚠</span>}
               </td>
               {cols.map(c => { const v = comb(c.data, prop.sigla); return <td key={c.data} style={cellTd}><CellaCop p={v.p} r={v.r} state={statoComb(c.data, prop.sigla)} /></td> })}
             </tr>
-            {mostraDett && halves.map(k => (
+            {halves.map(k => (
               <tr key={prop.sigla + k}>
                 <td style={labelTd('#eef1ec', true)}>{k}</td>
                 {cols.map(c => { const v = dett(c.data, prop.sigla, k); return <td key={c.data} style={cellTd}><CellaCop p={v.p} r={v.r} /></td> })}
