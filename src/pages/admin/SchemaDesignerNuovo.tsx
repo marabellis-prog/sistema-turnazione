@@ -70,6 +70,17 @@ interface SchemaDraft {
   fabbisogno: FabRow[]
 }
 
+/** Intestazione di sezione numerata (cerchio col numero + titolo del passo). */
+function StepHeader({ n, children }: { n: number; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2.5 pt-2">
+      <span className="flex items-center justify-center w-7 h-7 rounded-full text-sm font-extrabold text-white shrink-0 shadow-sm"
+        style={{ background: '#476540' }}>{n}</span>
+      <h3 className="text-base font-bold text-stone-800">{children}</h3>
+    </div>
+  )
+}
+
 export function SchemaDesignerNuovo() {
   const qc = useQueryClient()
   const { repartoAttivo, repartoCorrente, setRepartoAttivo, registerRepartoGuard } = useReparto()
@@ -730,7 +741,7 @@ export function SchemaDesignerNuovo() {
           onBlur={e => { const v = e.target.value.trim(); if (v !== titoloDi(schemaNum)) salvaTitolo(v) }}
           onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
           placeholder={`Schema ${schemaNum} — dai un nome per riconoscerlo…`}
-          className="flex-1 min-w-[140px] text-base font-bold bg-transparent border-b-2 border-stone-200 focus:border-[#476540] outline-none py-1 px-1 text-stone-800" />
+          className="flex-1 min-w-[140px] text-2xl font-bold bg-transparent border-b-2 border-stone-200 focus:border-[#476540] outline-none py-1 px-1 text-stone-800" />
         <button onClick={azzeraSchema} disabled={inUso}
           title={inUso ? 'Schema in uso nella turnazione attiva: duplicalo (Copia da…) per modificarlo' : 'Svuota lo schema (mantiene il titolo)'}
           className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-semibold border border-amber-300 text-amber-700 hover:bg-amber-50 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed">
@@ -743,12 +754,15 @@ export function SchemaDesignerNuovo() {
         </button>
       </div>
 
-      {/* ① TIPI DI TURNO + PROPRIETÀ dello schema, affiancati (i mattoni: si definiscono per primi) */}
+      {/* ① Definisci le caratteristiche dei turni (tipi di turno + proprietà) */}
+      <StepHeader n={1}>Definisci le caratteristiche dei turni</StepHeader>
       <div className="grid lg:grid-cols-5 gap-3 items-start">
         <div className="lg:col-span-3"><TipiSection reparto={repartoAttivo} schemaNum={schemaNum} onChanged={invalidaSchemi} /></div>
         <div className="lg:col-span-2"><ProprietaSection reparto={repartoAttivo} schemaNum={schemaNum} onChanged={invalidaSchemi} /></div>
       </div>
 
+      {/* ② Imposta le caratteristiche dello schema (giorni + turni/proprietà in griglia) */}
+      <StepHeader n={2}>Imposta le caratteristiche dello schema</StepHeader>
       {/* Picker: Giorni + Turni/Proprietà */}
       <div className="grid sm:grid-cols-2 gap-3">
         <div className="card p-3">
@@ -867,6 +881,11 @@ export function SchemaDesignerNuovo() {
             Per cambiare la struttura, <strong>duplica</strong> lo schema con “Copia da…”.
           </span>
         </div>
+      )}
+
+      {/* ③ Disegna la rotazione + fabbisogno (sotto l'eventuale banner "in uso") */}
+      {giorni.length > 0 && (
+        <StepHeader n={3}>Disegna la rotazione dei turni e definisci il fabbisogno di copertura dei turni</StepHeader>
       )}
 
       {/* Salva schema — subito SOTTO la struttura e SOPRA la griglia turnisti. */}
