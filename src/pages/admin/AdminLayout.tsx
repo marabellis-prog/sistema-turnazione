@@ -26,6 +26,7 @@ const links = [
   { to: '/admin/ferie',   label: 'Gestione Ferie',    Icon: Calendar },
   { to: '/admin/cambi',   label: 'Cambi Turno',       Icon: ArrowRightLeft },
   { to: '/admin/backup',  label: 'Backup/Ripristino', Icon: Archive },
+  { to: '/admin/archivio', label: 'Archivio turnazioni', Icon: CalendarClock },
 ]
 
 export function AdminLayout() {

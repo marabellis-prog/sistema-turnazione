@@ -22,6 +22,7 @@ import { GestioneSchemaPage }   from './pages/admin/GestioneSchemaPage'
 import { SchemaDesignerNuovo }   from './pages/admin/SchemaDesignerNuovo'
 import { BackupRipristinoPage } from './pages/admin/BackupRipristinoPage'
 import { AnteprimaTurnazionePage } from './pages/admin/AnteprimaTurnazionePage'
+import { ArchivioPage }          from './pages/admin/ArchivioPage'
 import { useAuth }                from './hooks/useAuth'
 import { PendingActionsProvider } from './contexts/PendingActionsContext'
 import { RepartoProvider }        from './contexts/RepartoContext'
@@ -197,6 +198,7 @@ function AppShell({ loading, signInWithGoogle, signOut }: {
           <Route path="backup"  element={<BackupRipristinoPage />} />
           <Route path="turni"   element={<ModificaTurniPage />} />
           <Route path="anteprima-turnazione" element={<AnteprimaTurnazionePage />} />
+          <Route path="archivio" element={<ArchivioPage />} />
         </Route>
 
         {/* Root → redirect (spinner durante loading, mai pagina bianca).
