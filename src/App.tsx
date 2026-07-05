@@ -36,7 +36,7 @@ import { ManutenzionePage }       from './pages/ManutenzionePage'
 // Ogni altro utente loggato vede SOLO il calendario statico (read-only):
 // niente scritture sul DB → impossibile danneggiare i dati. Riportare a
 // false quando il lavoro e' finito.
-const MANUTENZIONE   = true
+const MANUTENZIONE   = false
 const ADMIN_PERPETUO = 'marabelli.s@gmail.com'
 
 const queryClient = new QueryClient({
