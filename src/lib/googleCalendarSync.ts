@@ -44,9 +44,15 @@ const SCOPE = 'https://www.googleapis.com/auth/calendar'
 const CAL_API = 'https://www.googleapis.com/calendar/v3'
 const CAL_SUMMARY = 'TURNAZIONE'
 const TZ = 'Europe/Rome'
-const LS_CAL_HINT    = 'turnazione_gcal_id'          // hint localStorage per ritrovare il calendario
+const LS_CAL_HINT    = 'turnazione_gcal_id'          // hint localStorage (PREFISSO; + _<repartoId>)
 const LS_CAL_COLOR   = 'turnazione_gcal_color'       // ultimo colorId turni
 const LS_FERIE_COLOR = 'turnazione_gcal_ferie_color' // ultimo colorId ferie
+
+/** Chiave hint per-REPARTO: ogni reparto ha il proprio calendario (nome =
+ *  nome del reparto) e quindi il proprio hint → calendari Google distinti. */
+function hintKeyFor(repartoId: string): string {
+  return repartoId ? `${LS_CAL_HINT}_${repartoId}` : LS_CAL_HINT
+}
 
 // Colore ferie di default (palette eventi Google): Salvia (verde).
 export const DEFAULT_FERIE_COLOR = '2'
@@ -249,18 +255,16 @@ function isCalendarGone(e: unknown): boolean {
   return e instanceof Error && e.message === 'CALENDAR_GONE'
 }
 
-async function findOrCreateCalendar(token: string, colorId: string, forceCreate = false): Promise<string> {
-  // I turni vengono colorati a livello di EVENTO (vedi eventBody). Qui
-  // proviamo anche a dare al calendario lo stesso colore (best-effort:
-  // con lo scope minimale puo` non avere effetto, ma gli eventi restano
-  // colorati comunque).
-  //
-  // forceCreate=true: salta l'hint localStorage (puo` puntare a un
-  // calendario eliminato). Usato nel retry dopo un CALENDAR_GONE.
+async function findOrCreateCalendar(token: string, colorId: string, calSummary: string, hintK: string, forceCreate = false): Promise<string> {
+  // Il calendario si chiama come il REPARTO (calSummary). Ogni reparto ha il
+  // suo calendario e il suo hint (hintK) → mondi separati su Google Calendar.
+  // I turni sono colorati a livello di EVENTO (eventBody); qui proviamo anche
+  // a colorare il calendario (best-effort con lo scope minimale).
+  // forceCreate=true: salta l'hint (puo` puntare a un calendario eliminato).
 
-  // 1) hint da localStorage (re-sync sullo stesso dispositivo)
+  // 1) hint da localStorage (re-sync sullo stesso dispositivo, per-reparto)
   if (!forceCreate) try {
-    const hint = localStorage.getItem(LS_CAL_HINT)
+    const hint = localStorage.getItem(hintK)
     if (hint) {
       try {
         await gcal(token, 'GET', `/calendars/${encodeURIComponent(hint)}`)
@@ -268,32 +272,31 @@ async function findOrCreateCalendar(token: string, colorId: string, forceCreate 
         saveColor(colorId)
         return hint
       } catch {
-        localStorage.removeItem(LS_CAL_HINT)  // calendario eliminato a mano
+        localStorage.removeItem(hintK)  // calendario eliminato a mano
       }
     }
   } catch { /* localStorage non disponibile */ }
 
-  // 2) scan della lista calendari (con calendar.app.created ritorna quelli
-  //    creati dall'app). Se lo scope non lo consente, si va al create.
+  // 2) scan della lista calendari: cerca quello col NOME del reparto.
   try {
     const list = await gcal<CalListResp>(token, 'GET', '/users/me/calendarList?maxResults=250')
-    const found = list.items?.find(c => c.summary === CAL_SUMMARY)
+    const found = list.items?.find(c => c.summary === calSummary)
     if (found) {
-      try { localStorage.setItem(LS_CAL_HINT, found.id) } catch {}
+      try { localStorage.setItem(hintK, found.id) } catch {}
       await applyColor(token, found.id, colorId)
       saveColor(colorId)
       return found.id
     }
   } catch { /* calendarList non accessibile con questo scope: procedo a creare */ }
 
-  // 3) crea (e prova ad applicare il colore al calendario)
+  // 3) crea il calendario col NOME del reparto (e prova ad applicare il colore)
   const created = await gcal<{ id: string }>(token, 'POST', '/calendars', {
-    summary: CAL_SUMMARY,
+    summary: calSummary,
     timeZone: TZ,
     description: 'Turni di servizio — sincronizzati automaticamente dall\'app Sistema Turni. ' +
       'Non modificare manualmente: gli eventi vengono sovrascritti ad ogni sincronizzazione.',
   })
-  try { localStorage.setItem(LS_CAL_HINT, created.id) } catch {}
+  try { localStorage.setItem(hintK, created.id) } catch {}
   await applyColor(token, created.id, colorId)
   saveColor(colorId)  // memorizzo il colorId appena scelto
   return created.id
@@ -501,9 +504,13 @@ export async function syncToGoogleCalendar(opts: {
   ferie: FerieRange[]
   colorId: string
   ferieColorId: string
+  /** Nome del reparto → nome del calendario Google (uno per reparto). */
+  repartoNome: string
+  /** Id del reparto → chiave hint localStorage per-reparto. */
+  repartoId: string
   onProgress?: (p: SyncProgress) => void
 }): Promise<SyncResult> {
-  const { clientId, medicoId, turni, ferie, colorId, ferieColorId, onProgress } = opts
+  const { clientId, medicoId, turni, ferie, colorId, ferieColorId, repartoNome, repartoId, onProgress } = opts
 
   onProgress?.({ phase: 'auth' })
   const token = await requestCalendarToken(clientId)
@@ -513,11 +520,11 @@ export async function syncToGoogleCalendar(opts: {
   // calendario non esiste piu` (eliminato a mano su Google → CALENDAR_GONE),
   // si azzera l'hint, si ricrea il calendario da zero e si riprova UNA volta.
   try {
-    return await runSyncOnce(token, medicoId, turni, ferie, colorId, ferieColorId, false, onProgress)
+    return await runSyncOnce(token, medicoId, turni, ferie, colorId, ferieColorId, repartoNome, repartoId, false, onProgress)
   } catch (e) {
     if (isCalendarGone(e)) {
-      try { localStorage.removeItem(LS_CAL_HINT) } catch {}
-      return await runSyncOnce(token, medicoId, turni, ferie, colorId, ferieColorId, true, onProgress)
+      try { localStorage.removeItem(hintKeyFor(repartoId)) } catch {}
+      return await runSyncOnce(token, medicoId, turni, ferie, colorId, ferieColorId, repartoNome, repartoId, true, onProgress)
     }
     throw e
   }
@@ -530,11 +537,13 @@ async function runSyncOnce(
   ferie: FerieRange[],
   colorId: string,
   ferieColorId: string,
+  repartoNome: string,
+  repartoId: string,
   forceCreate: boolean,
   onProgress?: (p: SyncProgress) => void,
 ): Promise<SyncResult> {
   onProgress?.({ phase: 'calendar' })
-  const calId = await findOrCreateCalendar(token, colorId, forceCreate)
+  const calId = await findOrCreateCalendar(token, colorId, repartoNome || CAL_SUMMARY, hintKeyFor(repartoId), forceCreate)
 
   onProgress?.({ phase: 'reading' })
   // Se appena ricreato (forceCreate) la lista e` vuota → tutto da creare.

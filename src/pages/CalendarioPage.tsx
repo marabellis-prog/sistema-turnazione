@@ -186,7 +186,9 @@ export function CalendarioPage() {
 
   // Utente loggato + stato modal "Richiedi Ferie" e "Riepilogo turni"
   const { effectiveUser: user } = useDebug()
-  const { repartoVista } = useMioReparto()
+  const { repartoVista, mieiReparti } = useMioReparto()
+  // Nome del reparto in vista → nome del calendario Google (uno per reparto).
+  const repartoNomeVista = mieiReparti.find(r => r.id === repartoVista)?.nome ?? ''
   const labelSchema = useSchemaLabeler(repartoVista)
   const qc = useQueryClient()
   const [showRichiediFerie, setShowRichiediFerie] = useState(false)
@@ -1061,6 +1063,8 @@ export function CalendarioPage() {
           medico={mioMedico}
           turni={turni}
           ferie={ferieDelMioMedico}
+          repartoNome={repartoNomeVista}
+          repartoId={repartoVista}
           onClose={() => setShowSyncCal(false)}
         />
       )}

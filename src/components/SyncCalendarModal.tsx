@@ -29,6 +29,10 @@ interface Props {
   turni:  Turno[]
   /** Ferie del medico (verranno sincronizzate quelle approvate). */
   ferie:  FerieRange[]
+  /** Nome del reparto → nome del calendario Google (uno per reparto). */
+  repartoNome: string
+  /** Id del reparto → hint localStorage per-reparto. */
+  repartoId: string
   onClose: () => void
 }
 
@@ -36,13 +40,13 @@ type Step = 'intro' | 'syncing' | 'done' | 'error'
 
 const PHASE_LABEL: Record<SyncProgress['phase'], string> = {
   auth:     'Autorizzazione Google…',
-  calendar: 'Preparazione calendario TURNAZIONE…',
+  calendar: 'Preparazione calendario del reparto…',
   reading:  'Lettura turni già presenti…',
   writing:  'Aggiornamento turni…',
   done:     'Completato',
 }
 
-export function SyncCalendarModal({ medico, turni, ferie, onClose }: Props) {
+export function SyncCalendarModal({ medico, turni, ferie, repartoNome, repartoId, onClose }: Props) {
   const [step, setStep]         = useState<Step>('intro')
   // Pre-seleziona i colori già scelti (turni / ferie), memorizzati
   // all'ultima sincronizzazione. Fallback ai default se non noti.
@@ -76,6 +80,8 @@ export function SyncCalendarModal({ medico, turni, ferie, onClose }: Props) {
         ferie,
         colorId,
         ferieColorId,
+        repartoNome,
+        repartoId,
         onProgress: setProgress,
       })
       setResult(res)
@@ -122,8 +128,8 @@ export function SyncCalendarModal({ medico, turni, ferie, onClose }: Props) {
           {step === 'intro' && (
             <>
               <p className="text-sm text-stone-700 leading-relaxed">
-                Continuando verrà creato il calendario <strong>TURNAZIONE</strong> (se non
-                esiste già) e saranno sincronizzati tutti i tuoi turni e le ferie.
+                Continuando verrà creato il calendario <strong>{repartoNome || 'TURNAZIONE'}</strong> (col
+                nome del reparto, se non esiste già) e saranno sincronizzati i tuoi turni e le ferie.
               </p>
 
               {/* Scelta colore TURNI */}
