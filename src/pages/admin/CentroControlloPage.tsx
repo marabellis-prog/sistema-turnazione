@@ -440,7 +440,7 @@ const fmtEventoData = (iso: string) => {
   const d = new Date(iso); const p = (n: number) => String(n).padStart(2, '0')
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${String(d.getFullYear()).slice(2)} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
-const LOG_PER_PAGE = 20
+const LOG_PER_PAGE = 10
 
 function CentroLogSection() {
   const [page, setPage] = useState(0)
