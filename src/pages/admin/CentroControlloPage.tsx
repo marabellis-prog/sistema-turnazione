@@ -293,6 +293,10 @@ function RepartiSection() {
           const resp = responsabili.filter(x => x.reparto_id === r.id)
           const utentiDisponibili = utenti.filter(u =>
             u.attivo && !resp.some(x => x.utente_id === u.id))
+          // Reparto disattivato = "congelato": l'UNICO pulsante cliccabile è
+          // Riattiva (Power). Rinomina/Manutenzione/Copia/Elimina e la gestione
+          // Responsabili restano visibili ma disabilitati finché non si riattiva.
+          const bloccato = !r.attivo
           return (
             <div key={r.id} className="card p-3" style={{ opacity: r.attivo ? 1 : 0.6 }}>
               <div className="flex items-center gap-2">
@@ -329,32 +333,41 @@ function RepartiSection() {
                     </span>
                     <div className="ml-auto flex items-center gap-1">
                       <button onClick={() => { setEditId(r.id); setEditNome(r.nome) }}
-                        className="p-1.5 rounded text-stone-500 hover:text-blue-600 hover:bg-blue-50" title="Rinomina">
+                        disabled={bloccato}
+                        className={`p-1.5 rounded ${bloccato ? 'text-stone-300 cursor-not-allowed' : 'text-stone-500 hover:text-blue-600 hover:bg-blue-50'}`}
+                        title={bloccato ? 'Reparto disattivato — riattivalo per gestirlo' : 'Rinomina'}>
                         <Pencil size={14} />
                       </button>
+                      {/* Riattiva (Power): SEMPRE cliccabile, anche su reparto disattivato. */}
                       <button onClick={() => toggleAttivo(r)}
                         className="p-1.5 rounded text-stone-500 hover:text-amber-600 hover:bg-amber-50"
                         title={r.attivo ? 'Disattiva' : 'Riattiva'}>
                         <Power size={14} />
                       </button>
                       <button onClick={() => toggleManutenzione(r)}
+                        disabled={bloccato}
                         className="p-1.5 rounded transition-colors"
-                        style={r.in_manutenzione ? { color: '#fff', background: '#eab308' } : { color: '#78716c' }}
-                        onMouseEnter={e => { if (!r.in_manutenzione) { e.currentTarget.style.color = '#ca8a04'; e.currentTarget.style.background = '#fefce8' } }}
-                        onMouseLeave={e => { if (!r.in_manutenzione) { e.currentTarget.style.color = '#78716c'; e.currentTarget.style.background = 'transparent' } }}
-                        title={r.in_manutenzione ? 'Manutenzione ATTIVA — clicca per disattivare' : 'Attiva modalità manutenzione (i turnisti vedono un avviso)'}>
+                        style={bloccato
+                          ? { color: '#d6d3d1', cursor: 'not-allowed' }
+                          : r.in_manutenzione ? { color: '#fff', background: '#eab308' } : { color: '#78716c' }}
+                        onMouseEnter={e => { if (!bloccato && !r.in_manutenzione) { e.currentTarget.style.color = '#ca8a04'; e.currentTarget.style.background = '#fefce8' } }}
+                        onMouseLeave={e => { if (!bloccato && !r.in_manutenzione) { e.currentTarget.style.color = '#78716c'; e.currentTarget.style.background = 'transparent' } }}
+                        title={bloccato ? 'Reparto disattivato — riattivalo per gestirlo' : r.in_manutenzione ? 'Manutenzione ATTIVA — clicca per disattivare' : 'Attiva modalità manutenzione (i turnisti vedono un avviso)'}>
                         <Construction size={14} />
                       </button>
                       {r.id !== REPARTO_11N && (
                         <button onClick={() => setCopyFor(copyFor === r.id ? null : r.id)}
-                          className="p-1.5 rounded text-stone-500 hover:text-green-700 hover:bg-green-50"
-                          title="Copia turnisti, festività, tipi, proprietà e schemi da un altro reparto (non i turni)">
+                          disabled={bloccato}
+                          className={`p-1.5 rounded ${bloccato ? 'text-stone-300 cursor-not-allowed' : 'text-stone-500 hover:text-green-700 hover:bg-green-50'}`}
+                          title={bloccato ? 'Reparto disattivato — riattivalo per gestirlo' : 'Copia turnisti, festività, tipi, proprietà e schemi da un altro reparto (non i turni)'}>
                           <Copy size={14} />
                         </button>
                       )}
                       {r.id !== REPARTO_11N && (
                         <button onClick={() => apriElimina(r)}
-                          className="p-1.5 rounded text-stone-500 hover:text-red-600 hover:bg-red-50" title="Elimina">
+                          disabled={bloccato}
+                          className={`p-1.5 rounded ${bloccato ? 'text-stone-300 cursor-not-allowed' : 'text-stone-500 hover:text-red-600 hover:bg-red-50'}`}
+                          title={bloccato ? 'Reparto disattivato — riattivalo per gestirlo' : 'Elimina'}>
                           <Trash2 size={14} />
                         </button>
                       )}
@@ -377,13 +390,16 @@ function RepartiSection() {
                       style={{ background: '#e8f0e0', color: '#2b4a28' }}>
                       {u?.nome || u?.email || '—'}
                       <button onClick={() => rimuoviResp(r.id, x.utente_id)}
-                        className="hover:text-red-600" title="Rimuovi">
+                        disabled={bloccato}
+                        className={bloccato ? 'text-stone-300 cursor-not-allowed' : 'hover:text-red-600'}
+                        title={bloccato ? 'Reparto disattivato' : 'Rimuovi'}>
                         <X size={11} />
                       </button>
                     </span>
                   )
                 })}
-                {addRespFor === r.id ? (
+                {/* Su reparto disattivato niente aggiunta responsabili. */}
+                {bloccato ? null : addRespFor === r.id ? (
                   <select autoFocus defaultValue=""
                     onChange={e => e.target.value && aggiungiResp(r.id, e.target.value)}
                     onBlur={() => setAddRespFor(null)}
@@ -402,7 +418,7 @@ function RepartiSection() {
               </div>
 
               {/* Copia setup da un altro reparto (per reparti nuovi/vuoti) */}
-              {copyFor === r.id && (
+              {copyFor === r.id && !bloccato && (
                 <div className="mt-2 flex items-center gap-2 text-xs bg-green-50 border border-green-200 rounded p-2">
                   <Copy size={13} className="text-green-700 shrink-0" />
                   <span className="text-stone-600">Copia tipi/schemi/regole da:</span>
