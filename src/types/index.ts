@@ -28,6 +28,9 @@ export interface Reparto {
   created_at: string
   /** Codice nazione per le festività nazionali (es. 'IT'). Default 'IT'. */
   nazione?:   string
+  /** Modalità manutenzione: se true, le viste pubbliche del reparto mostrano un
+   *  messaggio a tutti tranne super-admin e responsabili del reparto. */
+  in_manutenzione?: boolean
 }
 
 /** Un utente (globale) responsabile di un reparto. */

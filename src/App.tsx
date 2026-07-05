@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { NavBar }            from './components/NavBar'
 import { ProtectedRoute }    from './components/ProtectedRoute'
+import { ManutenzioneGate }  from './components/ManutenzioneGate'
 import { LoginPage }         from './pages/LoginPage'
 import { AuthCallbackPage }  from './pages/AuthCallbackPage'
 import { CalendarioPage }     from './pages/CalendarioPage'
@@ -135,7 +136,7 @@ function AppShell({ loading, signInWithGoogle, signOut }: {
           path="/calendario"
           element={
             <ProtectedRoute user={user} loading={loading}>
-              <CalendarioPage />
+              <ManutenzioneGate><CalendarioPage /></ManutenzioneGate>
             </ProtectedRoute>
           }
         />
@@ -146,7 +147,7 @@ function AppShell({ loading, signInWithGoogle, signOut }: {
           element={
             <ProtectedRoute user={user} loading={loading}
               allowedRoles={['admin', 'user', 'ospite']}>
-              <SettimanalePage />
+              <ManutenzioneGate><SettimanalePage /></ManutenzioneGate>
             </ProtectedRoute>
           }
         />
@@ -159,7 +160,7 @@ function AppShell({ loading, signInWithGoogle, signOut }: {
           element={
             <ProtectedRoute user={user} loading={loading}
               allowedRoles={['admin', 'user', 'ospite']}>
-              <SettimanaleAltPage />
+              <ManutenzioneGate><SettimanaleAltPage /></ManutenzioneGate>
             </ProtectedRoute>
           }
         />

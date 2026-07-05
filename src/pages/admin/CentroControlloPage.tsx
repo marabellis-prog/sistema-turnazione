@@ -14,7 +14,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Building2, Plus, Trash2, Pencil, Save, X, UserCog, Power, Lock, Copy,
   AlertTriangle, Calendar, RefreshCw, RotateCcw, ChevronLeft, ChevronRight,
-  History, Loader2,
+  History, Loader2, Construction,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { registraEventoCentro, type CentroEvento, type CentroEventoTipo } from '../../lib/centroLog'
@@ -114,6 +114,15 @@ function RepartiSection() {
       await registraEventoCentro('reparto_disattivato', r.id, r.nome, `Disattivato il reparto "${r.nome}".`)
       qc.invalidateQueries({ queryKey: ['centro-eventi'] })
     }
+    reload()
+  }
+  // Modalità manutenzione: le viste pubbliche del reparto mostrano un messaggio
+  // a tutti tranne super-admin e responsabili del reparto (gate lato viste).
+  async function toggleManutenzione(r: Reparto) {
+    setErr('')
+    const { error } = await supabase.from('reparti')
+      .update({ in_manutenzione: !r.in_manutenzione }).eq('id', r.id)
+    if (error) { setErr(error.message); return }
     reload()
   }
   // Eliminazione reparto: apre il modal a 2 passi (avviso → riscrivi-parola).
@@ -311,6 +320,12 @@ function RepartiSection() {
                       {!r.attivo && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">disattivato</span>
                       )}
+                      {r.in_manutenzione && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                          style={{ background: '#fef08a', color: '#854d0e' }}>
+                          <Construction size={9} /> in manutenzione
+                        </span>
+                      )}
                     </span>
                     <div className="ml-auto flex items-center gap-1">
                       <button onClick={() => { setEditId(r.id); setEditNome(r.nome) }}
@@ -321,6 +336,14 @@ function RepartiSection() {
                         className="p-1.5 rounded text-stone-500 hover:text-amber-600 hover:bg-amber-50"
                         title={r.attivo ? 'Disattiva' : 'Riattiva'}>
                         <Power size={14} />
+                      </button>
+                      <button onClick={() => toggleManutenzione(r)}
+                        className="p-1.5 rounded transition-colors"
+                        style={r.in_manutenzione ? { color: '#fff', background: '#eab308' } : { color: '#78716c' }}
+                        onMouseEnter={e => { if (!r.in_manutenzione) { e.currentTarget.style.color = '#ca8a04'; e.currentTarget.style.background = '#fefce8' } }}
+                        onMouseLeave={e => { if (!r.in_manutenzione) { e.currentTarget.style.color = '#78716c'; e.currentTarget.style.background = 'transparent' } }}
+                        title={r.in_manutenzione ? 'Manutenzione ATTIVA — clicca per disattivare' : 'Attiva modalità manutenzione (i turnisti vedono un avviso)'}>
+                        <Construction size={14} />
                       </button>
                       {r.id !== REPARTO_11N && (
                         <button onClick={() => setCopyFor(copyFor === r.id ? null : r.id)}
@@ -525,12 +548,23 @@ export function CentroControlloPage() {
           TUTTI i riquadri (Utenti compreso) sono nel masonry → riempiono anche
           lo spazio vuoto sotto le colonne più corte. */}
       <div className="columns-[620px] gap-6 [&>*]:mb-6 [&>*]:break-inside-avoid">
-        {/* Monitoraggio globale del progetto Supabase (free tier) — solo admin */}
-        <DatabaseStatsBox />
-        <RepartiSection />
-        <CentroLogSection />
-        <ImpostazioniBackupBox />
-        <GestioneUtentiPage />
+        {/* Ogni sezione in un riquadro con ombra + gradiente distinto: i card
+            bianchi interni risaltano sul gradiente e le sezioni si distinguono. */}
+        <div className="rounded-2xl shadow-lg p-4 border border-black/5" style={{ background: 'linear-gradient(135deg,#eef1f5 0%,#dfe6ee 100%)' }}>
+          <DatabaseStatsBox />
+        </div>
+        <div className="rounded-2xl shadow-lg p-4 border border-black/5" style={{ background: 'linear-gradient(135deg,#eef7e8 0%,#dcecd0 100%)' }}>
+          <RepartiSection />
+        </div>
+        <div className="rounded-2xl shadow-lg p-4 border border-black/5" style={{ background: 'linear-gradient(135deg,#eaf3fb 0%,#d7e7f6 100%)' }}>
+          <CentroLogSection />
+        </div>
+        <div className="rounded-2xl shadow-lg p-4 border border-black/5" style={{ background: 'linear-gradient(135deg,#f3eefb 0%,#e5daf6 100%)' }}>
+          <ImpostazioniBackupBox />
+        </div>
+        <div className="rounded-2xl shadow-lg p-4 border border-black/5" style={{ background: 'linear-gradient(135deg,#fbf5e8 0%,#f4e6cf 100%)' }}>
+          <GestioneUtentiPage />
+        </div>
       </div>
     </div>
   )
