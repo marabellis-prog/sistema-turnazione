@@ -1,16 +1,27 @@
 name: Supabase Keepalive
 
-# Esegue ogni 3 giorni alle 07:00 UTC per evitare che il DB vada in pausa
+# Ogni 3 giorni:
+#  1. pinga Supabase → evita che il DB free-tier vada in pausa (~7gg di inattività);
+#  2. se il repo è rimasto INATTIVO da ≥20 giorni, fa un commit vuoto → evita che
+#     GitHub disabiliti automaticamente gli scheduled workflow dopo 60gg senza
+#     attività del repo (repo PUBBLICO). Senza questo, dopo una lunga assenza il
+#     cron si spegnerebbe e Supabase andrebbe comunque in pausa.
 on:
   schedule:
     - cron: '0 7 */3 * *'
   workflow_dispatch:     # permette di lanciarlo manualmente
 
+permissions:
+  contents: write        # serve per il commit di keepalive
+
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase (keepalive)
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ping Supabase (keepalive DB)
         run: |
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "apikey: ${{ secrets.VITE_SUPABASE_ANON_KEY }}" \
@@ -22,3 +33,20 @@ jobs:
             exit 1
           fi
           echo "✓ Supabase attivo"
+
+      - name: Keepalive commit (solo se repo inattivo da ≥20 giorni)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          LAST=$(git log -1 --format=%ct)
+          AGE=$(( ( $(date +%s) - LAST ) / 86400 ))
+          echo "Ultimo commit: $AGE giorni fa"
+          if [ "$AGE" -ge 20 ]; then
+            # Commit vuoto + [skip ci] → non innesca il deploy, serve solo a
+            # produrre attività sul repo e tenere vivo lo scheduled workflow.
+            git commit --allow-empty -m "chore: keepalive $(date -u +%F) [skip ci]"
+            git push origin HEAD:main
+            echo "✓ Commit keepalive creato (scheduled workflow mantenuto attivo)"
+          else
+            echo "✓ Repo attivo di recente: nessun commit necessario"
+          fi
