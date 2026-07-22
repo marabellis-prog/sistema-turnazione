@@ -605,15 +605,20 @@ function EditableCell({
 }
 
 // ════════════════════════════════════════════════════════════════════
-// #44 — Popover di assegnazione turno + proprietà (click su cella clinica).
+// #44/#46 — Popover di assegnazione turno + proprietà (click su cella clinica).
 // Si affianca al drag-drop: turno via handleDropFromLegend(TC:), proprietà
 // per-metà via setSlotHalf. Half-aware (mostra le metà che il turno lavora);
 // se il turno è di Reperibilità → niente proprietà.
+// #46: le proposte sono PER-GIORNO — `turni` e `placements` arrivano già
+// filtrati allo schema effettivo della data + colonne spuntate quel giorno
+// della settimana; qui si renderizza solo ciò che è possibile quel giorno.
 // ════════════════════════════════════════════════════════════════════
-function CellaAssegnaPopover({ anchorId, cur, turni, proprietaDin, cambiato, onTurno, onProp, onClose }: {
+function CellaAssegnaPopover({ anchorId, cur, turni, placements, proprietaDin, cambiato, onTurno, onProp, onClose }: {
   anchorId:     string
   cur:          { tc: TurnoClinico; slot_mattina: SlotPlacement; slot_pomeriggio: SlotPlacement }
   turni:        { sigla: string; nome: string; colore_bg: string; colore_fg: string; is_reperibilita: boolean }[]
+  /** Proprietà piazzabili PREVISTE dallo schema per questo giorno (SUB/MED). */
+  placements:   ('SUB' | 'MED')[]
   proprietaDin: { sigla: string; nome: string; colore_bg: string }[]
   /** Se valorizzato, la cella deriva da un cambio turno: reminder + valore originale. */
   cambiato:     { originario: string; manuale?: boolean } | null
@@ -645,7 +650,9 @@ function CellaAssegnaPopover({ anchorId, cur, turni, proprietaDin, cambiato, onT
       <span className="text-[10px] w-[70px] shrink-0" style={{ color: '#78716c' }}>
         {half === 'mattina' ? 'Mattina' : 'Pomeriggio'}
       </span>
-      {(['SUB', 'MED', null] as SlotPlacement[]).map(v => {
+      {/* #46: si propongono SOLO le proprietà previste dallo schema in questo
+          giorno (più il neutro "—" per togliere). */}
+      {([...placements, null] as SlotPlacement[]).map(v => {
         const sel = val === v
         const label = v ?? '—'
         const c = v ? propColor(v) : '#f5f5f4'
@@ -698,14 +705,25 @@ function CellaAssegnaPopover({ anchorId, cur, turni, proprietaDin, cambiato, onT
           <button onClick={() => onTurno('')} title="Vuota la cella"
             className="px-2 py-1 rounded text-xs border border-stone-200 text-stone-400 hover:bg-stone-50">—</button>
         </div>
+        {turni.length === 0 && (
+          <div className="text-[10px] text-stone-400 italic px-0.5 mb-2">
+            Lo schema non prevede turni in questo giorno.
+          </div>
+        )}
         {reperibilita ? (
           <div className="text-[10px] text-stone-400 italic px-0.5">Reperibilità: nessuna proprietà.</div>
         ) : (canM || canP) ? (
-          <>
-            <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1">Proprietà</div>
-            {canM && <PropChips half="mattina" val={cur.slot_mattina} />}
-            {canP && <PropChips half="pomeriggio" val={cur.slot_pomeriggio} />}
-          </>
+          placements.length > 0 ? (
+            <>
+              <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1">Proprietà</div>
+              {canM && <PropChips half="mattina" val={cur.slot_mattina} />}
+              {canP && <PropChips half="pomeriggio" val={cur.slot_pomeriggio} />}
+            </>
+          ) : (
+            <div className="text-[10px] text-stone-400 italic px-0.5">
+              Lo schema non prevede proprietà in questo giorno.
+            </div>
+          )
         ) : (
           <div className="text-[10px] text-stone-400 italic px-0.5">Scegli un turno che lavora per assegnare le proprietà.</div>
         )}
@@ -1014,6 +1032,57 @@ export function ModificaTurniPage() {
         .eq('reparto_id', repartoAttivo).eq('schema_num', schemaAttivoNum)
       if (error) throw error
       return (data ?? []) as { tipo: 'turno' | 'flag'; sigla: string; ordine: number }[]
+    },
+  })
+  // #46 — Proposte PER-GIORNO del popover di assegnazione: il giorno cliccato
+  // può appartenere a uno schema DIVERSO dall'attivo (schema_storico), quindi
+  // servono struttura, spunte, tipi e proprietà di TUTTI gli schemi del reparto.
+  const { data: colonneAllSchemi = [] } = useQuery<{ schema_num: number; tipo: 'turno' | 'flag'; sigla: string; ordine: number }[]>({
+    queryKey: ['mod-colonne-tutti', repartoAttivo],
+    enabled: repartoDinamico && !!config,
+    staleTime: 0, refetchOnMount: 'always',
+    queryFn: async () => {
+      const { data, error } = await supabase.from('schema_colonna')
+        .select('schema_num, tipo, sigla, ordine')
+        .eq('reparto_id', repartoAttivo)
+      if (error) throw error
+      return (data ?? []) as { schema_num: number; tipo: 'turno' | 'flag'; sigla: string; ordine: number }[]
+    },
+  })
+  const { data: checksAllSchemi = [] } = useQuery<{ schema_num: number; giorno_settimana: number; colonna_sigla: string }[]>({
+    queryKey: ['mod-checks-tutti', repartoAttivo],
+    enabled: repartoDinamico && !!config,
+    staleTime: 0, refetchOnMount: 'always',
+    queryFn: async () => {
+      const { data, error } = await supabase.from('schema_giorno_colonna')
+        .select('schema_num, giorno_settimana, colonna_sigla')
+        .eq('reparto_id', repartoAttivo).eq('attivo', true)
+      if (error) throw error
+      return (data ?? []) as { schema_num: number; giorno_settimana: number; colonna_sigla: string }[]
+    },
+  })
+  const { data: tipiAllSchemi = [] } = useQuery<{ schema_num: number; sigla: string; nome: string; colore_bg: string; colore_fg: string; is_reperibilita: boolean }[]>({
+    queryKey: ['mod-tipi-tutti', repartoAttivo],
+    enabled: repartoDinamico && !!config,
+    staleTime: 0, refetchOnMount: 'always',
+    queryFn: async () => {
+      const { data, error } = await supabase.from('tipi_turno')
+        .select('schema_num, sigla, nome, colore_bg, colore_fg, is_reperibilita')
+        .eq('reparto_id', repartoAttivo)
+      if (error) throw error
+      return (data ?? []) as { schema_num: number; sigla: string; nome: string; colore_bg: string; colore_fg: string; is_reperibilita: boolean }[]
+    },
+  })
+  const { data: propAllSchemi = [] } = useQuery<{ schema_num: number; sigla: string; nome: string; colore_bg: string }[]>({
+    queryKey: ['mod-prop-tutti', repartoAttivo],
+    enabled: repartoDinamico && !!config,
+    staleTime: 0, refetchOnMount: 'always',
+    queryFn: async () => {
+      const { data, error } = await supabase.from('proprieta_turno')
+        .select('schema_num, sigla, nome, colore_bg')
+        .eq('reparto_id', repartoAttivo)
+      if (error) throw error
+      return (data ?? []) as { schema_num: number; sigla: string; nome: string; colore_bg: string }[]
     },
   })
   const tipiTurnoUsati = useMemo(() => {
@@ -2715,13 +2784,52 @@ export function ModificaTurniPage() {
         }}
       />
 
-      {/* #44 — popover di assegnazione turno + proprietà (click su cella clinica) */}
-      {cellPopover && repartoDinamico && (
+      {/* #44/#46 — popover di assegnazione turno + proprietà (click su cella
+          clinica). Le proposte sono PER-GIORNO: schema effettivo della data
+          (schema_storico) + colonne SPUNTATE per quel giorno della settimana
+          nella griglia dello schema → si propone solo ciò che lo schema
+          prevede quel giorno (più il valore già in cella, per cambiarlo). */}
+      {cellPopover && repartoDinamico && (() => {
+        const curCella = getCella(cellPopover.medicoId, cellPopover.data)
+        const eff = schemaEffettivoPerGiorno(config, cellPopover.data) ?? schemaAttivoNum
+        const dg = new Date(cellPopover.data + 'T00:00:00').getDay()
+        const dowSchema = dg === 0 ? 7 : dg          // 1=lun … 7=dom (come la griglia)
+        const spuntate = new Set(checksAllSchemi
+          .filter(c => c.schema_num === eff && c.giorno_settimana === dowSchema)
+          .map(c => c.colonna_sigla))
+        const colGiorno = [...colonneAllSchemi.filter(c => c.schema_num === eff)]
+          .sort((a, b) => a.ordine - b.ordine)
+        // I bottoni-turno passano da handleDropFromLegend('TC:…') che accetta
+        // solo le sigle classiche: le proposte restano in quel perimetro.
+        const CLASSICI = ['M', 'P', 'L', 'REP', 'EM', 'EP', 'EL']
+        const tipiBySigla = new Map(tipiAllSchemi.filter(t => t.schema_num === eff).map(t => [t.sigla, t]))
+        const tipiGiorno = colGiorno
+          .filter(c => c.tipo === 'turno' && spuntate.has(c.sigla) && CLASSICI.includes(c.sigla))
+          .map(c => tipiBySigla.get(c.sigla))
+          .filter((t): t is NonNullable<typeof t> => !!t)
+        // Il turno GIÀ in cella si mostra comunque (per vederlo/cambiarlo),
+        // anche se lo schema non lo prevede quel giorno.
+        if (curCella.tc && !tipiGiorno.some(t => t.sigla === curCella.tc)) {
+          const extra = tipiBySigla.get(curCella.tc)
+            ?? tipiAllSchemi.find(t => t.sigla === curCella.tc)
+            ?? { schema_num: eff, sigla: curCella.tc, nome: curCella.tc, colore_bg: '#f5f5f4', colore_fg: '#57534e', is_reperibilita: curCella.tc === 'REP' }
+          tipiGiorno.push(extra)
+        }
+        // Proprietà proposte = colonne-flag spuntate quel giorno (SUB/MED sono
+        // le piazzabili per metà) + l'eventuale valore già impostato in cella
+        // (per poterlo togliere anche se lo schema non lo prevede più).
+        const placementsGiorno = colGiorno
+          .filter(c => c.tipo === 'flag' && spuntate.has(c.sigla) && (c.sigla === 'SUB' || c.sigla === 'MED'))
+          .map(c => c.sigla as 'SUB' | 'MED')
+        for (const v of [curCella.slot_mattina, curCella.slot_pomeriggio])
+          if (v && !placementsGiorno.includes(v)) placementsGiorno.push(v)
+        return (
         <CellaAssegnaPopover
           anchorId={`cell-${cellPopover.medicoId}-${cellPopover.data}`}
-          cur={getCella(cellPopover.medicoId, cellPopover.data)}
-          turni={tipiTurnoUsati.filter(t => ['M', 'P', 'L', 'REP', 'EM', 'EP', 'EL'].includes(t.sigla))}
-          proprietaDin={proprietaDin}
+          cur={curCella}
+          turni={tipiGiorno}
+          placements={placementsGiorno}
+          proprietaDin={propAllSchemi.filter(p => p.schema_num === eff)}
           cambiato={(() => {
             const dbT = turniByKey.get(`${cellPopover.medicoId}|${cellPopover.data}`)
             // Bordo ROSSO: cambio turno approvato trascinato oltre un Aggiorna
@@ -2741,7 +2849,8 @@ export function ModificaTurniPage() {
           onProp={(half, value) => setSlotHalf(cellPopover.medicoId, cellPopover.data, half, value)}
           onClose={() => setCellPopover(null)}
         />
-      )}
+        )
+      })()}
     </div>
   )
 }
