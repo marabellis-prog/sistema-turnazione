@@ -28,8 +28,9 @@ export interface TurnoGenDin {
   data: string
   turno_clinico: string
   turno_ricerca: string
-  slot_mattina: 'SUB' | 'MED' | null
-  slot_pomeriggio: 'SUB' | 'MED' | null
+  /** #48 — piazzamento per metà: qualunque proprietà (SUB/MED/SUP/…). */
+  slot_mattina: string | null
+  slot_pomeriggio: string | null
   is_sub: boolean
   is_med: boolean
   turno_sigla: string | null
@@ -104,8 +105,8 @@ export function generaSchemaNuovo(p: GeneraSchemaParams): TurnoGenDin[] {
 
       let turno_sigla: string | null = null
       let turno_clinico = ''
-      let slot_mattina: 'SUB' | 'MED' | null = null
-      let slot_pomeriggio: 'SUB' | 'MED' | null = null
+      let slot_mattina: string | null = null
+      let slot_pomeriggio: string | null = null
       let proprieta: string[] = []
 
       if (cel) {
@@ -120,8 +121,12 @@ export function generaSchemaNuovo(p: GeneraSchemaParams): TurnoGenDin[] {
           flagSigle.has(c.colonna_sigla) && isChecked(dWeek, c.colonna_sigla))
           .map(c => c.colonna_sigla)
 
-        // Derivati per compat (SUB/MED nelle metà coperte dal turno).
-        const placement: 'SUB' | 'MED' | null = proprieta.includes('SUB') ? 'SUB' : proprieta.includes('MED') ? 'MED' : null
+        // Piazzamento nelle metà coperte dal turno (#48: qualunque proprietà).
+        // Precedenza storica SUB → MED, poi la prima altra flag attiva (es. SUP).
+        const placement: string | null =
+          proprieta.includes('SUB') ? 'SUB'
+          : proprieta.includes('MED') ? 'MED'
+          : (proprieta[0] ?? null)
         slot_mattina    = m  ? placement : null
         slot_pomeriggio = pm ? placement : null
       }

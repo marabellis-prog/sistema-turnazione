@@ -39,6 +39,7 @@ import {
 import { soglieForDay } from '../../lib/soglieImpostazioni'
 import { calcolaCoperturaGiorno, risolviAmbito, type FabbisognoRiga, type CoperturaGiorno } from '../../lib/copertura'
 import { schemaEffettivoPerGiorno } from '../../lib/schemiInUso'
+import { placementBg } from '../../lib/placementColors'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { useConfirm } from '../../hooks/useConfirm'
 import { RiepilogoTurni, aggiustaConteggiRiepilogo } from '../../components/RiepilogoTurni'
@@ -196,12 +197,8 @@ function fmtDataItaliana(iso: string): string {
   return `${d} ${MESI_ABBR[m - 1] ?? '?'}`
 }
 
-// Colore pastello per ogni placement nel cerchio mezzo/mezzo
-const PLACEMENT_BG: Record<'SUB'|'MED'|'NONE', string> = {
-  SUB:  '#fecaca',
-  MED:  '#bae6fd',
-  NONE: 'transparent',
-}
+// Colore pastello per ogni placement nel cerchio mezzo/mezzo (#48: la palette
+// generalizzata a qualunque proprietà vive in lib/placementColors).
 // Grigio del "Supporto"/jolly: metà che lavora ma senza SUB/MED.
 const SUPPORTO_BG = '#d4d4d4'
 
@@ -213,8 +210,8 @@ const SUPPORTO_BG = '#d4d4d4'
  *  - Senza placement: testo nudo, no cerchio */
 function LabelClinico({ tc, slot_mattina, slot_pomeriggio, sup }: {
   tc: string
-  slot_mattina?:    'SUB'|'MED'|null
-  slot_pomeriggio?: 'SUB'|'MED'|null
+  slot_mattina?:    string | null    // #48: qualunque proprietà piazzata
+  slot_pomeriggio?: string | null
   /** true = la cella è un Supporto ESPLICITO (flag SUP) → cerchio grigio.
    *  Una metà attiva senza slot e senza SUP è NEUTRA (bianca, nessun cerchio). */
   sup?: boolean
@@ -231,8 +228,8 @@ function LabelClinico({ tc, slot_mattina, slot_pomeriggio, sup }: {
   // seguono le controparti (EM~M, EP~P, EL~L).
   // Metà attiva: colore placement (SUB/MED); se manca lo slot → grigio SOLO se
   // Supporto esplicito (sup), altrimenti NEUTRO (undefined = nessun cerchio).
-  const half = (s: 'SUB' | 'MED' | null | undefined): string | undefined =>
-    s ? PLACEMENT_BG[s] : (sup ? SUPPORTO_BG : undefined)
+  const half = (s: string | null | undefined): string | undefined =>
+    s ? placementBg(s) : (sup ? SUPPORTO_BG : undefined)
   let bg: string | undefined
   if (tc === 'M' || tc === 'EM') {
     bg = half(slot_mattina)
@@ -352,8 +349,8 @@ interface EditableCellProps {
   isRedDay:         boolean       // domenica/festivo
   /** Colore "magia 4-colori" per la cella clinica (calcolato per giorno) */
   ferieGiornoColore?: 'verde'|'azzurro'|'arancione'|'rosso'|null
-  slot_mattina?:    'SUB'|'MED'|null   // placement mattina (per cerchio sinistro)
-  slot_pomeriggio?: 'SUB'|'MED'|null   // placement pomeriggio (per cerchio destro)
+  slot_mattina?:    string | null      // placement mattina (per cerchio sinistro; #48 qualunque proprietà)
+  slot_pomeriggio?: string | null      // placement pomeriggio (per cerchio destro)
   sup?:             boolean       // Supporto esplicito (flag SUP) → cerchio grigio
   readOnly?:        boolean       // se true, niente click/editing (es. tabella ricerca)
   onChangeClinico:  (tc: TurnoClinico) => void
@@ -613,15 +610,13 @@ function EditableCell({
 // filtrati allo schema effettivo della data + colonne spuntate quel giorno
 // della settimana; qui si renderizza solo ciò che è possibile quel giorno.
 // ════════════════════════════════════════════════════════════════════
-function CellaAssegnaPopover({ anchorId, cur, turni, placements, extraFlags, onExtraToggle, proprietaDin, cambiato, onTurno, onProp, onClose }: {
+function CellaAssegnaPopover({ anchorId, cur, turni, placements, proprietaDin, cambiato, onTurno, onProp, onClose }: {
   anchorId:     string
   cur:          { tc: TurnoClinico; slot_mattina: SlotPlacement; slot_pomeriggio: SlotPlacement; extra?: string[] }
   turni:        { sigla: string; nome: string; colore_bg: string; colore_fg: string; is_reperibilita: boolean }[]
-  /** Proprietà piazzabili PREVISTE dallo schema per questo giorno (SUB/MED). */
-  placements:   ('SUB' | 'MED')[]
-  /** #47 — proprietà SENZA metà previste quel giorno (es. SUP): toggle. */
-  extraFlags:   { sigla: string; nome: string; colore_bg: string }[]
-  onExtraToggle: (sigla: string) => void
+  /** Proprietà piazzabili PREVISTE dallo schema per questo giorno
+   *  (#48: qualunque proprietà — SUB/MED/SUP/… — è un piazzamento per metà). */
+  placements:   string[]
   proprietaDin: { sigla: string; nome: string; colore_bg: string }[]
   /** Se valorizzato, la cella deriva da un cambio turno: reminder + valore originale. */
   cambiato:     { originario: string; manuale?: boolean } | null
@@ -716,29 +711,11 @@ function CellaAssegnaPopover({ anchorId, cur, turni, placements, extraFlags, onE
         {reperibilita ? (
           <div className="text-[10px] text-stone-400 italic px-0.5">Reperibilità: nessuna proprietà.</div>
         ) : (canM || canP) ? (
-          (placements.length > 0 || extraFlags.length > 0) ? (
+          placements.length > 0 ? (
             <>
               <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1">Proprietà</div>
-              {placements.length > 0 && canM && <PropChips half="mattina" val={cur.slot_mattina} />}
-              {placements.length > 0 && canP && <PropChips half="pomeriggio" val={cur.slot_pomeriggio} />}
-              {/* #47 — proprietà SENZA metà (es. SUP): valgono sulla giornata,
-                  contano sulle metà senza SUB/MED. Attivarle libera gli slot. */}
-              {extraFlags.length > 0 && (
-                <div className="flex items-center gap-1 mb-1">
-                  <span className="text-[10px] w-[70px] shrink-0" style={{ color: '#78716c' }}>Giornata</span>
-                  {extraFlags.map(f => {
-                    const sel = (cur.extra ?? []).includes(f.sigla)
-                    return (
-                      <button key={f.sigla} onClick={() => onExtraToggle(f.sigla)}
-                        className="flex-1 px-1 py-1 rounded text-[11px] font-semibold border transition-colors"
-                        style={sel ? { background: f.colore_bg, color: '#3a3d30', borderColor: '#78716c' } : { background: '#fff', color: '#78716c', borderColor: '#e5e7eb' }}
-                        title={`${f.nome} — proprietà di giornata (senza mattina/pomeriggio). ${sel ? 'Clicca per togliere.' : 'Attivandola libera SUB/MED.'}`}>
-                        {f.sigla}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
+              {canM && <PropChips half="mattina" val={cur.slot_mattina} />}
+              {canP && <PropChips half="pomeriggio" val={cur.slot_pomeriggio} />}
             </>
           ) : (
             <div className="text-[10px] text-stone-400 italic px-0.5">
@@ -1388,72 +1365,15 @@ export function ModificaTurniPage() {
     })
   }, [turniByKey])
 
-  // #47 — Toggle di una proprietà SENZA metà (es. SUP) su una cella.
-  // Attivandola si LIBERANO i placement SUB/MED delle metà lavorate (una sola
-  // azione per "P in MED → P in SUP": SUP conta infatti solo sulle metà senza
-  // placement, vedi calcolaCoperturaGiorno). Disattivandola gli slot restano.
-  // Stesso "smart delta" delle altre modifiche (uguale al DB → entry rimossa).
-  const toggleExtraFlag = useCallback((medicoId: string, data: string, sigla: string) => {
-    setModifiche(prev => {
-      const next = new Map(prev)
-      const key = `${medicoId}|${data}`
-      const dbT = turniByKey.get(key)
-      const dbEx = nonPlacement(dbT?.proprieta)
-      const cur: RicalcCell = next.get(key) ?? {
-        tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
-        tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
-        slot_mattina:    dbT?.slot_mattina    ?? null,
-        slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
-      }
-      const tc = cur.tc
-      const canM = tc === 'M' || tc === 'L' || tc === 'EM' || tc === 'EL'
-      const canP = tc === 'P' || tc === 'L' || tc === 'EP' || tc === 'EL'
-      if (!canM && !canP) return prev            // REP / vuoto: niente proprietà
-      const curExtra = cur.extra ?? dbEx
-      const attiva = !curExtra.includes(sigla)
-      const newExtra = attiva ? [...curExtra, sigla] : curExtra.filter(p => p !== sigla)
-      const updated: RicalcCell = {
-        ...cur,
-        // Attivazione: libera i placement delle metà lavorate dal turno.
-        slot_mattina:    attiva && canM ? null : cur.slot_mattina,
-        slot_pomeriggio: attiva && canP ? null : cur.slot_pomeriggio,
-        extra: newExtra,
-      }
-      const dbCur: RicalcCell = {
-        tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
-        tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
-        slot_mattina:    dbT?.slot_mattina    ?? null,
-        slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
-      }
-      if (updated.tc === dbCur.tc && updated.tr === dbCur.tr &&
-          updated.slot_mattina === dbCur.slot_mattina &&
-          updated.slot_pomeriggio === dbCur.slot_pomeriggio &&
-          extraEq(newExtra, dbEx)) {
-        next.delete(key)
-      } else {
-        next.set(key, updated)
-      }
-      return next
-    })
-  }, [turniByKey])
-
   // ── Drop dalla legenda ────────────────────────────────────────────
   // Le icone della legenda sono draggabili. Drop su una cella applica:
   //   TC:M / TC:P / TC:L / TC:REP  →  setta TC, ricalcola il giorno
   //   TR:RM / TR:RP                →  toggle TR (set o svuota se uguale)
-  //   FLAG:SUB / FLAG:MED          →  toggle flag, niente ricalcolo
-  //   FLAG:<altra sigla> (#47)     →  toggle proprietà SENZA metà (es. SUP)
+  //   FLAG:<sigla> (#48)           →  toggle piazzamento (SUB/MED/SUP/…), niente ricalcolo
   // Il drop di TC è equivalente a un editing manuale; gli altri sono
   // override "manuali" che il prossimo ricalcolo del giorno potrebbe
   // sovrascrivere se cambia un TC.
   const handleDropFromLegend = useCallback((medicoId: string, data: string, payload: string) => {
-    // #47 — FLAG generico (non SUB/MED/split-L): proprietà senza metà.
-    if (payload.startsWith('FLAG:') &&
-        !['FLAG:SUB', 'FLAG:MED', 'FLAG:L_SUB_MED', 'FLAG:L_MED_SUB'].includes(payload)) {
-      const sigla = payload.slice(5)
-      if (sigla) toggleExtraFlag(medicoId, data, sigla)
-      return
-    }
     if (payload.startsWith('TC:')) {
       const newTc = payload.slice(3) as TurnoClinico
       // Payload "TC:" vuoto = chip "Vuoto" della legenda → cancella il TC.
@@ -1492,8 +1412,10 @@ export function ModificaTurniPage() {
         updated = { ...cur, tr: cur.tr === 'RM' ? '' : 'RM' }
       } else if (payload === 'TR:RP') {
         updated = { ...cur, tr: cur.tr === 'RP' ? '' : 'RP' }
-      } else if (payload === 'FLAG:SUB' || payload === 'FLAG:MED') {
-        const X: SlotPlacement = payload === 'FLAG:SUB' ? 'SUB' : 'MED'
+      } else if (payload.startsWith('FLAG:') &&
+                 payload !== 'FLAG:L_SUB_MED' && payload !== 'FLAG:L_MED_SUB') {
+        // #48 — piazzamento GENERICO: qualunque proprietà (SUB/MED/SUP/…).
+        const X: SlotPlacement = payload.slice(5)
         // Filtri di eligibilità: la mattina la posso settare solo se TC ∈
         // {M, L}, il pomeriggio solo se TC ∈ {P, L}. REP / '' non possono
         // ricevere flag.
@@ -1527,7 +1449,12 @@ export function ModificaTurniPage() {
           sm = null
         }
         // Se !canM && !canP (REP, vuoto): nessun cambio.
-        updated = { ...cur, slot_mattina: sm, slot_pomeriggio: sp }
+        // #48: piazzando X negli slot, X esce dai flag di giornata (niente
+        // doppia rappresentazione col dato legacy generato).
+        updated = {
+          ...cur, slot_mattina: sm, slot_pomeriggio: sp,
+          extra: (cur.extra ?? nonPlacement(dbT?.proprieta)).filter(p => p !== X),
+        }
       } else if (payload === 'FLAG:L_SUB_MED' || payload === 'FLAG:L_MED_SUB') {
         // L misto: applica direttamente lo split richiesto. Funziona solo
         // se tc === 'L', altrimenti no-op.
@@ -1558,7 +1485,7 @@ export function ModificaTurniPage() {
       }
       return next
     })
-  }, [turniByKey, updateCella, toggleExtraFlag])
+  }, [turniByKey, updateCella])
 
   // #44 — setta la proprietà (SUB / MED / null=Supporto) di UNA metà specifica.
   // Usato dal popover di assegnazione. Rispetta l'eligibilità della metà in base
@@ -1580,10 +1507,14 @@ export function ModificaTurniPage() {
       const canP = tc === 'P' || tc === 'L' || tc === 'EP' || tc === 'EL'
       if (half === 'mattina' && !canM) return prev
       if (half === 'pomeriggio' && !canP) return prev
+      const dbExH = nonPlacement(dbT?.proprieta)
       const updated: RicalcCell = {
         ...cur,
         slot_mattina:    half === 'mattina'    ? value : cur.slot_mattina,
         slot_pomeriggio: half === 'pomeriggio' ? value : cur.slot_pomeriggio,
+        // #48: piazzando una sigla negli slot, esce dai flag di giornata
+        // legacy (niente doppia rappresentazione).
+        extra: value ? (cur.extra ?? dbExH).filter(p => p !== value) : cur.extra,
       }
       const dbCur: RicalcCell = {
         tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
@@ -1591,7 +1522,6 @@ export function ModificaTurniPage() {
         slot_mattina:    dbT?.slot_mattina    ?? null,
         slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
       }
-      const dbExH = nonPlacement(dbT?.proprieta)
       if (updated.tc === dbCur.tc && updated.tr === dbCur.tr &&
           updated.slot_mattina === dbCur.slot_mattina &&
           updated.slot_pomeriggio === dbCur.slot_pomeriggio &&
@@ -1899,13 +1829,16 @@ export function ModificaTurniPage() {
         // e le proprietà SUB/MED derivano dagli slot; le proprietà SENZA metà
         // (#47, es. SUP) arrivano dalla modifica (`cell.extra`) o, se non
         // toccate, dal DB. Sui CLASSICI (11N) NO-OP.
+        // #48: proprieta = sigle PIAZZATE negli slot (distinte, qualunque
+        // proprietà) + eventuali flag di giornata legacy non già piazzati.
+        const placedSigle = [...new Set([cell.slot_mattina, cell.slot_pomeriggio]
+          .filter((x): x is string => !!x))]
         const extraDin = repartoDinamico
           ? {
               turno_sigla: cell.tc === '' ? null : cell.tc,
               proprieta: [
-                ...(isSub ? ['SUB'] : []),
-                ...(isMed ? ['MED'] : []),
-                ...cellExtra,
+                ...placedSigle,
+                ...cellExtra.filter(p => !placedSigle.includes(p)),
               ],
             }
           : {}
@@ -2852,15 +2785,15 @@ export function ModificaTurniPage() {
               proprieta={repartoDinamico ? proprietaUsate : undefined}
               getCellInfo={(mid, data) => {
                 const cur = getCella(mid, data)
-                // proprieta LIVE e coerente col salvataggio: SUB/MED dagli
-                // slot correnti + proprietà senza metà (#47) dalla modifica.
-                const s = cur.slot_mattina === 'SUB' || cur.slot_pomeriggio === 'SUB'
-                const m = cur.slot_mattina === 'MED' || cur.slot_pomeriggio === 'MED'
+                // proprieta LIVE e coerente col salvataggio (#48): sigle
+                // PIAZZATE negli slot + flag di giornata legacy non piazzati.
+                const placed = [...new Set([cur.slot_mattina, cur.slot_pomeriggio]
+                  .filter((x): x is string => !!x))]
                 return {
                   tc:              cur.tc,
                   slot_mattina:    cur.slot_mattina,
                   slot_pomeriggio: cur.slot_pomeriggio,
-                  proprieta:       [...(s ? ['SUB'] : []), ...(m ? ['MED'] : []), ...(cur.extra ?? [])],
+                  proprieta:       [...placed, ...(cur.extra ?? []).filter(p => !placed.includes(p))],
                 }
               }}
             />
@@ -2920,32 +2853,21 @@ export function ModificaTurniPage() {
             ?? { schema_num: eff, sigla: curCella.tc, nome: curCella.tc, colore_bg: '#f5f5f4', colore_fg: '#57534e', is_reperibilita: curCella.tc === 'REP' }
           tipiGiorno.push(extra)
         }
-        // Proprietà proposte = colonne-flag spuntate quel giorno (SUB/MED sono
-        // le piazzabili per metà) + l'eventuale valore già impostato in cella
-        // (per poterlo togliere anche se lo schema non lo prevede più).
-        const placementsGiorno = colGiorno
-          .filter(c => c.tipo === 'flag' && spuntate.has(c.sigla) && (c.sigla === 'SUB' || c.sigla === 'MED'))
-          .map(c => c.sigla as 'SUB' | 'MED')
+        // Proprietà proposte = TUTTE le colonne-flag spuntate quel giorno
+        // (#48: ogni proprietà è un piazzamento per metà — SUB/MED/SUP/…) +
+        // l'eventuale valore già impostato in cella (per poterlo togliere
+        // anche se lo schema non lo prevede più).
+        const placementsGiorno: string[] = colGiorno
+          .filter(c => c.tipo === 'flag' && spuntate.has(c.sigla))
+          .map(c => c.sigla)
         for (const v of [curCella.slot_mattina, curCella.slot_pomeriggio])
           if (v && !placementsGiorno.includes(v)) placementsGiorno.push(v)
-        // #47 — proprietà SENZA metà (es. SUP) previste dallo schema quel
-        // giorno (colonne-flag spuntate ≠ SUB/MED) + quelle già attive in
-        // cella (per poterle togliere anche se fuori schema).
-        const propEff = propAllSchemi.filter(p => p.schema_num === eff)
-        const extraGiorno = colGiorno
-          .filter(c => c.tipo === 'flag' && spuntate.has(c.sigla) && c.sigla !== 'SUB' && c.sigla !== 'MED')
-          .map(c => propEff.find(p => p.sigla === c.sigla) ?? { schema_num: eff, sigla: c.sigla, nome: c.sigla, colore_bg: '#e7e5e4' })
-        for (const s of curCella.extra ?? [])
-          if (!extraGiorno.some(x => x.sigla === s))
-            extraGiorno.push(propEff.find(p => p.sigla === s) ?? { schema_num: eff, sigla: s, nome: s, colore_bg: '#e7e5e4' })
         return (
         <CellaAssegnaPopover
           anchorId={`cell-${cellPopover.medicoId}-${cellPopover.data}`}
           cur={curCella}
           turni={tipiGiorno}
           placements={placementsGiorno}
-          extraFlags={extraGiorno}
-          onExtraToggle={sigla => toggleExtraFlag(cellPopover.medicoId, cellPopover.data, sigla)}
           proprietaDin={propAllSchemi.filter(p => p.schema_num === eff)}
           cambiato={(() => {
             const dbT = turniByKey.get(`${cellPopover.medicoId}|${cellPopover.data}`)

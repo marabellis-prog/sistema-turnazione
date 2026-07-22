@@ -30,18 +30,15 @@ import { useMioReparto } from '../contexts/MioRepartoContext'
 import { REPARTO_11N } from '../contexts/RepartoContext'
 import { ForceLandscapeOverlay } from '../components/ForceLandscapeOverlay'
 import type { Configurazione, Medico, Turno, Ferie, SlotPlacement } from '../types'
+import { placementBg, SUPPORTO_GREY } from '../lib/placementColors'
 
 // 1=Lun, …, 7=Dom (allineato a getDayOfWeek)
 const GIORNI_IT = ['', 'LUNEDÌ', 'MARTEDÌ', 'MERCOLEDÌ', 'GIOVEDÌ', 'VENERDÌ', 'SABATO', 'DOMENICA']
 const GIORNO_BG = ['#f0f4ee', '#ecf3e0', '#fef3c7', '#fee0c0', '#e8e0f5', '#f0f0f0', '#fde0e0']
 
-/** Sfondo cerchio del placement (SUB rosa / MED azzurro / Supporto grigio).
- *  NONE = lavora senza SUB/MED = Supporto/jolly → grigio. */
-const PLACEMENT_BG: Record<'SUB'|'MED'|'NONE', string> = {
-  SUB:  '#fecaca',
-  MED:  '#bae6fd',
-  NONE: '#d4d4d4',
-}
+/** Sfondo cerchio del placement (SUB rosa / MED azzurro / altre proprietà
+ *  grigio — #48). NONE = lavora senza piazzamento = Supporto/jolly → grigio.
+ *  Palette centralizzata in lib/placementColors. */
 
 /** Stripe bianco + arancio chiaro per evidenziare il "buco":
  *  un turno operativo (M/P/L/REP) che cade su un giorno di ferie approvate
@@ -468,7 +465,7 @@ export function SettimanalePage() {
   /** Pillola circolare colorata per il placement (SUB pink / MED cyan).
    *  La lettera dentro identifica il tipo di turno (M, P, L). */
   function Chip({ letter, placement }: { letter: string; placement: SlotPlacement }) {
-    const bg = PLACEMENT_BG[placement ?? 'NONE']
+    const bg = placementBg(placement) ?? SUPPORTO_GREY
     return (
       <span style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',

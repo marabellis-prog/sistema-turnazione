@@ -236,7 +236,10 @@ export interface SchemaModello {
 /** Dove fisicamente lavora il medico in una mezza giornata.
  *  null = non lavora in quella sessione (es. la mattina di un P) o
  *  non specificato. */
-export type SlotPlacement = 'SUB' | 'MED' | null
+/** Piazzamento di una metà giornata: la SIGLA della proprietà che il medico
+ *  copre in quella metà (#48 — generalizzato: 'SUB', 'MED', 'SUP', o qualunque
+ *  proprietà definita nello schema), oppure null = metà neutra. */
+export type SlotPlacement = string | null
 
 export interface Turno {
   id: string

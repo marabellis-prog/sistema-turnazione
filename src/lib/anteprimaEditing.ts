@@ -42,9 +42,10 @@ export function applicaDropCella(cell: Turno, payload: string): Turno {
   if (payload === 'TR:RM') return { ...cell, turno_ricerca: (cell.turno_ricerca === 'RM' ? '' : 'RM') as TurnoRicerca }
   if (payload === 'TR:RP') return { ...cell, turno_ricerca: (cell.turno_ricerca === 'RP' ? '' : 'RP') as TurnoRicerca }
 
-  // ── FLAG SUB/MED: toggle placement con eligibilita' per TC ──────────
-  if (payload === 'FLAG:SUB' || payload === 'FLAG:MED') {
-    const X: SlotPlacement = payload === 'FLAG:SUB' ? 'SUB' : 'MED'
+  // ── FLAG generico (#48): toggle piazzamento (SUB/MED/SUP/…) per TC ──
+  if (payload.startsWith('FLAG:') &&
+      payload !== 'FLAG:L_SUB_MED' && payload !== 'FLAG:L_MED_SUB') {
+    const X: SlotPlacement = payload.slice(5)
     const tc = cell.turno_clinico
     const canM = tc === 'M' || tc === 'L' || tc === 'EM' || tc === 'EL'
     const canP = tc === 'P' || tc === 'L' || tc === 'EP' || tc === 'EL'

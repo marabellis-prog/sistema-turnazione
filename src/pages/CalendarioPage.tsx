@@ -19,6 +19,7 @@ import { useFerieRealtime } from '../hooks/useFerieRealtime'
 import { useTurniRealtime } from '../hooks/useTurniRealtime'
 import { useFestivitaCustom, useFestivitaCustomRealtime } from '../hooks/useFestivitaCustom'
 import { useSchemaLabeler } from '../hooks/useSchemaLabel'
+import { placementBg } from '../lib/placementColors'
 import type {
   Medico, Turno, Ferie, Configurazione, ColonnaCal,
   TurnoClinico, TurnoRicerca, SlotPlacement,
@@ -49,13 +50,8 @@ const CELL_COLORS: Record<string, { bg: string; fg: string }> = {
   RP:  { bg: '#ead8e2', fg: '#582840' },
 }
 
-// Sfondo cerchio per i 2 placement
-const PLACEMENT_BG_PUB: Record<'SUB'|'MED'|'NONE', string> = {
-  SUB:  '#fecaca',
-  MED:  '#bae6fd',
-  NONE: 'transparent',
-}
-// Grigio del "Supporto"/jolly (metà che lavora senza SUB/MED).
+// Sfondo cerchio dei piazzamenti (#48: palette in lib/placementColors).
+// Grigio del "Supporto"/jolly (metà che lavora senza piazzamento).
 const SUPPORTO_BG_PUB = '#d4d4d4'
 
 /** Etichetta del turno clinico (M / P / L / REP) — più grande perché unico
@@ -83,7 +79,7 @@ function LabelClinico({ tc, slot_mattina, slot_pomeriggio, sup }: {
 
   // Metà attiva senza placement: grigio SOLO se Supporto esplicito (SUP);
   // altrimenti NEUTRO (undefined = nessun cerchio, testo nudo).
-  const half = (s: SlotPlacement): string | undefined => (s ? PLACEMENT_BG_PUB[s] : (sup ? SUPPORTO_BG_PUB : undefined))
+  const half = (s: SlotPlacement): string | undefined => (s ? placementBg(s) : (sup ? SUPPORTO_BG_PUB : undefined))
   let bg: string | undefined
   if (tc === 'M' || tc === 'EM') {
     bg = half(slot_mattina ?? null)

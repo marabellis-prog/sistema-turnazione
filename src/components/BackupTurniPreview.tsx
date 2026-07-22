@@ -19,6 +19,7 @@ import { isFestivo } from '../lib/holidays'
 import { MESI_IT } from '../lib/algorithm'
 import { nomeBreve } from '../lib/nomeTurnista'
 import type { Medico, Turno, ColonnaCal, SlotPlacement } from '../types'
+import { placementBg } from '../lib/placementColors'
 
 const CELL_COLORS: Record<string, { bg: string; fg: string }> = {
   M:   { bg: '#dde8d5', fg: '#2e4a28' },
@@ -40,11 +41,7 @@ function dayLetter(dateStr: string): string {
   return DAY_LETTERS[new Date(y, m - 1, d).getDay()]
 }
 
-const PLACEMENT_BG: Record<'SUB'|'MED'|'NONE', string> = {
-  SUB:  '#fecaca',
-  MED:  '#bae6fd',
-  NONE: 'transparent',
-}
+// #48: palette dei piazzamenti centralizzata in lib/placementColors.
 const SUPPORTO_BG = '#d4d4d4'  // grigio del Supporto/jolly
 
 // Bordo destro sull'ultimo giorno di ogni mese (eccetto l'ultimo del periodo)
@@ -62,7 +59,7 @@ function LabelClinico({ tc, slot_mattina, slot_pomeriggio, sup }: {
   const isTwoChar = tc === 'REP' || tc === 'EM' || tc === 'EP' || tc === 'EL'
   const fontSize = isTwoChar ? 10 : 12
   const color    = tc === 'REP' ? '#b91c1c' : (CELL_COLORS[tc]?.fg ?? '#3a3d30')
-  const half = (s: SlotPlacement): string | undefined => (s ? PLACEMENT_BG[s] : (sup ? SUPPORTO_BG : undefined))
+  const half = (s: SlotPlacement): string | undefined => (s ? placementBg(s) : (sup ? SUPPORTO_BG : undefined))
   let bg: string | undefined
   if (tc === 'M' || tc === 'EM') {
     bg = half(slot_mattina ?? null)

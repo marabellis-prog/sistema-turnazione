@@ -31,10 +31,12 @@ export interface FabbisognoRiga {
 /** Turno di un medico in un giorno (solo i campi utili alla copertura). */
 export interface TurnoCopertura {
   turno_clinico?: string | null
-  /** Placement SUB/MED per metà (fonte LIVE: riflette le modifiche manuali). */
-  slot_mattina?: 'SUB' | 'MED' | null
-  slot_pomeriggio?: 'SUB' | 'MED' | null
-  /** Flag del turno: usati per le proprietà SENZA placement (es. Supporto). */
+  /** Placement per metà (#48: qualunque proprietà — SUB/MED/SUP/…).
+   *  Fonte LIVE: riflette le modifiche manuali. */
+  slot_mattina?: string | null
+  slot_pomeriggio?: string | null
+  /** Flag del turno: proprietà di GIORNATA senza placement (legacy/generate);
+   *  contano solo sulle metà che non hanno uno slot. */
   proprieta?: string[] | null
 }
 
@@ -129,14 +131,20 @@ export function calcolaCoperturaGiorno(
       const tc = t.turno_clinico ?? ''
       if (!copre.has(tc)) continue
       totPresente++
-      // SUB/MED dal placement (slot) → LIVE con le modifiche manuali; le altre
-      // proprietà (es. Supporto) dai flag del turno solo se NON c'è placement.
+      // Piazzamento della metà (#48: qualunque sigla — SUB/MED/SUP/…) → LIVE
+      // con le modifiche manuali; i flag di giornata contano solo sulle metà
+      // SENZA placement (dato legacy/generato).
       const slot = meta === 'mattina' ? (t.slot_mattina ?? null) : (t.slot_pomeriggio ?? null)
-      if (slot === 'SUB' || slot === 'MED') {
+      if (slot) {
         presente[slot] = (presente[slot] ?? 0) + 1
       } else {
         for (const p of t.proprieta ?? []) {
-          if (p !== 'SUB' && p !== 'MED') presente[p] = (presente[p] ?? 0) + 1
+          // #48: una sigla PIAZZATA nell'altra metà non è un flag di giornata
+          // → non conta sulle metà lasciate esplicitamente neutre.
+          if (p !== 'SUB' && p !== 'MED' &&
+              p !== t.slot_mattina && p !== t.slot_pomeriggio) {
+            presente[p] = (presente[p] ?? 0) + 1
+          }
         }
       }
     }

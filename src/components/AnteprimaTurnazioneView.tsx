@@ -22,6 +22,7 @@ import { isFestivo } from '../lib/holidays'
 import { MESI_IT } from '../lib/algorithm'
 import { soglieForDay } from '../lib/soglieImpostazioni'
 import { LegendaCalendario, DRAG_MIME } from './LegendaCalendario'
+import { placementBg } from '../lib/placementColors'
 import type {
   Medico, Turno, ColonnaCal, SlotPlacement, TurnazioneAnteprima, Ferie, Configurazione,
 } from '../types'
@@ -31,7 +32,7 @@ const CELL_COLORS: Record<string, { bg: string; fg: string }> = {
   L:  { bg: '#ece5d5', fg: '#4a3a1a' }, REP: { bg: '#e8d5d5', fg: '#5a2a2a' },
   EM: { bg: '#dbe4e8', fg: '#36495a' }, EP: { bg: '#dbe4e8', fg: '#36495a' }, EL: { bg: '#dbe4e8', fg: '#36495a' },
 }
-const PLACEMENT_BG: Record<'SUB'|'MED'|'NONE', string> = { SUB: '#fecaca', MED: '#bae6fd', NONE: 'transparent' }
+// #48: palette dei piazzamenti centralizzata in lib/placementColors.
 const SUPPORTO_BG = '#d4d4d4'
 const DAY_LETTERS = ['D', 'L', 'M', 'M', 'G', 'V', 'S']
 const MONTH_END_BORDER = '2px solid #1a1a1a'
@@ -56,7 +57,7 @@ function LabelClinico({ tc, sm, sp }: { tc: string; sm?: SlotPlacement; sp?: Slo
   const isTwoChar = tc === 'REP' || tc === 'EM' || tc === 'EP' || tc === 'EL'
   const fontSize = isTwoChar ? 10 : 12
   const color    = tc === 'REP' ? '#b91c1c' : (CELL_COLORS[tc]?.fg ?? '#3a3d30')
-  const half = (s: SlotPlacement) => (s ? PLACEMENT_BG[s] : SUPPORTO_BG)
+  const half = (s: SlotPlacement) => placementBg(s) ?? SUPPORTO_BG
   let bg: string | undefined
   if (tc === 'M' || tc === 'EM') bg = half(sm ?? null)
   else if (tc === 'P' || tc === 'EP') bg = half(sp ?? null)
