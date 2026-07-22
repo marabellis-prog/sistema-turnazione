@@ -613,12 +613,15 @@ function EditableCell({
 // filtrati allo schema effettivo della data + colonne spuntate quel giorno
 // della settimana; qui si renderizza solo ciò che è possibile quel giorno.
 // ════════════════════════════════════════════════════════════════════
-function CellaAssegnaPopover({ anchorId, cur, turni, placements, proprietaDin, cambiato, onTurno, onProp, onClose }: {
+function CellaAssegnaPopover({ anchorId, cur, turni, placements, extraFlags, onExtraToggle, proprietaDin, cambiato, onTurno, onProp, onClose }: {
   anchorId:     string
-  cur:          { tc: TurnoClinico; slot_mattina: SlotPlacement; slot_pomeriggio: SlotPlacement }
+  cur:          { tc: TurnoClinico; slot_mattina: SlotPlacement; slot_pomeriggio: SlotPlacement; extra?: string[] }
   turni:        { sigla: string; nome: string; colore_bg: string; colore_fg: string; is_reperibilita: boolean }[]
   /** Proprietà piazzabili PREVISTE dallo schema per questo giorno (SUB/MED). */
   placements:   ('SUB' | 'MED')[]
+  /** #47 — proprietà SENZA metà previste quel giorno (es. SUP): toggle. */
+  extraFlags:   { sigla: string; nome: string; colore_bg: string }[]
+  onExtraToggle: (sigla: string) => void
   proprietaDin: { sigla: string; nome: string; colore_bg: string }[]
   /** Se valorizzato, la cella deriva da un cambio turno: reminder + valore originale. */
   cambiato:     { originario: string; manuale?: boolean } | null
@@ -713,11 +716,29 @@ function CellaAssegnaPopover({ anchorId, cur, turni, placements, proprietaDin, c
         {reperibilita ? (
           <div className="text-[10px] text-stone-400 italic px-0.5">Reperibilità: nessuna proprietà.</div>
         ) : (canM || canP) ? (
-          placements.length > 0 ? (
+          (placements.length > 0 || extraFlags.length > 0) ? (
             <>
               <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400 mb-1">Proprietà</div>
-              {canM && <PropChips half="mattina" val={cur.slot_mattina} />}
-              {canP && <PropChips half="pomeriggio" val={cur.slot_pomeriggio} />}
+              {placements.length > 0 && canM && <PropChips half="mattina" val={cur.slot_mattina} />}
+              {placements.length > 0 && canP && <PropChips half="pomeriggio" val={cur.slot_pomeriggio} />}
+              {/* #47 — proprietà SENZA metà (es. SUP): valgono sulla giornata,
+                  contano sulle metà senza SUB/MED. Attivarle libera gli slot. */}
+              {extraFlags.length > 0 && (
+                <div className="flex items-center gap-1 mb-1">
+                  <span className="text-[10px] w-[70px] shrink-0" style={{ color: '#78716c' }}>Giornata</span>
+                  {extraFlags.map(f => {
+                    const sel = (cur.extra ?? []).includes(f.sigla)
+                    return (
+                      <button key={f.sigla} onClick={() => onExtraToggle(f.sigla)}
+                        className="flex-1 px-1 py-1 rounded text-[11px] font-semibold border transition-colors"
+                        style={sel ? { background: f.colore_bg, color: '#3a3d30', borderColor: '#78716c' } : { background: '#fff', color: '#78716c', borderColor: '#e5e7eb' }}
+                        title={`${f.nome} — proprietà di giornata (senza mattina/pomeriggio). ${sel ? 'Clicca per togliere.' : 'Attivandola libera SUB/MED.'}`}>
+                        {f.sigla}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </>
           ) : (
             <div className="text-[10px] text-stone-400 italic px-0.5">
@@ -939,18 +960,28 @@ export function ModificaTurniPage() {
   }, [colonne])
 
   // ── Helpers per leggere lo stato della singola cella ───────────────
+  // #47 — proprietà SENZA metà (es. SUP) = array `proprieta` del turno al
+  // netto di SUB/MED (che viaggiano negli slot).
+  const nonPlacement = (arr: string[] | null | undefined) =>
+    (arr ?? []).filter(p => p !== 'SUB' && p !== 'MED')
+  const extraEq = (a: string[], b: string[]) =>
+    [...a].sort().join('|') === [...b].sort().join('|')
   const getCella = useCallback((medicoId: string, data: string): RicalcCell => {
     const key = `${medicoId}|${data}`
-    if (modifiche.has(key)) return modifiche.get(key)!
     const t = turniByKey.get(key)
+    const dbEx = nonPlacement(t?.proprieta)
+    const local = modifiche.get(key)
+    // extra risolto SEMPRE: locale se toccato, altrimenti dal DB.
+    if (local) return { ...local, extra: local.extra ?? dbEx }
     return t
       ? {
           tc:              t.turno_clinico,
           tr:              t.turno_ricerca,
           slot_mattina:    t.slot_mattina    ?? null,
           slot_pomeriggio: t.slot_pomeriggio ?? null,
+          extra:           dbEx,
         }
-      : { tc: '', tr: '', slot_mattina: null, slot_pomeriggio: null }
+      : { tc: '', tr: '', slot_mattina: null, slot_pomeriggio: null, extra: [] }
   }, [modifiche, turniByKey])
 
   // ── COPERTURA DINAMICA (reparti non-11N) ───────────────────────────
@@ -1124,12 +1155,12 @@ export function ModificaTurniPage() {
       const amb = risolviAmbito(c.data, !!(c.isFestivo || c.isDomenica), ambitiOrd)
       const fabAmb = fabSchema.filter(f => f.ambito === amb)
       const turniGiorno = mediciVisibili.map(m => {
-        const cell = getCella(m.id, c.data)   // tc + slot LIVE (con le modifiche)
+        const cell = getCella(m.id, c.data)   // tc + slot + extra LIVE (con le modifiche)
         return {
           turno_clinico: cell.tc,
           slot_mattina: cell.slot_mattina,
           slot_pomeriggio: cell.slot_pomeriggio,
-          proprieta: turniByKey.get(`${m.id}|${c.data}`)?.proprieta ?? [],
+          proprieta: cell.extra ?? [],
         }
       })
       map.set(c.data, calcolaCoperturaGiorno(turniGiorno, sigle, fabAmb))
@@ -1326,9 +1357,14 @@ export function ModificaTurniPage() {
       const curTr = (local?.tr ?? dbT?.turno_ricerca ?? '') as TurnoRicerca
       const oldSm = local?.slot_mattina    ?? dbT?.slot_mattina    ?? null
       const oldSp = local?.slot_pomeriggio ?? dbT?.slot_pomeriggio ?? null
+      // #47: le proprietà senza metà seguono la cella; su vuoto/REP si azzerano
+      // (una cella vuota o di reperibilità non ha proprietà).
+      const dbEx = nonPlacement(dbT?.proprieta)
+      const newExtra = (tc === '' || tc === 'REP') ? [] : local?.extra
       const newCell: RicalcCell = {
         tc,
         tr: curTr,
+        extra: newExtra,
         // Le varianti Esterno seguono le controparti:
         //   EM ~ M (solo mattina), EP ~ P (solo pomeriggio), EL ~ L (entrambi)
         slot_mattina:    (tc === 'M' || tc === 'L' || tc === 'EM' || tc === 'EL') ? oldSm : null,
@@ -1342,10 +1378,60 @@ export function ModificaTurniPage() {
       }
       if (newCell.tc === dbCur.tc && newCell.tr === dbCur.tr &&
           newCell.slot_mattina === dbCur.slot_mattina &&
-          newCell.slot_pomeriggio === dbCur.slot_pomeriggio) {
+          newCell.slot_pomeriggio === dbCur.slot_pomeriggio &&
+          extraEq(newCell.extra ?? dbEx, dbEx)) {
         next.delete(key)
       } else {
         next.set(key, newCell)
+      }
+      return next
+    })
+  }, [turniByKey])
+
+  // #47 — Toggle di una proprietà SENZA metà (es. SUP) su una cella.
+  // Attivandola si LIBERANO i placement SUB/MED delle metà lavorate (una sola
+  // azione per "P in MED → P in SUP": SUP conta infatti solo sulle metà senza
+  // placement, vedi calcolaCoperturaGiorno). Disattivandola gli slot restano.
+  // Stesso "smart delta" delle altre modifiche (uguale al DB → entry rimossa).
+  const toggleExtraFlag = useCallback((medicoId: string, data: string, sigla: string) => {
+    setModifiche(prev => {
+      const next = new Map(prev)
+      const key = `${medicoId}|${data}`
+      const dbT = turniByKey.get(key)
+      const dbEx = nonPlacement(dbT?.proprieta)
+      const cur: RicalcCell = next.get(key) ?? {
+        tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
+        tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
+        slot_mattina:    dbT?.slot_mattina    ?? null,
+        slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
+      }
+      const tc = cur.tc
+      const canM = tc === 'M' || tc === 'L' || tc === 'EM' || tc === 'EL'
+      const canP = tc === 'P' || tc === 'L' || tc === 'EP' || tc === 'EL'
+      if (!canM && !canP) return prev            // REP / vuoto: niente proprietà
+      const curExtra = cur.extra ?? dbEx
+      const attiva = !curExtra.includes(sigla)
+      const newExtra = attiva ? [...curExtra, sigla] : curExtra.filter(p => p !== sigla)
+      const updated: RicalcCell = {
+        ...cur,
+        // Attivazione: libera i placement delle metà lavorate dal turno.
+        slot_mattina:    attiva && canM ? null : cur.slot_mattina,
+        slot_pomeriggio: attiva && canP ? null : cur.slot_pomeriggio,
+        extra: newExtra,
+      }
+      const dbCur: RicalcCell = {
+        tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
+        tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
+        slot_mattina:    dbT?.slot_mattina    ?? null,
+        slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
+      }
+      if (updated.tc === dbCur.tc && updated.tr === dbCur.tr &&
+          updated.slot_mattina === dbCur.slot_mattina &&
+          updated.slot_pomeriggio === dbCur.slot_pomeriggio &&
+          extraEq(newExtra, dbEx)) {
+        next.delete(key)
+      } else {
+        next.set(key, updated)
       }
       return next
     })
@@ -1356,10 +1442,18 @@ export function ModificaTurniPage() {
   //   TC:M / TC:P / TC:L / TC:REP  →  setta TC, ricalcola il giorno
   //   TR:RM / TR:RP                →  toggle TR (set o svuota se uguale)
   //   FLAG:SUB / FLAG:MED          →  toggle flag, niente ricalcolo
+  //   FLAG:<altra sigla> (#47)     →  toggle proprietà SENZA metà (es. SUP)
   // Il drop di TC è equivalente a un editing manuale; gli altri sono
   // override "manuali" che il prossimo ricalcolo del giorno potrebbe
   // sovrascrivere se cambia un TC.
   const handleDropFromLegend = useCallback((medicoId: string, data: string, payload: string) => {
+    // #47 — FLAG generico (non SUB/MED/split-L): proprietà senza metà.
+    if (payload.startsWith('FLAG:') &&
+        !['FLAG:SUB', 'FLAG:MED', 'FLAG:L_SUB_MED', 'FLAG:L_MED_SUB'].includes(payload)) {
+      const sigla = payload.slice(5)
+      if (sigla) toggleExtraFlag(medicoId, data, sigla)
+      return
+    }
     if (payload.startsWith('TC:')) {
       const newTc = payload.slice(3) as TurnoClinico
       // Payload "TC:" vuoto = chip "Vuoto" della legenda → cancella il TC.
@@ -1446,23 +1540,25 @@ export function ModificaTurniPage() {
         return prev
       }
 
-      // Smart delta: se = DB, rimuovi l'entry
+      // Smart delta: se = DB, rimuovi l'entry (#47: extra incluso nel confronto)
       const dbCur: RicalcCell = {
         tc:              (dbT?.turno_clinico ?? '') as TurnoClinico,
         tr:              (dbT?.turno_ricerca  ?? '') as TurnoRicerca,
         slot_mattina:    dbT?.slot_mattina    ?? null,
         slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
       }
+      const dbExF = nonPlacement(dbT?.proprieta)
       if (updated.tc === dbCur.tc && updated.tr === dbCur.tr &&
           updated.slot_mattina === dbCur.slot_mattina &&
-          updated.slot_pomeriggio === dbCur.slot_pomeriggio) {
+          updated.slot_pomeriggio === dbCur.slot_pomeriggio &&
+          extraEq(updated.extra ?? dbExF, dbExF)) {
         next.delete(key)
       } else {
         next.set(key, updated)
       }
       return next
     })
-  }, [turniByKey, updateCella])
+  }, [turniByKey, updateCella, toggleExtraFlag])
 
   // #44 — setta la proprietà (SUB / MED / null=Supporto) di UNA metà specifica.
   // Usato dal popover di assegnazione. Rispetta l'eligibilità della metà in base
@@ -1495,9 +1591,11 @@ export function ModificaTurniPage() {
         slot_mattina:    dbT?.slot_mattina    ?? null,
         slot_pomeriggio: dbT?.slot_pomeriggio ?? null,
       }
+      const dbExH = nonPlacement(dbT?.proprieta)
       if (updated.tc === dbCur.tc && updated.tr === dbCur.tr &&
           updated.slot_mattina === dbCur.slot_mattina &&
-          updated.slot_pomeriggio === dbCur.slot_pomeriggio) {
+          updated.slot_pomeriggio === dbCur.slot_pomeriggio &&
+          extraEq(updated.extra ?? dbExH, dbExH)) {
         next.delete(key)
       } else {
         next.set(key, updated)
@@ -1783,28 +1881,31 @@ export function ModificaTurniPage() {
         const dbTr = (dbT?.turno_ricerca  ?? '') as TurnoRicerca
         const dbSm = dbT?.slot_mattina    ?? null
         const dbSp = dbT?.slot_pomeriggio ?? null
+        const dbExS = nonPlacement(dbT?.proprieta)
+        const cellExtra = cell.extra ?? dbExS      // #47: undefined = non toccate
         if (cell.tc === dbTc && cell.tr === dbTr &&
-            cell.slot_mattina === dbSm && cell.slot_pomeriggio === dbSp) {
+            cell.slot_mattina === dbSm && cell.slot_pomeriggio === dbSp &&
+            extraEq(cellExtra, dbExS)) {
           continue   // identico al DB: niente upsert
         }
         const orig = getOriginale(medico_id, data)
         const modificato_manualmente = (cell.tc !== orig.tc) || (cell.tr !== orig.tr)
         const isSub = cell.slot_mattina === 'SUB' || cell.slot_pomeriggio === 'SUB'
         const isMed = cell.slot_mattina === 'MED' || cell.slot_pomeriggio === 'MED'
-        // Reparti DINAMICI: turno_sigla e proprieta NON sono tracciati nelle
-        // `modifiche` (che seguono turno_clinico + slot), ma vanno riallineati
-        // qui — altrimenti dopo il Salva resterebbero i valori di GENERAZIONE,
+        // Reparti DINAMICI: turno_sigla e proprieta vanno riallineati qui —
+        // altrimenti dopo il Salva resterebbero i valori di GENERAZIONE,
         // disallineati dal nuovo turno (es. turno_clinico='L' ma turno_sigla='REP').
         // Negli schemi supportati la sigla coincide col turno_clinico (M/P/L/REP)
-        // e le proprietà SUB/MED derivano dagli slot; eventuali flag non-SUB/MED
-        // (rari, solo da generazione) vengono preservati. Sui CLASSICI (11N) NO-OP.
+        // e le proprietà SUB/MED derivano dagli slot; le proprietà SENZA metà
+        // (#47, es. SUP) arrivano dalla modifica (`cell.extra`) o, se non
+        // toccate, dal DB. Sui CLASSICI (11N) NO-OP.
         const extraDin = repartoDinamico
           ? {
               turno_sigla: cell.tc === '' ? null : cell.tc,
               proprieta: [
                 ...(isSub ? ['SUB'] : []),
                 ...(isMed ? ['MED'] : []),
-                ...((dbT?.proprieta ?? []) as string[]).filter(p => p !== 'SUB' && p !== 'MED'),
+                ...cellExtra,
               ],
             }
           : {}
@@ -2138,7 +2239,7 @@ export function ModificaTurniPage() {
         ferieGiornoColore={ferieColore}
         slot_mattina={cur.slot_mattina}
         slot_pomeriggio={cur.slot_pomeriggio}
-        sup={(turniByKey.get(`${medicoId}|${col.data}`)?.proprieta ?? []).includes('SUP')}
+        sup={(cur.extra ?? []).length > 0}
         // Editing da tastiera/click globalmente disabilitato: l'unico modo
         // di cambiare un turno e` il drag dalla legenda. EditableCell
         // resta come "drop target + render", niente piu` modalita` edit.
@@ -2751,11 +2852,15 @@ export function ModificaTurniPage() {
               proprieta={repartoDinamico ? proprietaUsate : undefined}
               getCellInfo={(mid, data) => {
                 const cur = getCella(mid, data)
+                // proprieta LIVE e coerente col salvataggio: SUB/MED dagli
+                // slot correnti + proprietà senza metà (#47) dalla modifica.
+                const s = cur.slot_mattina === 'SUB' || cur.slot_pomeriggio === 'SUB'
+                const m = cur.slot_mattina === 'MED' || cur.slot_pomeriggio === 'MED'
                 return {
                   tc:              cur.tc,
                   slot_mattina:    cur.slot_mattina,
                   slot_pomeriggio: cur.slot_pomeriggio,
-                  proprieta:       turniByKey.get(`${mid}|${data}`)?.proprieta ?? [],
+                  proprieta:       [...(s ? ['SUB'] : []), ...(m ? ['MED'] : []), ...(cur.extra ?? [])],
                 }
               }}
             />
@@ -2823,12 +2928,24 @@ export function ModificaTurniPage() {
           .map(c => c.sigla as 'SUB' | 'MED')
         for (const v of [curCella.slot_mattina, curCella.slot_pomeriggio])
           if (v && !placementsGiorno.includes(v)) placementsGiorno.push(v)
+        // #47 — proprietà SENZA metà (es. SUP) previste dallo schema quel
+        // giorno (colonne-flag spuntate ≠ SUB/MED) + quelle già attive in
+        // cella (per poterle togliere anche se fuori schema).
+        const propEff = propAllSchemi.filter(p => p.schema_num === eff)
+        const extraGiorno = colGiorno
+          .filter(c => c.tipo === 'flag' && spuntate.has(c.sigla) && c.sigla !== 'SUB' && c.sigla !== 'MED')
+          .map(c => propEff.find(p => p.sigla === c.sigla) ?? { schema_num: eff, sigla: c.sigla, nome: c.sigla, colore_bg: '#e7e5e4' })
+        for (const s of curCella.extra ?? [])
+          if (!extraGiorno.some(x => x.sigla === s))
+            extraGiorno.push(propEff.find(p => p.sigla === s) ?? { schema_num: eff, sigla: s, nome: s, colore_bg: '#e7e5e4' })
         return (
         <CellaAssegnaPopover
           anchorId={`cell-${cellPopover.medicoId}-${cellPopover.data}`}
           cur={curCella}
           turni={tipiGiorno}
           placements={placementsGiorno}
+          extraFlags={extraGiorno}
+          onExtraToggle={sigla => toggleExtraFlag(cellPopover.medicoId, cellPopover.data, sigla)}
           proprietaDin={propAllSchemi.filter(p => p.schema_num === eff)}
           cambiato={(() => {
             const dbT = turniByKey.get(`${cellPopover.medicoId}|${cellPopover.data}`)

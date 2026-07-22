@@ -293,6 +293,10 @@ export interface RicalcCell {
   tr:              TurnoRicerca
   slot_mattina:    SlotPlacement
   slot_pomeriggio: SlotPlacement
+  /** #47 (solo reparti dinamici) — proprietà SENZA metà giornata (es. SUP),
+   *  cioè l'array `proprieta` del turno al netto di SUB/MED (che viaggiano
+   *  negli slot). `undefined` = non toccate → si eredita il valore dal DB. */
+  extra?:          string[]
 }
 
 export function ricalcolaGiorno(ctx: RicalcContext): Map<string, RicalcCell> {

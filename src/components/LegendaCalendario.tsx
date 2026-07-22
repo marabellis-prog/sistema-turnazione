@@ -83,16 +83,17 @@ function ChipTurno({ c }: { c: ChipInfo }) {
   )
 }
 
-/** Pallino proprietà. SUB/MED sono draggabili (placement); le altre no. */
+/** Pallino proprietà. TUTTI draggabili (#47): SUB/MED piazzano la metà,
+ *  le altre (es. SUP) fanno toggle della proprietà di giornata sulla cella. */
 function ChipProprieta({ sigla, nome, bg }: { sigla: string; nome: string; bg: string }) {
-  const draggabile = sigla === 'SUB' || sigla === 'MED'
-  const dh = draggabile ? dragHandlers(`FLAG:${sigla}`) : {}
+  const draggabile = true
+  const dh = dragHandlers(`FLAG:${sigla}`)
   return (
     <span className="flex items-center gap-1">
       <span
         {...dh}
         className="select-none"
-        title={draggabile ? `Trascina su una cella per attivare/disattivare ${nome}` : nome}
+        title={`Trascina su una cella per attivare/disattivare ${nome}`}
         style={{
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           width: 22, height: 22, borderRadius: '50%',
