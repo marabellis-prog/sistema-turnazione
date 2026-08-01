@@ -575,7 +575,12 @@ export function CalendarioPage() {
       const HEADER_H = 56
       // Margin di sicurezza per non aderire perfettamente al bordo
       const SAFETY = 4
-      const usable = scrollEl.clientHeight - HEADER_H - SAFETY
+      // Riepilogo ore per settimana (tfoot): va contato, altrimenti la tabella
+      // occupa TUTTA l'altezza e il riquadro finisce sotto la piega — invisibile
+      // senza scorrere. Altezza reale se già montato, stima altrimenti.
+      const footEl = document.querySelector<HTMLElement>('[data-cal-ore-foot]')
+      const FOOT_H = footEl?.offsetHeight ?? 0
+      const usable = scrollEl.clientHeight - HEADER_H - SAFETY - FOOT_H
       if (usable <= 0) return
       // Clamp: minimo 18 (cerchi diventano stretti ma leggibili),
       // massimo 36 (default desktop, oltre diventa esagerato).
@@ -859,7 +864,7 @@ export function CalendarioPage() {
             Una graffa orizzontale sotto ogni settimana lun→dom, con al
             centro i turnisti e le ore fatte in quella settimana. */}
         {tipo === 'clinica' && mostraOreSettimana && settimane.length > 0 && (
-          <tfoot>
+          <tfoot data-cal-ore-foot>
             <tr>
               <td className="cal-td-nome" style={{ verticalAlign: 'top', fontSize: 10, lineHeight: 1.2 }}>
                 Ore / settimana
