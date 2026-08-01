@@ -520,16 +520,16 @@ export function CalendarioPage() {
     return out
   }, [colonne])
 
-  // Ore per (settimana × turnista). Non contano: reperibilità (elencata a
-  // parte) e i giorni di ferie approvate (non lavorati).
+  // Ore per (settimana × turnista). Escluse: le reperibilità (non sono
+  // presenza) e i giorni di ferie approvate (non lavorati).
   const oreSettimana = useMemo(() => {
-    const res = new Map<string, { id: string; nome: string; ore: number; rep: number }[]>()
+    const res = new Map<string, { id: string; nome: string; ore: number }[]>()
     if (!mostraOreSettimana) return res
     for (const s of settimane) {
-      const righe: { id: string; nome: string; ore: number; rep: number }[] = []
+      const righe: { id: string; nome: string; ore: number }[] = []
       for (const med of mediciVisibili) {
         const medMap = turniMap.get(med.id)
-        let ore = 0, rep = 0
+        let ore = 0
         for (const col of s.cols) {
           const cell = medMap?.get(col.data)
           if (!cell) continue
@@ -539,12 +539,11 @@ export function CalendarioPage() {
           const sigla = (cell.turno_sigla || cell.turno_clinico || '').trim()
           if (!sigla) continue
           const d = durataPerSigla.get(sigla)
-          if (!d) continue
-          if (d.rep) rep++
-          else ore += d.ore
+          if (!d || d.rep) continue
+          ore += d.ore
         }
-        if (ore > 0 || rep > 0) {
-          righe.push({ id: med.id, nome: nomeBreve(med.cognome, med.nome_proprio, med.nome), ore, rep })
+        if (ore > 0) {
+          righe.push({ id: med.id, nome: nomeBreve(med.cognome, med.nome_proprio, med.nome), ore })
         }
       }
       res.set(s.key, righe)
@@ -888,19 +887,15 @@ export function CalendarioPage() {
                     {righe.length === 0 ? (
                       <div style={{ fontSize: 8, color: '#a8a29e', textAlign: 'center' }}>—</div>
                     ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                         {righe.map(r => (
                           <div key={r.id}
                             style={{
-                              display: 'flex', justifyContent: 'space-between', gap: 3,
                               fontSize: 8.5, lineHeight: 1.25, color: '#4a4a3a',
-                              padding: '0 2px', whiteSpace: 'nowrap',
+                              whiteSpace: 'nowrap', textAlign: 'center',
                             }}
-                            title={`${r.nome}: ${fmtOre(r.ore)} ore${r.rep > 0 ? ` + ${r.rep} reperibilità` : ''}`}>
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.nome}</span>
-                            <span style={{ fontWeight: 700, color: '#2b3c24' }}>
-                              {fmtOre(r.ore)}h{r.rep > 0 && <span style={{ fontWeight: 500, color: '#b91c1c' }}> +{r.rep}R</span>}
-                            </span>
+                            title={`${r.nome}: ${fmtOre(r.ore)} ore`}>
+                            {r.nome} <span style={{ fontWeight: 700, color: '#2b3c24' }}>{fmtOre(r.ore)}h</span>
                           </div>
                         ))}
                       </div>
