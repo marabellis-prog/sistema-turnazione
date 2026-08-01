@@ -34,6 +34,7 @@ interface CellDisplay {
   slot_mattina:           SlotPlacement
   slot_pomeriggio:        SlotPlacement
   sup:                    boolean       // Supporto esplicito (flag SUP)
+  turno_sigla:            string | null // sigla del tipo di turno (ore settimanali)
 }
 
 // Stessi colori del "Prova Schema" in GestioneSchemaPage
@@ -53,6 +54,27 @@ const CELL_COLORS: Record<string, { bg: string; fg: string }> = {
 // Sfondo cerchio dei piazzamenti (#48: palette in lib/placementColors).
 // Grigio del "Supporto"/jolly (metà che lavora senza piazzamento).
 const SUPPORTO_BG_PUB = '#d4d4d4'
+
+// Riepilogo ORE SETTIMANALI sotto la tabella: per ora attivo SOLO sul reparto
+// laboratorio "11N AGAIN" (richiesta esplicita). Per estenderlo a tutti basta
+// rendere `mostraOreSettimana` sempre true.
+const REPARTO_ORE_SETTIMANA = '4a50c10a-a326-468e-ac3b-c4c5d2422d81'
+
+/** Ore fra due orari "HH:MM" (gestisce il turno a cavallo di mezzanotte). */
+function oreTraOrari(inizio: string | null | undefined, fine: string | null | undefined): number {
+  if (!inizio || !fine) return 0
+  const [hi, mi] = inizio.split(':').map(Number)
+  const [hf, mf] = fine.split(':').map(Number)
+  if ([hi, mi, hf, mf].some(n => !Number.isFinite(n))) return 0
+  let min = (hf * 60 + mf) - (hi * 60 + mi)
+  if (min <= 0) min += 24 * 60
+  return min / 60
+}
+
+/** "30" · "7,5" — ore compatte per il riquadro settimanale. */
+function fmtOre(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1).replace('.', ',')
+}
 
 /** Etichetta del turno clinico (M / P / L / REP) — più grande perché unico
  *  nella sua tabella. Cerchio pastello che riflette slot_mattina/pomeriggio:
@@ -413,6 +435,7 @@ export function CalendarioPage() {
         slot_mattina:    t.slot_mattina    ?? null,
         slot_pomeriggio: t.slot_pomeriggio ?? null,
         sup:             (t.proprieta ?? []).includes('SUP'),
+        turno_sigla:     t.turno_sigla ?? null,
       })
     }
     return map
@@ -453,6 +476,81 @@ export function CalendarioPage() {
     })
     return s
   }, [colonne])
+
+  // ══════════════════════════════════════════════════════════════════
+  // ORE SETTIMANALI (per ora solo "11N AGAIN", reparto laboratorio)
+  // Sotto la tabella, allineata a ogni settimana lunedì→domenica, una
+  // graffa con l'elenco dei turnisti e le ore fatte in quella settimana.
+  // ══════════════════════════════════════════════════════════════════
+  const mostraOreSettimana = repartoVista === REPARTO_ORE_SETTIMANA
+
+  // Durata dei tipi di turno (da ora_inizio/ora_fine dello schema).
+  const { data: tipiOrari = [] } = useQuery<{ schema_num: number; sigla: string; ora_inizio: string | null; ora_fine: string | null; is_reperibilita: boolean }[]>({
+    queryKey: ['ore-tipi-turno', repartoVista],
+    enabled: mostraOreSettimana,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('tipi_turno')
+        .select('schema_num, sigla, ora_inizio, ora_fine, is_reperibilita')
+        .eq('reparto_id', repartoVista)
+      if (error) throw error
+      return (data ?? []) as { schema_num: number; sigla: string; ora_inizio: string | null; ora_fine: string | null; is_reperibilita: boolean }[]
+    },
+  })
+  // sigla → { ore, reperibilita }. A parità di sigla vince lo schema attivo
+  // (le durate coincidono tra schemi, ma così restiamo fedeli a quello in uso).
+  const durataPerSigla = useMemo(() => {
+    const m = new Map<string, { ore: number; rep: boolean }>()
+    const attivo = config?.schema_attivo ?? 1
+    for (const t of [...tipiOrari].sort((a, b) => (a.schema_num === attivo ? 1 : 0) - (b.schema_num === attivo ? 1 : 0))) {
+      m.set(t.sigla, { ore: oreTraOrari(t.ora_inizio, t.ora_fine), rep: t.is_reperibilita })
+    }
+    return m
+  }, [tipiOrari, config?.schema_attivo])
+
+  // Settimane = blocchi di colonne consecutive che iniziano di lunedì
+  // (la prima e l'ultima possono essere parziali, se il periodo non
+  // comincia/finisce a cavallo esatto della settimana).
+  const settimane = useMemo(() => {
+    const out: { key: string; cols: ColonnaCal[] }[] = []
+    for (const col of colonne) {
+      const dow = new Date(col.data + 'T00:00:00').getDay()   // 1 = lunedì
+      if (out.length === 0 || dow === 1) out.push({ key: col.data, cols: [col] })
+      else out[out.length - 1].cols.push(col)
+    }
+    return out
+  }, [colonne])
+
+  // Ore per (settimana × turnista). Non contano: reperibilità (elencata a
+  // parte) e i giorni di ferie approvate (non lavorati).
+  const oreSettimana = useMemo(() => {
+    const res = new Map<string, { id: string; nome: string; ore: number; rep: number }[]>()
+    if (!mostraOreSettimana) return res
+    for (const s of settimane) {
+      const righe: { id: string; nome: string; ore: number; rep: number }[] = []
+      for (const med of mediciVisibili) {
+        const medMap = turniMap.get(med.id)
+        let ore = 0, rep = 0
+        for (const col of s.cols) {
+          const cell = medMap?.get(col.data)
+          if (!cell) continue
+          const inFerie = (cell.is_ferie ?? false) ||
+            (ferieRanges.approved.get(med.id)?.some(([a, b]) => col.data >= a && col.data <= b) ?? false)
+          if (inFerie) continue
+          const sigla = (cell.turno_sigla || cell.turno_clinico || '').trim()
+          if (!sigla) continue
+          const d = durataPerSigla.get(sigla)
+          if (!d) continue
+          if (d.rep) rep++
+          else ore += d.ore
+        }
+        if (ore > 0 || rep > 0) {
+          righe.push({ id: med.id, nome: nomeBreve(med.cognome, med.nome_proprio, med.nome), ore, rep })
+        }
+      }
+      res.set(s.key, righe)
+    }
+    return res
+  }, [mostraOreSettimana, settimane, mediciVisibili, turniMap, ferieRanges, durataPerSigla])
 
   // ── Altezza dinamica celle tabella CLINICA (SEMPRE attivo) ──────
   // Misura lo spazio verticale del container scrollabile e divide per il
@@ -756,6 +854,58 @@ export function CalendarioPage() {
             )
           })}
         </tbody>
+
+        {/* ── Riepilogo ORE per settimana (solo clinica, solo "11N AGAIN") ──
+            Una graffa orizzontale sotto ogni settimana lun→dom, con al
+            centro i turnisti e le ore fatte in quella settimana. */}
+        {tipo === 'clinica' && mostraOreSettimana && settimane.length > 0 && (
+          <tfoot>
+            <tr>
+              <td className="cal-td-nome" style={{ verticalAlign: 'top', fontSize: 10, lineHeight: 1.2 }}>
+                Ore / settimana
+              </td>
+              {settimane.map(s => {
+                const righe = oreSettimana.get(s.key) ?? []
+                return (
+                  <td key={s.key} colSpan={s.cols.length}
+                    style={{
+                      verticalAlign: 'top', padding: '0 2px 6px', background: '#faf8f3',
+                      borderRight: lastDaysOfMonth.has(s.cols[s.cols.length - 1].data)
+                        ? '2px solid #1a1a1a' : undefined,
+                    }}>
+                    {/* Graffa orizzontale: gambe verso la tabella, punta al centro */}
+                    <div style={{ position: 'relative', height: 9, marginBottom: 2 }}>
+                      <div style={{ position: 'absolute', left: 3, right: 3, top: 4, borderTop: '1.5px solid #9c9689' }} />
+                      <div style={{ position: 'absolute', left: 3, top: 0, height: 5, borderLeft: '1.5px solid #9c9689' }} />
+                      <div style={{ position: 'absolute', right: 3, top: 0, height: 5, borderRight: '1.5px solid #9c9689' }} />
+                      <div style={{ position: 'absolute', left: '50%', top: 4, height: 5, borderLeft: '1.5px solid #9c9689' }} />
+                    </div>
+                    {righe.length === 0 ? (
+                      <div style={{ fontSize: 8, color: '#a8a29e', textAlign: 'center' }}>—</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        {righe.map(r => (
+                          <div key={r.id}
+                            style={{
+                              display: 'flex', justifyContent: 'space-between', gap: 3,
+                              fontSize: 8.5, lineHeight: 1.25, color: '#4a4a3a',
+                              padding: '0 2px', whiteSpace: 'nowrap',
+                            }}
+                            title={`${r.nome}: ${fmtOre(r.ore)} ore${r.rep > 0 ? ` + ${r.rep} reperibilità` : ''}`}>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.nome}</span>
+                            <span style={{ fontWeight: 700, color: '#2b3c24' }}>
+                              {fmtOre(r.ore)}h{r.rep > 0 && <span style={{ fontWeight: 500, color: '#b91c1c' }}> +{r.rep}R</span>}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </td>
+                )
+              })}
+            </tr>
+          </tfoot>
+        )}
       </table>
     )
   }
