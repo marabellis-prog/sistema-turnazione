@@ -394,6 +394,18 @@ export function GeneraCalendarioPage() {
 
   const periodoLabel = `${giornoInizio} ${MESI_IT[meseInizio]} ${annoInizio} → ${giornoFine} ${MESI_IT[meseFine]} ${annoFine}`
 
+  // Requisiti di "Aggiorna turnazione" (crea solo una BOZZA da approvare →
+  // NON dipende dalla checkbox, che autorizza la generazione distruttiva).
+  // Se manca qualcosa diciamo QUALE: un pulsante grigio e muto non si capisce.
+  const aggiornaMotivo = useMemo<string | null>(() => {
+    if (!config)              return 'Configurazione del reparto non ancora caricata.'
+    if (medici.length === 0)  return 'Nessun turnista con numero d\'ordine in questo reparto.'
+    if (!rangeValido)         return 'Il periodo non è valido: la data di fine precede quella di inizio.'
+    if (!hasTurni)            return 'Non c\'è una turnazione da continuare: genera prima il calendario.'
+    if (slotSchema === 0)     return `Lo schema selezionato non ha turni assegnati ai turnisti: completalo in "Disegna Schema".`
+    return null
+  }, [config, medici.length, rangeValido, hasTurni, slotSchema])
+
   // Primo lunedì >= data inizio = "settimana 1" della rotazione (hint UI).
   const primoLunediLabel = useMemo(() => {
     if (!rangeValido) return '—'
@@ -708,11 +720,14 @@ export function GeneraCalendarioPage() {
                 onChange={e => setConferma(e.target.checked)}
                 className="rounded mt-0.5 shrink-0" />
               <span>
-                Ho letto l'avviso e voglio generare il calendario{' '}
+                Ho letto l'avviso e voglio <strong>generare</strong> il calendario{' '}
                 <strong>{periodoLabel}</strong> con{' '}
                 <strong>{repartoDinamico
                   ? (schemiDisponibili.find(s => s.schema_num === schemaNum)?.titolo ?? `Schema ${schemaNum}`)
                   : `Schema ${schemaNum}`}</strong>
+                <span className="block text-[11px] text-stone-500 mt-0.5">
+                  Serve solo per "Genera Calendario" (riscrive i turni). "Aggiorna turnazione" non la richiede.
+                </span>
               </span>
             </label>
 
@@ -729,16 +744,24 @@ export function GeneraCalendarioPage() {
                 attuale col nuovo schema, crea un'anteprima da approvare. */}
             <button
               onClick={() => setShowAggiorna(true)}
-              disabled={!conferma || medici.length === 0 || slotSchema === 0 || !config || !rangeValido || !hasTurni}
+              disabled={!!aggiornaMotivo}
+              title={aggiornaMotivo ?? 'Continua la rotazione col nuovo schema (crea un\'anteprima)'}
               className="w-full justify-center py-2.5 rounded-lg font-medium text-white shadow inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               style={{ background: '#0284c7' }}
             >
               <RefreshCw size={16} />
               Aggiorna turnazione
             </button>
-            <p className="text-[11px] text-stone-500 -mt-2">
-              "Aggiorna turnazione" continua la rotazione attuale dal primo lunedì del mese di inizio col nuovo schema, mantenendo i cambi: crea un'anteprima da approvare (non va subito in produzione).
-            </p>
+            {aggiornaMotivo ? (
+              <p className="text-[11px] text-amber-700 -mt-2 flex items-start gap-1.5">
+                <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                <span>Aggiorna turnazione non disponibile: {aggiornaMotivo}</span>
+              </p>
+            ) : (
+              <p className="text-[11px] text-stone-500 -mt-2">
+                "Aggiorna turnazione" continua la rotazione attuale dal primo lunedì del mese di inizio col nuovo schema: crea un'anteprima da approvare (non va subito in produzione).
+              </p>
+            )}
           </>
         )}
 
