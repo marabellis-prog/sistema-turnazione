@@ -60,6 +60,9 @@ const SUPPORTO_BG_PUB = '#d4d4d4'
 // rendere `mostraOreSettimana` sempre true.
 const REPARTO_ORE_SETTIMANA = '4a50c10a-a326-468e-ac3b-c4c5d2422d81'
 
+/** Da queste ore settimanali in su la riga del riepilogo diventa ROSSA. */
+const ORE_SOGLIA_ROSSO = 36
+
 /** Ore fra due orari "HH:MM" (gestisce il turno a cavallo di mezzanotte). */
 function oreTraOrari(inizio: string | null | undefined, fine: string | null | undefined): number {
   if (!inizio || !fine) return 0
@@ -888,16 +891,21 @@ export function CalendarioPage() {
                       <div style={{ fontSize: 8, color: '#a8a29e', textAlign: 'center' }}>—</div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-                        {righe.map(r => (
-                          <div key={r.id}
-                            style={{
-                              fontSize: 8.5, lineHeight: 1.25, color: '#4a4a3a',
-                              whiteSpace: 'nowrap', textAlign: 'center',
-                            }}
-                            title={`${r.nome}: ${fmtOre(r.ore)} ore`}>
-                            {r.nome} <span style={{ fontWeight: 700, color: '#2b3c24' }}>{fmtOre(r.ore)}h</span>
-                          </div>
-                        ))}
+                        {righe.map(r => {
+                          // Da 36 ore in su la riga (nome + ore) diventa rossa.
+                          const sopraSoglia = r.ore >= ORE_SOGLIA_ROSSO
+                          return (
+                            <div key={r.id}
+                              style={{
+                                fontSize: 8.5, lineHeight: 1.25,
+                                color: sopraSoglia ? '#c1121f' : '#1c1917',
+                                whiteSpace: 'nowrap', textAlign: 'center',
+                              }}
+                              title={`${r.nome}: ${fmtOre(r.ore)} ore`}>
+                              {r.nome} <span style={{ fontWeight: 700 }}>{fmtOre(r.ore)}h</span>
+                            </div>
+                          )
+                        })}
                       </div>
                     )}
                   </td>
