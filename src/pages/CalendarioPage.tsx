@@ -56,9 +56,10 @@ const CELL_COLORS: Record<string, { bg: string; fg: string }> = {
 const SUPPORTO_BG_PUB = '#d4d4d4'
 
 // Riepilogo ORE SETTIMANALI sotto la tabella: per ora attivo SOLO sul reparto
-// laboratorio "11N AGAIN" (richiesta esplicita). Per estenderlo a tutti basta
+// laboratorio "11N AGAIN 2" (richiesta esplicita). Per estenderlo a tutti basta
 // rendere `mostraOreSettimana` sempre true.
-const REPARTO_ORE_SETTIMANA = '4a50c10a-a326-468e-ac3b-c4c5d2422d81'
+// NB: il precedente "11N AGAIN" (4a50c10a-…) è stato eliminato.
+const REPARTO_ORE_SETTIMANA = '273faac5-6167-4399-8611-44a62c5bfb26'
 
 /** Da queste ore settimanali in su la riga del riepilogo diventa ROSSA. */
 const ORE_SOGLIA_ROSSO = 36
