@@ -45,13 +45,20 @@ export type AggiustamentoConteggi = {
  * stessa funzione a `aggiustaConteggi` in ENTRAMBE le viste.
  *
  * Marabelli: +1 M, +1 P, +1 L (→ Totale +4), +2 SUB, +2 MED, +1 F (festivo),
- * per i turni svolti fuori sistema. Cambiando i numeri qui cambiano in
- * automatico in tutte e due le viste (niente più copie inline da allineare).
+ * per i turni svolti fuori sistema.
+ * Meringolo e Ciavarelli: gli stessi valori in NEGATIVO (−1 M, −1 P, −1 L →
+ * Totale −4, −2 SUB, −2 MED, −1 F), perché quei turni risultano a loro nel
+ * sistema ma li ha svolti Marabelli.
+ * Cambiando i numeri qui cambiano in automatico in tutte e due le viste
+ * (niente più copie inline da allineare).
  */
 export function aggiustaConteggiRiepilogo(med: Medico): AggiustamentoConteggi {
-  return med.nome.toUpperCase().trim().startsWith('MARABELLI')
-    ? { M: 1, P: 1, L: 1, SUB: 2, MED: 2, F: 1 }
-    : {}
+  const nome = med.nome.toUpperCase().trim()
+  if (nome.startsWith('MARABELLI')) return { M: 1, P: 1, L: 1, SUB: 2, MED: 2, F: 1 }
+  if (nome.startsWith('MERINGOLO') || nome.startsWith('CIAVARELLI')) {
+    return { M: -1, P: -1, L: -1, SUB: -2, MED: -2, F: -1 }
+  }
+  return {}
 }
 
 interface Props {
