@@ -13,8 +13,9 @@
  * proposto e lo salva in `turnazione_anteprima` (bozza in attesa di
  * approvazione). La pubblicazione avviene altrove (pagina anteprima admin).
  *
- * Stacco = primo lunedì del mese di inizio: i giorni dal 1° del mese fino al
- * primo lunedì (escluso) restano sulla vecchia turnazione.
+ * Stacco = primo lunedì ≥ DATA di inizio scelta (giorno compreso): si può
+ * quindi cambiare schema anche a metà mese (es. lunedì 31 agosto). I giorni
+ * precedenti allo stacco restano sulla vecchia turnazione.
  */
 
 import { supabase } from './supabase'
@@ -38,8 +39,18 @@ export interface ParametriAggiorna {
   schemaNuovo: number
   annoInizio:  number
   meseInizio:  number
+  /** Giorno di inizio scelto nel form. Lo STACCO è il primo lunedì ≥ questa
+   *  data: permette di cambiare schema a metà mese (es. 31 agosto) invece che
+   *  solo dal primo lunedì del mese. Assente = 1° del mese (comportamento
+   *  storico). */
+  giornoInizio?: number
   annoFine:    number
   meseFine:    number
+}
+
+/** Data di stacco = primo lunedì ≥ (annoInizio, meseInizio, giornoInizio). */
+export function cutoverDi(p: ParametriAggiorna): Date {
+  return primoLunediDelPeriodo(new Date(p.annoInizio, p.meseInizio - 1, p.giornoInizio ?? 1))
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -125,7 +136,7 @@ export async function creaBozzaAggiornamento(
 
   // ── Anchor (continuità) e stacco ──────────────────────────────────
   const A_old   = primoLunediDelPeriodo(firstOfMonth(config.anno_inizio, config.mese_inizio))
-  const cutover = primoLunediDelPeriodo(firstOfMonth(p.annoInizio, p.meseInizio))
+  const cutover = cutoverDi(p)
   const cutoverISO = iso(cutover)
   const nuovoFineISO = iso(lastOfMonth(p.annoFine, p.meseFine))
 
@@ -322,7 +333,7 @@ export async function creaBozzaAggiornamentoDinamico(
     .sort((a, b) => (a.numero_ordine ?? 0) - (b.numero_ordine ?? 0))
 
   const A_old        = primoLunediDelPeriodo(firstOfMonth(config.anno_inizio, config.mese_inizio))
-  const cutover      = primoLunediDelPeriodo(firstOfMonth(p.annoInizio, p.meseInizio))
+  const cutover      = cutoverDi(p)
   const cutoverISO   = iso(cutover)
   const nuovoFineISO = iso(lastOfMonth(p.annoFine, p.meseFine))
 

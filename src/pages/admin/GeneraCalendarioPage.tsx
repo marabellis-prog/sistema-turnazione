@@ -576,7 +576,7 @@ export function GeneraCalendarioPage() {
           medici={medici}
           params={{
             schemaNuovo: schemaNum,
-            annoInizio, meseInizio, annoFine, meseFine,
+            annoInizio, meseInizio, giornoInizio, annoFine, meseFine,
           }}
           repartoDinamico={repartoDinamico}
           schemaDinamico={repartoDinamico

@@ -14,9 +14,9 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { RefreshCw, X, AlertTriangle, CheckCircle, Loader2, ArrowRight } from 'lucide-react'
-import { primoLunediDelPeriodo, MESI_IT } from '../lib/algorithm'
+import { MESI_IT } from '../lib/algorithm'
 import {
-  validateAggiorna, creaBozzaAggiornamento, creaBozzaAggiornamentoDinamico,
+  validateAggiorna, creaBozzaAggiornamento, creaBozzaAggiornamentoDinamico, cutoverDi,
   type ParametriAggiorna, type SchemaDinamicoData,
 } from '../lib/aggiornaTurnazione'
 import type { Configurazione, Medico, SchemaModello } from '../types'
@@ -43,11 +43,9 @@ export function AggiornaTurnazioneModal({ config, schemi, medici, params, onClos
 
   const nAttivi = useMemo(() => medici.filter(m => m.attivo).length, [medici])
 
-  // Data di stacco (primo lunedì del mese di inizio scelto)
-  const cutover = useMemo(
-    () => primoLunediDelPeriodo(new Date(params.annoInizio, params.meseInizio - 1, 1)),
-    [params.annoInizio, params.meseInizio],
-  )
+  // Data di stacco = primo lunedì ≥ data di inizio scelta (giorno compreso:
+  // così si può cambiare schema a metà mese, es. lunedì 31 agosto).
+  const cutover = useMemo(() => cutoverDi(params), [params])
   const cutoverLabel = `${cutover.getDate()} ${MESI_IT[cutover.getMonth() + 1]} ${cutover.getFullYear()}`
 
   // Validazione (buco + numero turnisti)
@@ -104,7 +102,7 @@ export function AggiornaTurnazioneModal({ config, schemi, medici, params, onClos
                 <strong>{MESI_IT[params.meseFine]} {params.annoFine}</strong>.
               </p>
               <ul className="text-xs text-stone-600 mt-3 space-y-1.5 leading-relaxed">
-                <li>• I giorni del mese di inizio <strong>prima</strong> del primo lunedì restano sulla vecchia turnazione.</li>
+                <li>• I giorni <strong>prima</strong> dello stacco restano sulla vecchia turnazione (lo stacco è il primo lunedì ≥ data di inizio scelta).</li>
                 <li>• La rotazione <strong>prosegue</strong> (i turnisti riprendono dal numero giusto, non si riparte da 1).</li>
                 <li>• I <strong>cambi turno</strong> dal primo lunedì in poi <strong>non</strong> vengono mantenuti: il calendario nuovo li riscrive (vanno rifatti dopo).</li>
                 <li>• Verrà creata una <strong>anteprima</strong> da far vedere ai turnisti: la produzione non cambia finché non approvi.</li>
