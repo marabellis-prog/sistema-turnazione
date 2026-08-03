@@ -1,0 +1,30 @@
+{
+  "name": "Sistema Turnazione",
+  "short_name": "Turni",
+  "description": "Gestione turni medici",
+  "start_url": "/sistema-turnazione/",
+  "scope": "/sistema-turnazione/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1c2818",
+  "theme_color": "#374f30",
+  "icons": [
+    {
+      "src": "/sistema-turnazione/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/sistema-turnazione/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/sistema-turnazione/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
