@@ -153,7 +153,15 @@ export function CambioTurnoModal({
     const err = validateDraft()
     if (err) { setError(err); return }
     setError(null)
-    setEntries(prev => [...prev, { ...draft, role }])
+    // Se questo turnista+giorno era già stato inserito, SOSTITUISCE la voce
+    // precedente invece di aggiungerne una seconda: due modifiche sulla stessa
+    // cella facevano fallire l'approvazione lato admin ("ON CONFLICT DO UPDATE
+    // command cannot affect row a second time"). Nel riepilogo resta una riga
+    // sola, quella giusta.
+    setEntries(prev => [
+      ...prev.filter(e => !(e.medico_id === draft.medico_id && e.data === draft.data)),
+      { ...draft, role },
+    ])
     setStep(role === 'tuo' ? 'involves' : 'more')
   }
 

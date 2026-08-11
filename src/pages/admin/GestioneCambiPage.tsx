@@ -209,6 +209,22 @@ export function GestioneCambiPage() {
   // l'update finale, possiamo restare in stato "applicato ma non
   // marcato": l'admin vede comunque pending e puo` riprovare → idempotente
   // (l'upsert re-applica gli stessi valori, nessun danno).
+  // Una richiesta può contenere DUE modifiche sulla stessa cella (stesso
+  // medico + stesso giorno): il wizard pubblico permetteva di reinserirla.
+  // L'upsert `onConflict: 'medico_id,data'` in quel caso fallisce con
+  // "ON CONFLICT DO UPDATE command cannot affect row a second time".
+  // Deduplichiamo per cella:
+  //   - approvazione → tieni l'ULTIMA (è lo stato finale voluto);
+  //   - ripristino   → tieni la PRIMA (è il valore originario da ripristinare).
+  function dedupModifiche(mods: ModificaCambio[], tieni: 'ultima' | 'prima'): ModificaCambio[] {
+    const map = new Map<string, ModificaCambio>()
+    for (const m of mods) {
+      const k = `${m.medico_id}|${m.data}`
+      if (tieni === 'ultima' || !map.has(k)) map.set(k, m)
+    }
+    return [...map.values()]
+  }
+
   async function handleApprova(c: CambioTurno) {
     const ok = await confirm({
       title:   `Approvare il cambio turno?`,
@@ -222,7 +238,7 @@ export function GestioneCambiPage() {
       // 1) Upsert dei turni — calcolando is_sub / is_med come OR sui placement
       // (backward compat con le colonne legacy che servono per il colore
       // del riepilogo).
-      const turniRows = c.modifiche.map(m => {
+      const turniRows = dedupModifiche(c.modifiche, 'ultima').map(m => {
         const isSub = m.a.slot_mattina === 'SUB' || m.a.slot_pomeriggio === 'SUB'
         const isMed = m.a.slot_mattina === 'MED' || m.a.slot_pomeriggio === 'MED'
         return {
@@ -404,8 +420,10 @@ export function GestioneCambiPage() {
 
     setBusyId(c.id); setErr(null); setMsg(null)
     try {
-      // 1) Upsert ROLLBACK: applica m.da (i valori originali) ai turni
-      const turniRows = c.modifiche.map(m => ({
+      // 1) Upsert ROLLBACK: applica m.da (i valori originali) ai turni.
+      //    Dedup per cella tenendo la PRIMA occorrenza = il valore davvero
+      //    originario (vedi dedupModifiche).
+      const turniRows = dedupModifiche(c.modifiche, 'prima').map(m => ({
         reparto_id:              repartoAttivo,   // ⚠️ SEMPRE (default colonna = 11N)
         medico_id:               m.medico_id,
         data:                    m.data,
