@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Stessa base verde oliva della favicon principale -->
+  <rect width="64" height="64" rx="14" fill="#2b3c24"/>
+
+  <!-- Calendario: corpo -->
+  <rect x="10" y="16" width="44" height="36" rx="5" fill="#faf8f3"/>
+
+  <!-- Calendario: header superiore -->
+  <rect x="10" y="16" width="44" height="13" rx="5" fill="#456b3a"/>
+  <rect x="10" y="22" width="44" height="7" fill="#456b3a"/>
+
+  <!-- Ganci calendario -->
+  <rect x="20" y="11" width="5" height="10" rx="2.5" fill="#e0e8d8"/>
+  <rect x="39" y="11" width="5" height="10" rx="2.5" fill="#e0e8d8"/>
+
+  <!-- Griglia giorni (più semplice, l'ingranaggio sotto copre parte) -->
+  <rect x="16" y="36" width="6" height="5" rx="1.5" fill="#9ab488"/>
+  <rect x="26" y="36" width="6" height="5" rx="1.5" fill="#9ab488"/>
+  <rect x="36" y="36" width="6" height="5" rx="1.5" fill="#e0e8d8"/>
+
+  <rect x="16" y="44" width="6" height="5" rx="1.5" fill="#e0e8d8"/>
+  <rect x="26" y="44" width="6" height="5" rx="1.5" fill="#9ab488"/>
+
+  <!-- Croce medica più piccola e spostata leggermente in alto a sinistra
+       per fare spazio all'ingranaggio in basso a destra -->
+  <circle cx="18" cy="26" r="6" fill="#b91c1c"/>
+  <rect x="16" y="22.5" width="4" height="7" rx="1.2" fill="#faf8f3"/>
+  <rect x="14.5" y="24" width="7" height="4" rx="1.2" fill="#faf8f3"/>
+
+  <!-- INGRANAGGIO admin: cerchio chiaro di sfondo + ingranaggio scuro
+       sovrapposto in basso a destra. Stile coerente con lucide-react
+       Settings icon ma semplificato per leggibilità a 16-32 px. -->
+  <!-- Cerchio bianco di "stacco" dietro l'ingranaggio -->
+  <circle cx="48" cy="46" r="13" fill="#faf8f3" stroke="#2b3c24" stroke-width="1.5"/>
+
+  <!-- Ingranaggio: corpo a 8 denti -->
+  <g transform="translate(48 46)" fill="#456b3a">
+    <!-- Denti dell'ingranaggio (8 rettangoli arrotondati attorno al cerchio) -->
+    <g>
+      <rect x="-2.2" y="-11" width="4.4" height="5" rx="1"/>
+      <rect x="-2.2" y="6"   width="4.4" height="5" rx="1"/>
+      <rect x="-11"  y="-2.2" width="5"   height="4.4" rx="1"/>
+      <rect x="6"    y="-2.2" width="5"   height="4.4" rx="1"/>
+      <g transform="rotate(45)">
+        <rect x="-2.2" y="-11" width="4.4" height="5" rx="1"/>
+        <rect x="-2.2" y="6"   width="4.4" height="5" rx="1"/>
+        <rect x="-11"  y="-2.2" width="5"   height="4.4" rx="1"/>
+        <rect x="6"    y="-2.2" width="5"   height="4.4" rx="1"/>
+      </g>
+    </g>
+    <!-- Corpo circolare dell'ingranaggio -->
+    <circle r="7.5"/>
+  </g>
+  <!-- Centro dell'ingranaggio "bucato" -->
+  <circle cx="48" cy="46" r="3" fill="#faf8f3"/>
+</svg>
